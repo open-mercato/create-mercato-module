@@ -77,6 +77,8 @@ npm login
 gh auth login # only if you want a GitHub repository
 ```
 
+Enable two-factor authentication on your npm account and complete any verification requested by npm when publishing.
+
 Then:
 
 ```bash
