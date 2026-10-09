@@ -1,6 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
+import { isCredentialFile } from './build.js'
+
+const credentialPattern =
+  /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9]{30,}|npm_[A-Za-z0-9]{30,}|(?:AKIA|ASIA)[0-9A-Z]{16}|[sr]k_live_[0-9A-Za-z]{20,}|xox[abprs]-[0-9A-Za-z-]{10,}|AIza[0-9A-Za-z_-]{35})/
 
 function statIfPresent(file: string): fs.Stats | undefined {
   try {
@@ -65,11 +69,7 @@ export function assertNoCredentials(
   file: string,
   contents: string | Buffer,
 ): void {
-  if (
-    /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9]{30,}|npm_[A-Za-z0-9]{30,})/.test(
-      contents.toString(),
-    )
-  ) {
+  if (credentialPattern.test(contents.toString())) {
     throw new Error(
       `Possible credential in ${file}. Remove it before publishing. No files were published.`,
     )
@@ -104,12 +104,7 @@ export function repositoryFingerprint(checkout: string, id: string): string {
     hash.update('\0')
     if (!status) return
     const name = path.basename(relative)
-    if (
-      /^(?:\.env(?:\..*)?|\.npmrc|\.yarnrc.*|credentials(?:\.(?:json|ya?ml|txt))?|id_rsa|id_ed25519)$/.test(
-        name,
-      ) ||
-      /\.(?:pem|key|p12|pfx)$/.test(name)
-    )
+    if (isCredentialFile(name))
       throw new Error(
         `Remove credential file from the module repository before publishing: ${relative}. No files were published.`,
       )

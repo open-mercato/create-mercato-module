@@ -62,8 +62,18 @@ test('development keeps @app, backs up local source, shares dependencies, and le
   assert.equal(fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8'), registration)
   assert.equal(run('git', ['rev-parse', 'HEAD'], app.directory, { capture: true }).stdout, head)
   assert.equal(run('git', ['remote', 'get-url', 'origin'], app.directory, { capture: true }).stdout.trim(), 'https://example.com/whole-app.git')
+  assert.doesNotMatch(run('git', ['status', '--short'], path.join(app.directory, link.checkoutPath), { capture: true }).stdout, /node_modules/, 'the shared dependency symlink must never be committed')
   assert.deepEqual(linkDevelopment(app, 'visits', { ...settings, linkedDevelopment: link }, app.execute), link)
   assert.equal(app.calls.filter((call) => call.command === 'gh' && call.args[0] === 'repo').length, 1)
+})
+
+test('development restores the local module when its link cannot be saved', (context) => {
+  const app = fixture(context)
+  assert.throws(() => linkDevelopment(app, 'visits', settings, app.execute, () => { throw new Error('metadata is read-only') }), /metadata is read-only/)
+  assert.equal(fs.lstatSync(path.join(app.directory, 'src/modules/visits')).isSymbolicLink(), false)
+  assert.match(fs.readFileSync(path.join(app.directory, 'src/modules/visits/index.ts'), 'utf8'), /Original local visits/)
+  assert.equal(fs.existsSync(path.join(app.directory, '.mercato/module-repos/visits')), false)
+  assert.ok(linkDevelopment(app, 'visits', settings, app.execute), 'a failed link must leave the app ready for a retry')
 })
 
 test('development also links apps without Git and authenticates before making files', (context) => {

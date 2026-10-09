@@ -31,9 +31,9 @@ function fixture(context) {
   }
   npm(true)
   const preload = path.join(root, 'interactive.cjs')
-  fs.writeFileSync(preload, `Object.defineProperty(process.stdin,'isTTY',{value:true});require('node:readline/promises').createInterface=()=>({question:async(label)=>{console.log('PROMPT:'+label);return label.includes('Publish this module')?'n':''},close(){}})\n`)
-  function cli(args) {
-    const result = spawnSync(process.execPath, ['--require', preload, path.resolve(__dirname, '../dist/cli.js'), ...args], { cwd: app.directory, encoding: 'utf8', env: { ...process.env, PATH: `${binary}${path.delimiter}${process.env.PATH}`, NPM_TOKEN: '', NODE_AUTH_TOKEN: '' } })
+  fs.writeFileSync(preload, `Object.defineProperty(process.stdin,'isTTY',{value:true});require('node:readline/promises').createInterface=()=>({question:async(label)=>{console.log('PROMPT:'+label);return label.includes('Publish this module')?(process.env.FIXTURE_CONFIRMATION||'n'):''},close(){}})\n`)
+  function cli(args, interactive = true) {
+    const result = spawnSync(process.execPath, [...(interactive ? ['--require', preload] : []), path.resolve(__dirname, '../dist/cli.js'), ...args], { cwd: app.directory, encoding: 'utf8', env: { ...process.env, PATH: `${binary}${path.delimiter}${process.env.PATH}`, NPM_TOKEN: '', NODE_AUTH_TOKEN: '' } })
     return { ...result, output: `${result.stdout}\n${result.stderr}` }
   }
   return { root, app, npm, cli }
@@ -97,7 +97,7 @@ test('authentication checks npm and selected GitHub before any package work', (c
     calls.push([command, ...args])
     return { status: command === 'gh' ? 1 : 0, stdout: 'fixture', stderr: '' }
   }), /gh auth login/)
-  assert.deepEqual(calls, [['npm', 'whoami'], ['gh', 'auth', 'status']])
+  assert.deepEqual(calls, [['npm', 'whoami', '--@fixture:registry=https://registry.npmjs.org/'], ['gh', 'auth', 'status']])
 })
 
 test('repeat publication uses saved settings, auto-bumps version and only asks for confirmation', (context) => {
@@ -131,4 +131,24 @@ test('dry-run skips authentication even when npm login is unavailable', (context
   assert.match(result.output, /Dry run complete/)
   assert.ok(fs.existsSync(path.join(app.directory, '.mercato/module-publish')))
   assert.ok(!fs.existsSync(path.join(app.directory, '.mercato/module-tool.json')))
+})
+
+test('publication needs the package name retyped interactively and explicit approval options otherwise', (context) => {
+  const { app, cli } = fixture(context)
+  const arguments_ = ['publish', 'visits', '--package', settings.packageName, '--version', settings.version, '--repo', '-', '--auth', 'login']
+  const declined = cli(arguments_)
+  assert.equal(declined.status, 0, declined.output)
+  assert.match(declined.output, /PROMPT:.*Type the package name \(@fixture\/visits\) to confirm/s)
+  assert.match(declined.output, /Publication canceled/)
+  process.env.FIXTURE_CONFIRMATION = 'y'
+  context.after(() => { delete process.env.FIXTURE_CONFIRMATION })
+  const shortcut = cli(arguments_)
+  assert.equal(shortcut.status, 0, shortcut.output)
+  assert.match(shortcut.output, /Publication canceled/, 'y/yes must not approve a publication')
+  delete process.env.FIXTURE_CONFIRMATION
+  const unattended = cli(arguments_, false)
+  assert.equal(unattended.status, 1, unattended.output)
+  assert.match(unattended.output, /Nothing was published.*--yes/s)
+  assert.doesNotMatch(unattended.output, /Submitted/)
+  assert.equal(loadConfig(app).modules.visits, undefined)
 })

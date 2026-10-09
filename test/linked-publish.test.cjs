@@ -7,7 +7,7 @@ const { createRequire } = require('node:module')
 const { pathToFileURL } = require('node:url')
 const { scaffold } = require('../dist/scaffold.js')
 const { run, readJson, writeJson } = require('../dist/common.js')
-const { exportPackage, exportLinkedPackage, publishRepository } = require('../dist/publish.js')
+const { exportPackage, exportLinkedPackage, publishRepository, publicationRisks } = require('../dist/publish.js')
 
 function fixture(context) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-linked-publish-'))
@@ -144,6 +144,12 @@ test('linked publication rejects credentials and private:true in repository mani
   assert.throws(() => exportLinkedPackage(app, 'visits', settings, metadata), /credential in package.json/)
   writeJson(path.join(checkout, 'package.json'), { ...manifest, private: true })
   assert.throws(() => exportLinkedPackage(app, 'visits', settings, metadata), /marked private: true/)
+  writeJson(path.join(checkout, 'package.json'), { ...manifest, dependencies: { helper: 'git+https://example.com/helper.git' } })
+  assert.throws(() => exportLinkedPackage(app, 'visits', settings, metadata), /helper.*local\/Git locator/)
+  writeJson(path.join(checkout, 'package.json'), { ...manifest, scripts: { ...manifest.scripts, postinstall: 'node setup.js' } })
+  const prepared = exportLinkedPackage(app, 'visits', settings, metadata)
+  assert.deepEqual(prepared.installScripts, ['postinstall'])
+  assert.deepEqual(publicationRisks(prepared, settings, { state: 'exists', private: true, head: 'a'.repeat(40) }).map((risk) => risk.flag), ['allow-install-scripts'])
 })
 
 test('GitHub-style packing of raw repository aliases installs and discovers portable runtime in a different app', { skip: !process.env.OPEN_MERCATO_ROOT, timeout: 120000 }, async context => {

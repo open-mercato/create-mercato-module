@@ -32,6 +32,7 @@ export interface Settings {
 
 export interface SavedSettings extends Settings {
   lastPublishedVersion?: string
+  lastReleaseCommit?: string
   development?: DevelopmentLink
 }
 
@@ -58,6 +59,7 @@ export interface ExportedPackage extends PreparedPackage {
   integrity: string
   linkedCheckout?: string
   linkedFingerprint?: string
+  installScripts?: string[]
 }
 
 export type RunOptions = Omit<

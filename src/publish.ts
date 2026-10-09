@@ -2,7 +2,7 @@ import type { App, Settings, ExportedPackage, Executor } from './types.js'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { readJson, writeJson, run, within } from './common.js'
-import { preparePackage } from './package.js'
+import { preparePackage, localLocator } from './package.js'
 import { createNpmRunner } from './npm-auth.js'
 import { linkedModuleDirectory } from './development.js'
 import type { DevelopmentLink } from './development.js'
@@ -12,18 +12,47 @@ import {
   assertNoCredentials,
 } from './repository-safety.js'
 
-function exportPackage(
-  app: App,
-  id: string,
-  settings: Settings,
-): ExportedPackage {
+export interface RepositoryInfo {
+  state: 'exists' | 'missing'
+  private?: boolean
+  head?: string
+}
+
+export interface PublicationRisk {
+  flag: string
+  message: string
+}
+
+export interface PublishOptions {
+  // undefined: unchecked; null: the repository must still be empty.
+  expectedHead?: string | null
+  onPushed?: (commit: string) => void
+}
+
+function createWorkspace(app: App, id: string): string {
   const root = path.join(app.directory, '.mercato/module-publish')
   fs.mkdirSync(root, { recursive: true })
   if (!within(app.directory, fs.realpathSync(root)))
     throw new Error(
       'The .mercato export directory must remain inside the application.',
     )
-  const workspace = fs.mkdtempSync(path.join(root, `${id}-`))
+  // Keep one export per module; earlier ones hold stale archives and clones.
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (
+      entry.isDirectory() &&
+      new RegExp(`^${id}-[A-Za-z0-9]{6}$`).test(entry.name)
+    )
+      fs.rmSync(path.join(root, entry.name), { recursive: true, force: true })
+  }
+  return fs.mkdtempSync(path.join(root, `${id}-`))
+}
+
+function exportPackage(
+  app: App,
+  id: string,
+  settings: Settings,
+): ExportedPackage {
+  const workspace = createWorkspace(app, id)
   const result = preparePackage(
     app,
     id,
@@ -45,12 +74,20 @@ function packPrepared(
     result.destination,
     { capture: true },
   )
-  const entries: {
+  let entries: {
     filename: string
     integrity: string
     files: { path: string }[]
-  }[] = JSON.parse(packed.stdout)
+  }[]
+  try {
+    entries = JSON.parse(packed.stdout)
+  } catch {
+    throw new Error(
+      'npm pack returned an unreadable file list. Check your npm version and retry.',
+    )
+  }
   if (
+    !Array.isArray(entries) ||
     entries.length !== 1 ||
     !entries[0].filename ||
     path.basename(entries[0].filename) !== entries[0].filename
@@ -96,11 +133,7 @@ function exportLinkedPackage(
       'The module repository is missing src/index.ts. Restore its package entry point before publishing.',
     )
   const fingerprint = repositoryFingerprint(checkout, id)
-  const root = path.join(app.directory, '.mercato/module-publish')
-  fs.mkdirSync(root, { recursive: true })
-  if (!within(app.directory, fs.realpathSync(root)))
-    throw new Error('The export directory must remain inside the app.')
-  const workspace = fs.mkdtempSync(path.join(root, `${id}-`))
+  const workspace = createWorkspace(app, id)
   const prepared = preparePackage(
     app,
     id,
@@ -146,6 +179,23 @@ function exportLinkedPackage(
     )
       manifest[field] = { ...previous, ...current }
   }
+  for (const field of [
+    'dependencies',
+    'peerDependencies',
+    'optionalDependencies',
+  ]) {
+    const entries = (manifest as Record<string, unknown>)[field]
+    if (typeof entries !== 'object' || entries === null) continue
+    for (const [name, locator] of Object.entries(entries)) {
+      if (typeof locator !== 'string' || localLocator.test(locator))
+        throw new Error(
+          `Dependency ${name} in the module repository package.json uses a local/Git locator. Publish that dependency first and use its npm version.`,
+        )
+    }
+  }
+  const installScripts = ['preinstall', 'install', 'postinstall'].filter(
+    (name) => typeof manifest.scripts?.[name] === 'string',
+  )
   writeJson(path.join(prepared.destination, 'package.json'), manifest)
   for (const name of [
     'README.md',
@@ -159,15 +209,7 @@ function exportLinkedPackage(
         !within(checkout, fs.realpathSync(file))
       )
         throw new Error(`Refusing to package repository symlink: ${name}`)
-      const content = fs.readFileSync(file)
-      if (
-        /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9]{30,}|npm_[A-Za-z0-9]{30,})/.test(
-          content.toString('utf8'),
-        )
-      )
-        throw new Error(
-          `Possible credential in repository file ${name}. Remove it before publishing.`,
-        )
+      assertNoCredentials(name, fs.readFileSync(file))
       fs.copyFileSync(file, path.join(prepared.destination, name))
     }
   }
@@ -179,6 +221,7 @@ function exportLinkedPackage(
     ...packPrepared({ ...prepared, manifest }, workspace),
     linkedCheckout: checkout,
     linkedFingerprint: fingerprint,
+    installScripts,
   }
 }
 
@@ -221,6 +264,7 @@ function publishLinkedRepository(
   prepared: ExportedPackage,
   settings: Settings,
   execute: Executor,
+  options: PublishOptions,
 ): void {
   const checkout = prepared.linkedCheckout!
   assertLinkedRepository(checkout, settings, execute)
@@ -290,6 +334,108 @@ function publishLinkedRepository(
       checkout,
     )
   execute('git', ['push', '-u', 'origin', 'HEAD'], checkout)
+  reportPushed(checkout, execute, options)
+}
+
+function reportPushed(
+  checkout: string,
+  execute: Executor,
+  options: PublishOptions,
+): void {
+  if (!options.onPushed) return
+  const commit = execute('git', ['rev-parse', 'HEAD'], checkout, {
+    capture: true,
+    allowFailure: true,
+  })
+  if (commit.status === 0) options.onPushed((commit.stdout || '').trim())
+}
+
+function inspectRepository(
+  repository: string,
+  cwd: string,
+  execute: Executor = run,
+): RepositoryInfo {
+  const result = execute('gh', ['api', `repos/${repository}`], cwd, {
+    capture: true,
+    allowFailure: true,
+  })
+  if (result.status !== 0) {
+    if (/HTTP 404/.test(result.stderr || '')) return { state: 'missing' }
+    throw new Error(
+      'Cannot inspect the GitHub repository. Check gh auth login and network access; nothing was published.',
+    )
+  }
+  let details: { private?: unknown; default_branch?: unknown }
+  try {
+    details = JSON.parse(result.stdout)
+  } catch {
+    throw new Error(
+      'GitHub returned unreadable repository details; nothing was published.',
+    )
+  }
+  if (
+    typeof details.private !== 'boolean' ||
+    typeof details.default_branch !== 'string'
+  )
+    throw new Error(
+      'GitHub returned incomplete repository details; nothing was published.',
+    )
+  const head = execute(
+    'gh',
+    [
+      'api',
+      `repos/${repository}/commits/${encodeURIComponent(details.default_branch)}`,
+      '--jq',
+      '.sha',
+    ],
+    cwd,
+    { capture: true, allowFailure: true },
+  )
+  if (head.status !== 0 && !/HTTP 409/.test(head.stderr || ''))
+    throw new Error(
+      'Cannot read the latest commit of the GitHub repository; nothing was published.',
+    )
+  const commit = head.status === 0 ? head.stdout.trim() : ''
+  return {
+    state: 'exists',
+    private: details.private,
+    ...(/^[0-9a-f]{40,64}$/.test(commit) ? { head: commit } : {}),
+  }
+}
+
+// Everything returned here needs the user's explicit approval before publishing.
+function publicationRisks(
+  prepared: ExportedPackage,
+  settings: Settings,
+  repository: RepositoryInfo | undefined,
+  lastReleaseCommit?: string,
+): PublicationRisk[] {
+  const risks: PublicationRisk[] = []
+  if (
+    repository?.state === 'exists' &&
+    repository.private === false &&
+    settings.access === 'restricted'
+  )
+    risks.push({
+      flag: 'allow-public-repo',
+      message: `${settings.repository} is a PUBLIC GitHub repository, but the npm package is restricted. The module source will be readable by everyone.`,
+    })
+  if (
+    !prepared.linkedCheckout &&
+    repository?.state === 'exists' &&
+    repository.head &&
+    repository.head !== lastReleaseCommit
+  )
+    risks.push({
+      flag: 'overwrite-repo',
+      message: `${settings.repository} has commits that this app did not release. Publishing replaces its src, dist, types, README.md and workflow with this app's module; changes made only in the repository are removed from its latest commit. Use link to keep the repository as the source.`,
+    })
+  if (prepared.installScripts?.length)
+    risks.push({
+      flag: 'allow-install-scripts',
+      message: `The module repository package.json defines ${prepared.installScripts.join(', ')}. These scripts run on every machine that installs the package.`,
+    })
+  return risks
 }
 
 function githubState(repository: string, cwd: string, execute: Executor = run) {
@@ -308,9 +454,10 @@ function publishRepository(
   prepared: ExportedPackage,
   settings: Settings,
   execute: Executor = run,
+  options: PublishOptions = {},
 ) {
   if (prepared.linkedCheckout)
-    return publishLinkedRepository(prepared, settings, execute)
+    return publishLinkedRepository(prepared, settings, execute, options)
   const state = githubState(settings.repository!, prepared.workspace, execute)
   if (state === 'missing')
     execute(
@@ -343,6 +490,17 @@ function publishRepository(
       capture: true,
       allowFailure: true,
     }).status === 0
+  if (options.expectedHead !== undefined) {
+    const head = hasHead
+      ? execute('git', ['rev-parse', 'HEAD'], checkout, {
+          capture: true,
+        }).stdout.trim()
+      : null
+    if (head !== options.expectedHead)
+      throw new Error(
+        'The GitHub repository changed after you approved this publication. Nothing was pushed or published; run publish again to review it.',
+      )
+  }
   if (hasHead) {
     const packageFile = path.join(checkout, 'package.json')
     if (
@@ -396,6 +554,8 @@ function publishRepository(
     )
   }
   execute('git', ['push', '-u', 'origin', 'HEAD'], checkout)
+  reportPushed(checkout, execute, options)
+  fs.rmSync(checkout, { recursive: true, force: true })
 }
 
 function ensureAuthor(checkout: string, execute: Executor): void {
@@ -500,11 +660,18 @@ function publish(
   prepared: ExportedPackage,
   settings: Settings,
   execute: Executor = run,
+  options: PublishOptions = {},
 ) {
-  const npm = createNpmRunner(settings.auth || 'auto', execute)
+  const npm = createNpmRunner(
+    settings.auth || 'auto',
+    execute,
+    process.env,
+    settings.packageName,
+  )
   try {
     preflight(prepared, settings, npm.execute, npm.mode)
-    if (settings.repository) publishRepository(prepared, settings, execute)
+    if (settings.repository)
+      publishRepository(prepared, settings, execute, options)
     npm.execute(
       'npm',
       [
@@ -530,6 +697,8 @@ export { loadConfig, saveConfig } from './config.js'
 export {
   exportPackage,
   githubState,
+  inspectRepository,
+  publicationRisks,
   publishRepository,
   preflight,
   publish,

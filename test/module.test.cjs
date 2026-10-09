@@ -185,6 +185,12 @@ test('rejects symlinks, credential files, raw tokens and workspace dependencies'
   const textToken = addFile(directory, 'config.json', JSON.stringify({ token: `npm_${'x'.repeat(40)}` }))
   assert.throws(() => preparePackage(app, 'visits', settings, destination), /Possible credential/)
   fs.unlinkSync(textToken)
+  for (const [name, content] of [['.netrc', 'machine example.com'], ['store.jks', 'binary'], ['aws.ts', `export const key = 'AKIA${'A'.repeat(16)}'`], ['stripe.ts', `export const key = 'sk_live_${'a'.repeat(24)}'`]]) {
+    const file = addFile(directory, name, content)
+    assert.throws(() => preparePackage(app, 'visits', settings, destination), /credential/i, name)
+    fs.unlinkSync(file)
+  }
+  addFile(directory, '.env.example', 'API_URL=\n')
   app.manifest.dependencies['@open-mercato/core'] = 'workspace:*'
   assert.throws(() => preparePackage(app, 'visits', settings, destination), /local\/Git locator/)
 })
@@ -224,7 +230,7 @@ test('publication checks auth/version first and invokes npm on only the prepared
   }
   publish(prepared, settings, execute)
   const publication = calls.find((entry) => entry.args[0] === 'publish')
-  assert.deepEqual(publication.args, ['publish', prepared.archive, '--access', 'public', '--ignore-scripts'])
+  assert.deepEqual(publication.args, ['publish', prepared.archive, '--access', 'public', '--ignore-scripts', '--@fixture:registry=https://registry.npmjs.org/'])
   assert.equal(publication.cwd, prepared.destination)
   assert.ok(calls.every((entry) => entry.command === 'npm'))
   const blocked = []
@@ -263,9 +269,16 @@ test('dedicated repository publication creates and updates an isolated repo with
   assert.equal(JSON.parse(run('git', ['--git-dir', remote, 'show', 'main:package.json'], root, { capture: true }).stdout).name, settings.packageName)
   const updated = { ...publication, version: '0.1.1' }
   addFile(directory, 'new-feature.ts', 'export const enabled = true\n')
-  publishRepository(exportPackage(app, 'visits', updated), updated, execute)
+  const pushed = []
+  publishRepository(exportPackage(app, 'visits', updated), updated, execute, { expectedHead: run('git', ['--git-dir', remote, 'rev-parse', 'main'], root, { capture: true }).stdout.trim(), onPushed: (commit) => pushed.push(commit) })
   assert.equal(creations, 1)
   assert.equal(run('git', ['--git-dir', remote, 'rev-list', '--count', 'main'], root, { capture: true }).stdout.trim(), '2')
+  assert.deepEqual(pushed, [run('git', ['--git-dir', remote, 'rev-parse', 'main'], root, { capture: true }).stdout.trim()])
+  const later = { ...publication, version: '0.1.2' }
+  assert.throws(() => publishRepository(exportPackage(app, 'visits', later), later, execute, { expectedHead: 'a'.repeat(40) }), /changed after you approved/)
+  assert.throws(() => publishRepository(exportPackage(app, 'visits', later), later, execute, { expectedHead: null }), /changed after you approved/)
+  assert.equal(run('git', ['--git-dir', remote, 'rev-parse', 'main'], root, { capture: true }).stdout.trim(), pushed[0], 'an unapproved repository state must not receive a push')
+  assert.equal(fs.readdirSync(path.join(app.directory, '.mercato/module-publish')).length, 1, 'earlier export workspaces are pruned')
   assert.equal(run('git', ['remote', 'get-url', 'origin'], app.directory, { capture: true }).stdout.trim(), 'https://example.com/whole-app.git')
   fs.unlinkSync(path.join(directory, 'new-feature.ts'))
   assert.equal(run('git', ['status', '--porcelain'], app.directory, { capture: true }).stdout, before)

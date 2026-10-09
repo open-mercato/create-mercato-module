@@ -3,8 +3,19 @@ import { createInterface } from 'node:readline/promises'
 import { findApp, validateId, run } from './common.js'
 import { scaffold } from './scaffold.js'
 import { validateSettings } from './package.js'
-import { exportPackage, exportLinkedPackage, publish } from './publish.js'
-import { loadConfig, saveConfig, saveDevelopment } from './config.js'
+import {
+  exportPackage,
+  exportLinkedPackage,
+  publish,
+  inspectRepository,
+  publicationRisks,
+} from './publish.js'
+import {
+  loadConfig,
+  saveConfig,
+  saveDevelopment,
+  saveReleaseCommit,
+} from './config.js'
 import { linkDevelopment } from './development.js'
 import { checkAuthentication } from './npm-auth.js'
 
@@ -27,6 +38,9 @@ Publish options:
   --configure                edit saved settings in the interactive wizard
   --dry-run                  build a local .tgz; no GitHub/npm writes or login needed
   --yes                      approve the displayed publication without a prompt
+  --allow-public-repo        approve pushing a restricted package's source to a public repo
+  --overwrite-repo           approve replacing repository changes this app did not release
+  --allow-install-scripts    approve publishing install scripts from the module repository
 
 Link options:
   --package @your-name/visits  use this published module package
@@ -36,6 +50,8 @@ Link options:
 Init options:
   --no-generate              create/register the module without running yarn generate
 
+Nothing is published without approval: interactively you retype the package name;
+scripts and CI pass --yes plus the --allow/--overwrite option for each listed warning.
 Publishing checks npm authentication before packaging; GitHub work checks gh auth.
 Token authentication reads NPM_TOKEN or NODE_AUTH_TOKEN; never pass tokens as arguments.
 Trusted publishing requires a configured npm trusted publisher and GitHub Actions OIDC.
@@ -57,7 +73,16 @@ function parse(argv: string[]): ParsedArguments {
   validateId(id)
   const flags: Flags = {}
   const booleans =
-    command === 'publish' ? ['dry-run', 'yes', 'configure'] : ['no-generate']
+    command === 'publish'
+      ? [
+          'dry-run',
+          'yes',
+          'configure',
+          'allow-public-repo',
+          'overwrite-repo',
+          'allow-install-scripts',
+        ]
+      : ['no-generate']
   const values =
     command === 'publish'
       ? ['package', 'version', 'repo', 'access', 'auth', 'tag']
@@ -172,12 +197,17 @@ async function main(argv = process.argv.slice(2)) {
         throw new Error(
           '🐙 Linking development needs a dedicated GitHub repository. Publish with --repo owner/name first, or pass --repo owner/name to link.',
         )
-      const development = linkDevelopment(app, args.id, {
-        repository: settings.repository,
-        packageName: settings.packageName,
-        linkedDevelopment: previous.development,
-      })
-      saveDevelopment(app, args.id, development, settings)
+      const development = linkDevelopment(
+        app,
+        args.id,
+        {
+          repository: settings.repository,
+          packageName: settings.packageName,
+          linkedDevelopment: previous.development,
+        },
+        undefined,
+        (link) => saveDevelopment(app, args.id, link, settings),
+      )
       console.log(
         `\n🔗 src/modules/${args.id} now points to ${development.sourcePath}.\n🐙 Edit your module in this app; changes belong to ${development.repository}.\n📁 Previous local source: ${development.backupPath}\n🧩 Registration remains @app.`,
       )
@@ -222,31 +252,61 @@ async function main(argv = process.argv.slice(2)) {
     const prepared = previous.development
       ? exportLinkedPackage(app, args.id, settings, previous.development)
       : exportPackage(app, args.id, settings)
+    const repository =
+      !args.flags['dry-run'] && settings.repository
+        ? inspectRepository(settings.repository, app.directory)
+        : undefined
+    const destination = !settings.repository
+      ? 'skip'
+      : !repository
+        ? settings.repository
+        : repository.state === 'missing'
+          ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created)`
+          : `${settings.repository} (existing ${repository.private ? 'private' : 'PUBLIC'} repository)`
     console.log(
-      `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${settings.repository || 'skip'}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
+      `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
     )
+    const risks = publicationRisks(
+      prepared,
+      settings,
+      repository,
+      previous.lastReleaseCommit,
+    )
+    for (const risk of risks)
+      console.log(`\n⚠️ ${risk.message}\n   Option: --${risk.flag}`)
     if (args.flags['dry-run'])
       return console.log(
         '\n✅ Dry run complete. No npm/GitHub publication or app Git changes.',
       )
-    if (
-      !args.flags.yes &&
-      (!prompt ||
-        !/^y(?:es)?$/i.test(
-          (
-            await prompt.question(
-              '\n🚀 Publish this module to the destinations above? [y/N] ',
-            )
-          ).trim(),
-        ))
+    if (!prompt) {
+      const missing = [
+        ...(args.flags.yes ? [] : ['yes']),
+        ...risks.map((risk) => risk.flag).filter((flag) => !args.flags[flag]),
+      ]
+      if (missing.length)
+        throw new Error(
+          `Nothing was published: this publication needs your approval. Review the summary above, then rerun with ${missing.map((flag) => `--${flag}`).join(' ')}, or run in a terminal to confirm interactively. The local archive is available for inspection.`,
+        )
+    } else if (
+      (
+        await prompt.question(
+          `\n🚀 Publish this module to the destinations above? Type the package name (${settings.packageName}) to confirm: `,
+        )
+      ).trim() !== settings.packageName
     ) {
       console.log(
-        'ℹ️ Publication canceled. The local archive is available for inspection.',
+        'ℹ️ Publication canceled: the package name was not confirmed. The local archive is available for inspection.',
       )
       return
     }
     saveConfig(app, args.id, settings, false)
-    publish(prepared, settings)
+    publish(prepared, settings, undefined, {
+      // Linked checkouts are the source and are never overwritten.
+      ...(repository && !prepared.linkedCheckout
+        ? { expectedHead: repository.head ?? null }
+        : {}),
+      onPushed: (commit) => saveReleaseCommit(app, args.id, commit),
+    })
     saveConfig(app, args.id, settings, true)
     console.log(
       `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  yarn mercato module add ${settings.packageName}@${settings.version} --allow-third-party`,

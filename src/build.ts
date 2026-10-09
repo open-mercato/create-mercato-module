@@ -13,6 +13,14 @@ const omitted = new Set([
 ])
 const codePattern = /\.(?:[cm]?js|jsx|tsx?)$/
 
+function isCredentialFile(name: string): boolean {
+  return (
+    /^(?:\.env(?:\.(?!(?:example|sample|template)$).*)?|\.envrc|\.npmrc|\.yarnrc.*|\.netrc|\.git-credentials|\.pypirc|credentials(?:\.(?:json|ya?ml|txt))?|id_rsa|id_dsa|id_ecdsa|id_ed25519)$/.test(
+      name,
+    ) || /\.(?:pem|key|p12|pfx|jks|keystore)$/.test(name)
+  )
+}
+
 function inside(root: string, file: string) {
   const relative = path.relative(root, file)
   return (
@@ -38,12 +46,7 @@ function filesIn(root: string): string[] {
       const file = path.join(directory, entry.name)
       if (entry.isSymbolicLink())
         throw new Error(`Cannot package symlink: ${path.relative(root, file)}`)
-      if (
-        /^(?:\.env(?:\..*)?|\.npmrc|\.yarnrc.*|credentials(?:\.(?:json|ya?ml|txt))?|id_rsa|id_ed25519)$/.test(
-          entry.name,
-        ) ||
-        /\.(?:pem|key|p12|pfx)$/.test(entry.name)
-      ) {
+      if (isCredentialFile(entry.name)) {
         throw new Error(
           `Remove credential file from the module before publishing: ${path.relative(root, file)}`,
         )
@@ -321,4 +324,12 @@ function build(packageDirectory: string): void {
 }
 
 if (require.main === module) build(process.cwd())
-export { filesIn, localTarget, rewriteSource, compile, build, codePattern }
+export {
+  filesIn,
+  localTarget,
+  rewriteSource,
+  compile,
+  build,
+  codePattern,
+  isCredentialFile,
+}
