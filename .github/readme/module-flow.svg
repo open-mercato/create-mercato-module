@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="400" viewBox="0 0 1120 400" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Build in your app. Publish one module.</title>
+  <desc id="desc">A visits module from an Open Mercato app becomes a portable package published to npm and optionally to a dedicated GitHub repository.</desc>
+  <defs><linearGradient id="accent" x1="40" y1="0" x2="1080" y2="400" gradientUnits="userSpaceOnUse"><stop stop-color="#B4F372"/><stop offset=".5" stop-color="#EEFB63"/><stop offset="1" stop-color="#BC9AFF"/></linearGradient></defs>
+  <rect width="1120" height="400" rx="20" fill="#141419"/>
+  <rect x="1" y="1" width="1118" height="398" rx="19" stroke="#FFF" stroke-opacity=".1"/>
+  <rect x="32" y="32" width="44" height="4" rx="2" fill="url(#accent)"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif">
+    <text x="32" y="72" fill="#F5F5F7" font-size="27" font-weight="700">Your feature. Ready to travel.</text>
+    <text x="32" y="100" fill="#A7A7B6" font-size="15">From the app where you build to the apps that need it.</text>
+    <rect x="32" y="132" width="316" height="225" rx="12" fill="#202027" stroke="#363640"/>
+    <circle cx="51" cy="152" r="4" fill="#BC9AFF"/><circle cx="65" cy="152" r="4" fill="#EEFB63"/><circle cx="79" cy="152" r="4" fill="#B4F372"/>
+    <text x="52" y="189" fill="#F5F5F7" font-size="17" font-weight="600">Your Open Mercato app</text>
+    <g font-family="SFMono-Regular,Consolas,Liberation Mono,monospace" font-size="14">
+      <text x="52" y="224" fill="#A7A7B6">src/modules/</text><text x="72" y="251" fill="#777787">customers/</text>
+      <rect x="46" y="263" width="288" height="31" rx="6" fill="#B4F372" fill-opacity=".12"/>
+      <text x="72" y="284" fill="#B4F372" font-weight="600">visits/</text><text x="72" y="315" fill="#777787">other_modules/</text>
+    </g>
+    <path d="M365 245H411M402 237L411 245L402 253" stroke="#B4F372" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="428" y="171" width="264" height="150" rx="12" fill="#202027" stroke="#B4F372" stroke-opacity=".55"/>
+    <text x="450" y="204" fill="#B4F372" font-size="12" font-weight="700" letter-spacing="1.5">ONE PORTABLE PACKAGE</text>
+    <text x="450" y="236" fill="#F5F5F7" font-size="19" font-weight="600">@you/mercato-visits</text>
+    <text x="450" y="268" fill="#A7A7B6" font-size="14">Source + compiled module</text><text x="450" y="292" fill="#A7A7B6" font-size="14">Translations + migrations + assets</text>
+    <path d="M709 245H739V198H771M739 245V295H771M762 190L771 198L762 206M762 287L771 295L762 303" stroke="#BC9AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="788" y="154" width="300" height="86" rx="12" fill="#202027" stroke="#363640"/>
+    <text x="810" y="189" fill="#F5F5F7" font-size="20" font-weight="700">npm</text><text x="810" y="216" fill="#A7A7B6" font-size="14">Install in another Open Mercato app</text>
+    <rect x="788" y="254" width="300" height="86" rx="12" fill="#202027" stroke="#363640"/>
+    <text x="810" y="289" fill="#F5F5F7" font-size="20" font-weight="700">GitHub <tspan fill="#BC9AFF" font-size="12" font-weight="500">OPTIONAL</tspan></text><text x="810" y="316" fill="#A7A7B6" font-size="14">A dedicated repository for your module</text>
+    <text x="32" y="381" fill="#777787" font-size="12">CREATE MERCATO MODULE</text><text x="1088" y="381" fill="#777787" font-size="12" text-anchor="end">Part of Open Mercato</text>
+  </g>
+</svg>

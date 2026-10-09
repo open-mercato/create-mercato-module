@@ -49,6 +49,37 @@ test('init registers and localizes a working page; refuses duplicate modules wit
   assert.equal(fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8'), before)
 })
 
+test('init and publish outside an Open Mercato app show actionable guidance and leave files untouched', (context) => {
+  const { root } = fixture(context)
+  const unrelated = path.join(root, 'unrelated-project')
+  fs.mkdirSync(path.join(unrelated, 'src'), { recursive: true })
+  writeJson(path.join(unrelated, 'package.json'), { name: 'unrelated', private: true })
+  fs.writeFileSync(path.join(unrelated, 'src/modules.ts'), 'export const enabledModules = []\n')
+  const before = fs.readdirSync(unrelated, { recursive: true })
+  for (const command of ['init', 'publish']) {
+    const result = spawnSync(process.execPath, [path.join(__dirname, '../bin/cli.cjs'), command, 'visits'], { cwd: unrelated, encoding: 'utf8' })
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /No Open Mercato app found here/)
+    assert.ok(result.stderr.includes(unrelated))
+    assert.match(result.stderr, /cd \/path\/to\/your-mercato-app/)
+    assert.match(result.stderr, /npx create-mercato-app my-app/)
+    assert.match(result.stderr, /No files were changed/)
+    assert.deepEqual(fs.readdirSync(unrelated, { recursive: true }), before)
+  }
+  const help = spawnSync(process.execPath, [path.join(__dirname, '../bin/cli.cjs'), '--help'], { cwd: unrelated, encoding: 'utf8' })
+  assert.equal(help.status, 0)
+})
+
+test('recognizes app subdirectories and distinguishes missing dependencies from an unrelated project', (context) => {
+  const { app, directory } = fixture(context)
+  assert.equal(findApp(path.join(directory, 'backend/visits')).directory, app.directory)
+  const installed = path.join(app.directory, 'node_modules/@open-mercato/core/package.json')
+  fs.unlinkSync(installed)
+  assert.throws(() => findApp(app.directory), /app found, but its dependencies are not installed[\s\S]*yarn install/)
+  writeJson(installed, { name: 'unrelated-package' })
+  assert.throws(() => findApp(app.directory), /dependencies are not installed/)
+})
+
 test('registration uses syntax nodes, preserves comments and handles missing trailing commas', () => {
   const source = "// preserve me\nexport const enabledModules = [{ id: 'auth' }]\n"
   assert.match(registration(source, 'visits'), /^\/\/ preserve me/)
