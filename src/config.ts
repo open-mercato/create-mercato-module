@@ -173,8 +173,15 @@ export function saveDevelopment(
   development: DevelopmentLink,
   settings: Settings,
 ): void {
-  saveConfig(app, id, settings, false)
+  validateId(id)
   const config = loadConfig(app)
-  config.modules[id].development = developmentLink(development)
+  const previous = config.modules[id]
+  config.modules[id] = settingsFrom({
+    ...settings,
+    ...(previous?.lastPublishedVersion
+      ? { lastPublishedVersion: previous.lastPublishedVersion }
+      : {}),
+    development: developmentLink(development),
+  })
   writeConfig(app, config)
 }

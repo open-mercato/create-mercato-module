@@ -119,6 +119,102 @@ function localTarget(
   return target
 }
 
+// A host's module list must be read at runtime, never copied from the publisher.
+// Only the id-presence idiom has equivalent semantics in the runtime registry.
+function rewriteHostModuleChecks(source: string, file: string): string {
+  const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
+  const imports = parsed.statements.filter(
+    (node): node is ts.ImportDeclaration =>
+      ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) &&
+      node.moduleSpecifier.text === '@/modules',
+  )
+  if (!imports.length) return source
+  function fail(): never {
+    throw new Error(
+      `Cannot package this use of @/modules in ${file}. Only server-side enabledModules.some(module => module.id === 'module_id') checks can be translated to the consuming app's runtime registry. Other app configuration imports must use a portable API. No files were published.`,
+    )
+  }
+  if (parsed.statements.some(node => ts.isExpressionStatement(node) &&
+    ts.isStringLiteral(node.expression) && node.expression.text === 'use client')) fail()
+  const host = ts.createCompilerHost({ noResolve: true, noLib: true })
+  host.getSourceFile = name => name === file ? parsed : undefined
+  const checker = ts.createProgram([file], { noResolve: true, noLib: true }, host).getTypeChecker()
+  const bindings = new Set<ts.Symbol>()
+  for (const declaration of imports) {
+    const clause = declaration.importClause
+    if (!clause || clause.isTypeOnly || clause.name || !clause.namedBindings ||
+      !ts.isNamedImports(clause.namedBindings) || clause.namedBindings.elements.length !== 1) fail()
+    const binding = clause.namedBindings.elements[0]
+    if (binding.isTypeOnly || (binding.propertyName ?? binding.name).text !== 'enabledModules') fail()
+    const symbol = checker.getSymbolAtLocation(binding.name)
+    if (!symbol) fail()
+    bindings.add(symbol)
+  }
+  const references = new Set<ts.Identifier>()
+  const identifiers = new Set<string>()
+  function inspect(node: ts.Node): void {
+    if (ts.isIdentifier(node)) identifiers.add(node.text)
+    if (ts.isImportDeclaration(node)) return
+    if (ts.isIdentifier(node) && bindings.has(checker.getSymbolAtLocation(node)!)) {
+      const access = node.parent
+      const call = access.parent
+      if (!ts.isPropertyAccessExpression(access) || access.expression !== node || access.name.text !== 'some' ||
+        !ts.isCallExpression(call) || call.expression !== access || call.arguments.length !== 1 ||
+        access.questionDotToken || call.questionDotToken) fail()
+      const callback = call.arguments[0]
+      if (!ts.isArrowFunction(callback) || callback.modifiers?.length || callback.parameters.length !== 1) fail()
+      const parameter = callback.parameters[0]
+      if (!ts.isIdentifier(parameter.name) || parameter.initializer || parameter.dotDotDotToken) fail()
+      let body = callback.body
+      while (ts.isParenthesizedExpression(body)) body = body.expression
+      if (!ts.isBinaryExpression(body) || body.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken) fail()
+      const isId = (value: ts.Node) => ts.isPropertyAccessExpression(value) && !value.questionDotToken &&
+        ts.isIdentifier(value.expression) && value.expression.text === parameter.name.getText(parsed) && value.name.text === 'id'
+      if (!((isId(body.left) && ts.isStringLiteral(body.right)) ||
+        (ts.isStringLiteral(body.left) && isId(body.right)))) fail()
+      references.add(node)
+    }
+    ts.forEachChild(node, inspect)
+  }
+  inspect(parsed)
+  // Include import bindings too so the generated name cannot shadow an import.
+  for (const declaration of parsed.statements) {
+    if (ts.isImportDeclaration(declaration)) {
+      const collect = (node: ts.Node): void => {
+        if (ts.isIdentifier(node)) identifiers.add(node.text)
+        ts.forEachChild(node, collect)
+      }
+      collect(declaration)
+    }
+  }
+  let helper = '__mercatoGetModules'
+  while (identifiers.has(helper)) helper += '_'
+  const result = ts.transform(parsed, [context => {
+    const visitor: ts.Visitor = node => {
+      if (ts.isImportDeclaration(node) && imports.includes(node)) return undefined
+      if (ts.isIdentifier(node) && references.has(node)) {
+        return ts.factory.createCallExpression(ts.factory.createIdentifier(helper), undefined, [])
+      }
+      return ts.visitEachChild(node, visitor, context)
+    }
+    return node => {
+      const updated = ts.visitNode(node, visitor) as ts.SourceFile
+      if (!references.size) return updated
+      const declaration = ts.factory.createImportDeclaration(undefined,
+        ts.factory.createImportClause(false, undefined, ts.factory.createNamedImports([
+          ts.factory.createImportSpecifier(false, ts.factory.createIdentifier('getModules'), ts.factory.createIdentifier(helper)),
+        ])), ts.factory.createStringLiteral('@open-mercato/shared/lib/modules/registry'))
+      // Append the import so leading directives retain their position.
+      return ts.factory.updateSourceFile(updated, [...updated.statements, declaration])
+    }
+  }])
+  try {
+    return ts.createPrinter().printFile(result.transformed[0])
+  } finally {
+    result.dispose()
+  }
+}
+
 function rewriteSource(
   source: string,
   file: string,
@@ -126,7 +222,7 @@ function rewriteSource(
   id: string,
   onDependency: (name: string) => void = () => {},
 ): string {
-  const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
+  const parsed = ts.createSourceFile(file, rewriteHostModuleChecks(source, file), ts.ScriptTarget.Latest, true)
   function specifier(value: string) {
     const target = localTarget(file, value, root, id)
     if (target) {

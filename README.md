@@ -52,6 +52,8 @@ yarn setup
 
 `init` creates `src/modules/visits`, registers it as `@app`, and runs generation. `yarn setup` initializes your new app and starts its development server; leave it running. Open `/backend/visits` using the app credentials printed in the terminal, then build your feature in `src/modules/visits`.
 
+The scaffold is a starting point: one page and its translations. From here you will probably want a coding agent to build the module out. The app already carries agent instructions (`AGENTS.md`) for the tools you chose in step 1, so open the app in your agent once `yarn setup` is running and describe the feature, for example: "In `src/modules/visits`, add a Visit entity with a list page and a create form." Keep the dev server running so you can check each change at `/backend/visits`.
+
 If your app is already initialized and running, use only `init` and continue with its existing dev server.
 
 ### 3. Publish your module
@@ -91,13 +93,32 @@ Keep developing locally and run the same command for later releases. The app can
 
 ## Develop in a dedicated repository
 
-After publishing, connect the module repository to your current app:
+Run inside any Open Mercato app. Give `link` a repository or an npm package:
 
 ```bash
-npx create-mercato-module link visits
+npx create-mercato-module link pkarw/visits-example
+# These work too:
+npx create-mercato-module link https://github.com/pkarw/visits-example.git
+npx create-mercato-module link @piotrkarwatka/visits
 ```
 
-The tool clones the repository under `.mercato`, backs up your original source, and links `src/modules/visits` to the checkout. Keep editing and running the same app; those edits now belong to the module repository.
+The npm form discovers the GitHub repository from the package's npm metadata. The package name and module ID come from the repository; no npm package name prompt or prior `init` is needed. A bare repository name uses your authenticated GitHub account. If the package has no dedicated module repository, the command explains how to fix it.
+
+Optionally name the local checkout folder:
+
+```bash
+npx create-mercato-module link pkarw/visits-example my-visits
+```
+
+The tool clones under `.mercato/module-repos/my-visits` (default: the module ID), links `src/modules/visits`, registers it as `@app`, and runs generation. Existing local source is backed up. The local folder name does not change the module ID, routes, or imports.
+
+Edit through the app, then release from the linked repository using the saved package and repository settings:
+
+```bash
+npx create-mercato-module publish visits
+```
+
+Publication includes your linked edits, preserves repository customizations, and suggests the next patch version. `link visits` still works when the repository is saved. For a new local module, publish it with `publish visits --repo owner/repo` before linking it.
 
 This link is local: a fresh clone of the whole app needs the module source restored or linked again. See [repository development and PR workflow](docs/guide.md#develop-in-the-dedicated-repository-without-leaving-your-app) for details.
 

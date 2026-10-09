@@ -157,7 +157,7 @@ test('linked publication rejects credentials and private:true in repository mani
 })
 
 test('GitHub-style packing of raw repository aliases installs and discovers portable runtime in a different app', { skip: !process.env.OPEN_MERCATO_ROOT, timeout: 120000 }, async context => {
-  const { app, settings, metadata, checkout } = fixture(context)
+  const { app, settings, checkout } = fixture(context)
   const framework = fs.realpathSync(process.env.OPEN_MERCATO_ROOT)
   const sourceRoot = path.join(checkout, 'src/modules/visits')
   fs.mkdirSync(path.join(sourceRoot, 'lib'))
