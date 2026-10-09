@@ -1,0 +1,12 @@
+{
+  "name": "create-mercato-module",
+  "version": "0.1.0",
+  "description": "Create and publish a single module from an existing Open Mercato app.",
+  "license": "MIT",
+  "bin": { "create-mercato-module": "bin/cli.cjs" },
+  "files": ["bin", "lib", "README.md", "LICENSE"],
+  "engines": { "node": ">=24" },
+  "scripts": { "test": "node --test test/*.test.cjs" },
+  "dependencies": { "typescript": "6.0.3" },
+  "publishConfig": { "access": "public" }
+}
