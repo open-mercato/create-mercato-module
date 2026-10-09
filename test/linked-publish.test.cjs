@@ -149,7 +149,11 @@ test('linked publication rejects credentials and private:true in repository mani
   writeJson(path.join(checkout, 'package.json'), { ...manifest, scripts: { ...manifest.scripts, postinstall: 'node setup.js' } })
   const prepared = exportLinkedPackage(app, 'visits', settings, metadata)
   assert.deepEqual(prepared.installScripts, ['postinstall'])
-  assert.deepEqual(publicationRisks(prepared, settings, { state: 'exists', private: true, head: 'a'.repeat(40) }).map((risk) => risk.flag), ['allow-install-scripts'])
+  assert.equal(prepared.linkedBranch, 'main')
+  assert.deepEqual(publicationRisks(prepared, settings, { state: 'exists', private: true, defaultBranch: 'main', head: 'a'.repeat(40) }).map((risk) => risk.flag), ['allow-install-scripts'])
+  assert.deepEqual(prepared.notes, [])
+  fs.writeFileSync(path.join(checkout, '.github/workflows/publish.yml'), 'jobs:\n  publish:\n    steps:\n      - uses: actions/checkout@v4\n')
+  assert.match(exportLinkedPackage(app, 'visits', settings, metadata).notes.join('\n'), /pinned by tag/)
 })
 
 test('GitHub-style packing of raw repository aliases installs and discovers portable runtime in a different app', { skip: !process.env.OPEN_MERCATO_ROOT, timeout: 120000 }, async context => {

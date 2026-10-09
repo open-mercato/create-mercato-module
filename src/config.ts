@@ -77,7 +77,6 @@ function settingsFrom(value: unknown): SavedSettings {
     'auth',
     'tag',
     'lastPublishedVersion',
-    'lastReleaseCommit',
   ] as const
   for (const key of keys) {
     if (value[key] === undefined) continue
@@ -162,9 +161,6 @@ export function saveConfig(
     ...(previous?.lastPublishedVersion
       ? { lastPublishedVersion: previous.lastPublishedVersion }
       : {}),
-    ...(previous?.lastReleaseCommit
-      ? { lastReleaseCommit: previous.lastReleaseCommit }
-      : {}),
     ...(previous?.development ? { development: previous.development } : {}),
     ...(published ? { lastPublishedVersion: settings.version } : {}),
   })
@@ -180,14 +176,5 @@ export function saveDevelopment(
   saveConfig(app, id, settings, false)
   const config = loadConfig(app)
   config.modules[id].development = developmentLink(development)
-  writeConfig(app, config)
-}
-
-export function saveReleaseCommit(app: App, id: string, commit: string): void {
-  validateId(id)
-  if (!/^[0-9a-f]{40,64}$/.test(commit)) return
-  const config = loadConfig(app)
-  if (!config.modules[id]) return
-  config.modules[id].lastReleaseCommit = commit
   writeConfig(app, config)
 }

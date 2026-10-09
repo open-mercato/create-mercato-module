@@ -27,7 +27,7 @@ function fixture(context) {
   fs.mkdirSync(binary)
   const actualNpm = fs.realpathSync(spawnSync('which', ['npm'], { encoding: 'utf8' }).stdout.trim())
   function npm(success) {
-    fs.writeFileSync(path.join(binary, 'npm'), `#!${process.execPath}\nconst {spawnSync}=require('node:child_process'); if(process.argv[2]==='whoami'){console.log('fixture');process.exit(${success ? 0 : 1})} const result=spawnSync(${JSON.stringify(process.execPath)},[${JSON.stringify(actualNpm)},...process.argv.slice(2)],{stdio:'inherit'});process.exit(result.status ?? 1)\n`, { mode: 0o755 })
+    fs.writeFileSync(path.join(binary, 'npm'), `#!${process.execPath}\nconst {spawnSync}=require('node:child_process'); if(process.argv[2]==='whoami'){console.log('fixture');process.exit(${success ? 0 : 1})} if(process.env.FIXTURE_REGISTRY){if(process.argv[2]==='view'){console.error('npm error code E404');process.exit(1)} if(process.argv[2]==='publish'){require('node:fs').writeFileSync(process.env.FIXTURE_REGISTRY,JSON.stringify(process.argv.slice(2)));process.exit(0)}} const result=spawnSync(${JSON.stringify(process.execPath)},[${JSON.stringify(actualNpm)},...process.argv.slice(2)],{stdio:'inherit'});process.exit(result.status ?? 1)\n`, { mode: 0o755 })
   }
   npm(true)
   const preload = path.join(root, 'interactive.cjs')
@@ -145,7 +145,17 @@ test('publication needs the package name retyped interactively and explicit appr
   const shortcut = cli(arguments_)
   assert.equal(shortcut.status, 0, shortcut.output)
   assert.match(shortcut.output, /Publication canceled/, 'y/yes must not approve a publication')
+  process.env.FIXTURE_CONFIRMATION = settings.packageName
+  process.env.FIXTURE_REGISTRY = path.join(app.directory, '..', 'published.json')
+  context.after(() => { delete process.env.FIXTURE_REGISTRY })
+  const confirmed = cli(arguments_)
+  assert.equal(confirmed.status, 0, confirmed.output)
+  assert.match(confirmed.output, /Submitted @fixture\/visits@0\.1\.0/)
+  assert.equal(JSON.parse(fs.readFileSync(process.env.FIXTURE_REGISTRY, 'utf8'))[0], 'publish')
+  assert.equal(loadConfig(app).modules.visits.lastPublishedVersion, '0.1.0')
   delete process.env.FIXTURE_CONFIRMATION
+  delete process.env.FIXTURE_REGISTRY
+  fs.rmSync(path.join(app.directory, '.mercato/module-tool.json'))
   const unattended = cli(arguments_, false)
   assert.equal(unattended.status, 1, unattended.output)
   assert.match(unattended.output, /Nothing was published.*--yes/s)

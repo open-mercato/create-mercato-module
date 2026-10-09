@@ -14,27 +14,36 @@ function github(responses) {
   }
 }
 
-test('repository inspection reports visibility and latest commit, and never guesses on errors', () => {
+test('repository inspection reports visibility, branch and latest commit, and never guesses on errors', () => {
   const details = { status: 0, stdout: JSON.stringify({ private: false, default_branch: 'main' }), stderr: '' }
-  assert.deepEqual(inspectRepository('fixture/visits', '/tmp', github({ 'repos/fixture/visits': { status: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' } })), { state: 'missing' })
-  assert.deepEqual(inspectRepository('fixture/visits', '/tmp', github({ 'repos/fixture/visits': details, 'repos/fixture/visits/commits/main': { status: 0, stdout: `${head}\n`, stderr: '' } })), { state: 'exists', private: false, head })
-  assert.deepEqual(inspectRepository('fixture/visits', '/tmp', github({ 'repos/fixture/visits': details, 'repos/fixture/visits/commits/main': { status: 1, stdout: '', stderr: 'Git Repository is empty. (HTTP 409)' } })), { state: 'exists', private: false })
-  assert.throws(() => inspectRepository('fixture/visits', '/tmp', github({})), /nothing was published/)
-  assert.throws(() => inspectRepository('fixture/visits', '/tmp', github({ 'repos/fixture/visits': details })), /nothing was published/)
-  assert.throws(() => inspectRepository('fixture/visits', '/tmp', github({ 'repos/fixture/visits': { status: 0, stdout: '{}', stderr: '' } })), /incomplete/)
+  const commit = (message) => ({ status: 0, stdout: `${JSON.stringify([head, message])}\n`, stderr: '' })
+  const inspect = (responses) => inspectRepository('fixture/visits', '/tmp', github(responses))
+  assert.deepEqual(inspect({ 'repos/fixture/visits': { status: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' } }), { state: 'missing' })
+  assert.deepEqual(inspect({ 'repos/fixture/visits': details, 'repos/fixture/visits/commits/main': commit('Release @fixture/visits@0.1.0\n\nMercato-Source: app') }), { state: 'exists', private: false, defaultBranch: 'main', head, appRelease: true })
+  for (const message of ['Merge pull request #1', 'Release @fixture/visits@0.1.0', 'Release @fixture/visits@0.1.0\n\nMercato-Source: repository', 'Not Mercato-Source: app'])
+    assert.equal(inspect({ 'repos/fixture/visits': details, 'repos/fixture/visits/commits/main': commit(message) }).appRelease, false, message)
+  assert.deepEqual(inspect({ 'repos/fixture/visits': details, 'repos/fixture/visits/commits/main': { status: 1, stdout: '', stderr: 'Git Repository is empty. (HTTP 409)' } }), { state: 'exists', private: false, defaultBranch: 'main' })
+  assert.throws(() => inspect({}), /nothing was published/)
+  assert.throws(() => inspect({ 'repos/fixture/visits': details }), /nothing was published/)
+  assert.throws(() => inspect({ 'repos/fixture/visits': details, 'repos/fixture/visits/commits/main': { status: 0, stdout: 'null', stderr: '' } }), /unreadable latest commit/)
+  assert.throws(() => inspect({ 'repos/fixture/visits': { status: 0, stdout: '{}', stderr: '' } }), /incomplete/)
 })
 
-test('publication risks need approval for public source, unreleased repository commits and install scripts', () => {
+test('publication risks need approval for public source, unreleased repository commits, branches and install scripts', () => {
   const prepared = { manifest: {} }
+  const linked = { ...prepared, linkedCheckout: '/checkout', linkedBranch: 'main' }
+  const repository = { state: 'exists', private: true, defaultBranch: 'main', head, appRelease: true }
   const flags = (...args) => publicationRisks(...args).map((risk) => risk.flag)
-  assert.deepEqual(flags(prepared, settings, { state: 'exists', private: false, head }, head), ['allow-public-repo'])
-  assert.deepEqual(flags(prepared, settings, { state: 'exists', private: true, head }, head), [])
-  assert.deepEqual(flags(prepared, { ...settings, access: 'public' }, { state: 'exists', private: false, head }, head), [])
-  assert.deepEqual(flags(prepared, settings, { state: 'exists', private: true, head }, 'b'.repeat(40)), ['overwrite-repo'])
-  assert.deepEqual(flags(prepared, settings, { state: 'exists', private: true, head }), ['overwrite-repo'], 'an unknown last release is not proof that nothing changed')
-  assert.deepEqual(flags(prepared, settings, { state: 'exists', private: true }), [])
+  assert.deepEqual(flags(prepared, settings, repository), [])
+  assert.deepEqual(flags(prepared, settings, { ...repository, private: false }), ['allow-public-repo'])
+  assert.deepEqual(flags(prepared, { ...settings, access: 'public' }, { ...repository, private: false }), [])
+  assert.deepEqual(flags(prepared, settings, { ...repository, appRelease: false }), ['overwrite-repo'])
+  assert.deepEqual(flags(prepared, settings, { state: 'exists', private: true, defaultBranch: 'main' }), [], 'an empty repository has nothing to overwrite')
   assert.deepEqual(flags(prepared, settings, { state: 'missing' }), [])
-  assert.deepEqual(flags({ ...prepared, linkedCheckout: '/checkout', installScripts: ['postinstall'] }, settings, { state: 'exists', private: true, head }), ['allow-install-scripts'])
+  assert.deepEqual(flags(prepared, settings, undefined), [])
+  assert.deepEqual(flags(linked, settings, { ...repository, appRelease: false }), [], 'a linked checkout is the source and is never overwritten')
+  assert.deepEqual(flags({ ...linked, linkedBranch: 'feature' }, settings, repository), ['allow-branch'])
+  assert.deepEqual(flags({ ...linked, installScripts: ['postinstall'] }, settings, repository), ['allow-install-scripts'])
 })
 
 test('npm commands stay on the npm registry despite inherited and scoped registry settings', () => {
@@ -50,5 +59,7 @@ test('generated workflow pins actions to commits and limits manual runs to the d
   const workflow = createPublishWorkflow('public')
   assert.doesNotMatch(workflow, /uses: [^\n]+@v\d/)
   assert.match(workflow, /uses: actions\/checkout@[0-9a-f]{40} # v4/)
+  assert.doesNotMatch(workflow, /npm install --ignore-scripts/, 'an unlocked install of every dependency must not precede publication')
+  assert.match(workflow, /typescript@\$\(node -p/)
   assert.match(workflow, /if: github\.ref_type == 'tag' \|\| github\.ref_name == github\.event\.repository\.default_branch/)
 })

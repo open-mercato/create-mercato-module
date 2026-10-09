@@ -10,12 +10,7 @@ import {
   inspectRepository,
   publicationRisks,
 } from './publish.js'
-import {
-  loadConfig,
-  saveConfig,
-  saveDevelopment,
-  saveReleaseCommit,
-} from './config.js'
+import { loadConfig, saveConfig, saveDevelopment } from './config.js'
 import { linkDevelopment } from './development.js'
 import { checkAuthentication } from './npm-auth.js'
 
@@ -40,6 +35,7 @@ Publish options:
   --yes                      approve the displayed publication without a prompt
   --allow-public-repo        approve pushing a restricted package's source to a public repo
   --overwrite-repo           approve replacing repository changes this app did not release
+  --allow-branch             approve releasing a linked module from a non-default branch
   --allow-install-scripts    approve publishing install scripts from the module repository
 
 Link options:
@@ -80,6 +76,7 @@ function parse(argv: string[]): ParsedArguments {
           'configure',
           'allow-public-repo',
           'overwrite-repo',
+          'allow-branch',
           'allow-install-scripts',
         ]
       : ['no-generate']
@@ -266,17 +263,13 @@ async function main(argv = process.argv.slice(2)) {
     console.log(
       `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
     )
-    const risks = publicationRisks(
-      prepared,
-      settings,
-      repository,
-      previous.lastReleaseCommit,
-    )
+    const risks = publicationRisks(prepared, settings, repository)
     for (const risk of risks)
       console.log(`\n⚠️ ${risk.message}\n   Option: --${risk.flag}`)
+    for (const note of prepared.notes ?? []) console.log(`\nℹ️ ${note}`)
     if (args.flags['dry-run'])
       return console.log(
-        '\n✅ Dry run complete. No npm/GitHub publication or app Git changes.',
+        `\n✅ Dry run complete. No npm/GitHub publication or app Git changes.${settings.repository ? '\nℹ️ GitHub checks (repository visibility, unreleased commits, branch) run when you publish.' : ''}`,
       )
     if (!prompt) {
       const missing = [
@@ -305,7 +298,6 @@ async function main(argv = process.argv.slice(2)) {
       ...(repository && !prepared.linkedCheckout
         ? { expectedHead: repository.head ?? null }
         : {}),
-      onPushed: (commit) => saveReleaseCommit(app, args.id, commit),
     })
     saveConfig(app, args.id, settings, true)
     console.log(

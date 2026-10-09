@@ -15,7 +15,10 @@ import {
 export interface RepositoryInfo {
   state: 'exists' | 'missing'
   private?: boolean
+  defaultBranch?: string
   head?: string
+  // The latest commit is an export of an app module made by this tool.
+  appRelease?: boolean
 }
 
 export interface PublicationRisk {
@@ -26,8 +29,12 @@ export interface PublicationRisk {
 export interface PublishOptions {
   // undefined: unchecked; null: the repository must still be empty.
   expectedHead?: string | null
-  onPushed?: (commit: string) => void
 }
+
+const exportWorkspaceAge = 15 * 60 * 1000
+// Marks which side a release commit came from, so any machine can tell.
+const sourceTrailer = 'Mercato-Source:'
+
 
 function createWorkspace(app: App, id: string): string {
   const root = path.join(app.directory, '.mercato/module-publish')
@@ -36,13 +43,15 @@ function createWorkspace(app: App, id: string): string {
     throw new Error(
       'The .mercato export directory must remain inside the application.',
     )
-  // Keep one export per module; earlier ones hold stale archives and clones.
+  // Earlier exports hold stale archives; recent ones may belong to a running publish.
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const directory = path.join(root, entry.name)
     if (
       entry.isDirectory() &&
-      new RegExp(`^${id}-[A-Za-z0-9]{6}$`).test(entry.name)
+      new RegExp(`^${id}-[A-Za-z0-9]{6}$`).test(entry.name) &&
+      Date.now() - fs.statSync(directory).mtimeMs > exportWorkspaceAge
     )
-      fs.rmSync(path.join(root, entry.name), { recursive: true, force: true })
+      fs.rmSync(directory, { recursive: true, force: true })
   }
   return fs.mkdtempSync(path.join(root, `${id}-`))
 }
@@ -72,7 +81,7 @@ function packPrepared(
     'npm',
     ['pack', '--json', '--ignore-scripts'],
     result.destination,
-    { capture: true },
+    { capture: true, timeout: 600_000 },
   )
   let entries: {
     filename: string
@@ -124,7 +133,7 @@ function exportLinkedPackage(
     )
   const source = linkedModuleDirectory(app, id, metadata)
   const checkout = path.join(app.directory, metadata.checkoutPath)
-  assertLinkedRepository(checkout, settings)
+  const linkedBranch = assertLinkedRepository(checkout, settings)
   if (
     !fs.existsSync(path.join(checkout, 'src/index.ts')) ||
     !fs.lstatSync(path.join(checkout, 'src/index.ts')).isFile()
@@ -213,6 +222,14 @@ function exportLinkedPackage(
       fs.copyFileSync(file, path.join(prepared.destination, name))
     }
   }
+  const workflow = path.join(checkout, '.github/workflows/publish.yml')
+  const notes =
+    fs.existsSync(workflow) &&
+    /uses:\s*\S+@v\d/.test(fs.readFileSync(workflow, 'utf8'))
+      ? [
+          'The repository publish.yml uses actions pinned by tag. Pin them to commit SHAs; a newly exported module shows the current workflow.',
+        ]
+      : []
   if (repositoryFingerprint(checkout, id) !== fingerprint)
     throw new Error(
       'The module changed while packaging. Retry to build one consistent release.',
@@ -221,7 +238,9 @@ function exportLinkedPackage(
     ...packPrepared({ ...prepared, manifest }, workspace),
     linkedCheckout: checkout,
     linkedFingerprint: fingerprint,
+    linkedBranch,
     installScripts,
+    notes,
   }
 }
 
@@ -229,7 +248,7 @@ function assertLinkedRepository(
   checkout: string,
   settings: Settings,
   execute: Executor = run,
-): void {
+): string {
   const gitRoot = execute('git', ['rev-parse', '--show-toplevel'], checkout, {
     capture: true,
   }).stdout.trim()
@@ -249,22 +268,21 @@ function assertLinkedRepository(
     throw new Error(
       'The linked repository origin does not match the saved GitHub repository. Check git remote -v in the module checkout.',
     )
-  if (
-    execute('git', ['symbolic-ref', '--quiet', 'HEAD'], checkout, {
-      capture: true,
-      allowFailure: true,
-    }).status !== 0
-  )
+  const branch = execute('git', ['symbolic-ref', '--quiet', 'HEAD'], checkout, {
+    capture: true,
+    allowFailure: true,
+  })
+  if (branch.status !== 0)
     throw new Error(
       'The module checkout is on a detached commit. Check out a branch before publishing.',
     )
+  return (branch.stdout || '').trim().replace(/^refs\/heads\//, '')
 }
 
 function publishLinkedRepository(
   prepared: ExportedPackage,
   settings: Settings,
   execute: Executor,
-  options: PublishOptions,
 ): void {
   const checkout = prepared.linkedCheckout!
   assertLinkedRepository(checkout, settings, execute)
@@ -330,24 +348,16 @@ function publishLinkedRepository(
   )
     execute(
       'git',
-      ['commit', '-m', `Release ${settings.packageName}@${settings.version}`],
+      [
+        'commit',
+        '-m',
+        `Release ${settings.packageName}@${settings.version}`,
+        '-m',
+        `${sourceTrailer} repository`,
+      ],
       checkout,
     )
   execute('git', ['push', '-u', 'origin', 'HEAD'], checkout)
-  reportPushed(checkout, execute, options)
-}
-
-function reportPushed(
-  checkout: string,
-  execute: Executor,
-  options: PublishOptions,
-): void {
-  if (!options.onPushed) return
-  const commit = execute('git', ['rev-parse', 'HEAD'], checkout, {
-    capture: true,
-    allowFailure: true,
-  })
-  if (commit.status === 0) options.onPushed((commit.stdout || '').trim())
 }
 
 function inspectRepository(
@@ -386,7 +396,7 @@ function inspectRepository(
       'api',
       `repos/${repository}/commits/${encodeURIComponent(details.default_branch)}`,
       '--jq',
-      '.sha',
+      '[.sha, .commit.message] | @json',
     ],
     cwd,
     { capture: true, allowFailure: true },
@@ -395,11 +405,30 @@ function inspectRepository(
     throw new Error(
       'Cannot read the latest commit of the GitHub repository; nothing was published.',
     )
-  const commit = head.status === 0 ? head.stdout.trim() : ''
-  return {
+  const info: RepositoryInfo = {
     state: 'exists',
     private: details.private,
-    ...(/^[0-9a-f]{40,64}$/.test(commit) ? { head: commit } : {}),
+    defaultBranch: details.default_branch,
+  }
+  if (head.status !== 0) return info
+  let commit: unknown
+  try {
+    commit = JSON.parse(head.stdout)
+  } catch {}
+  if (
+    !Array.isArray(commit) ||
+    typeof commit[0] !== 'string' ||
+    !/^[0-9a-f]{40,64}$/.test(commit[0])
+  )
+    throw new Error(
+      'GitHub returned an unreadable latest commit; nothing was published.',
+    )
+  return {
+    ...info,
+    head: commit[0],
+    appRelease: new RegExp(`^${sourceTrailer} app$`, 'm').test(
+      String(commit[1] ?? ''),
+    ),
   }
 }
 
@@ -408,7 +437,6 @@ function publicationRisks(
   prepared: ExportedPackage,
   settings: Settings,
   repository: RepositoryInfo | undefined,
-  lastReleaseCommit?: string,
 ): PublicationRisk[] {
   const risks: PublicationRisk[] = []
   if (
@@ -424,11 +452,20 @@ function publicationRisks(
     !prepared.linkedCheckout &&
     repository?.state === 'exists' &&
     repository.head &&
-    repository.head !== lastReleaseCommit
+    !repository.appRelease
   )
     risks.push({
       flag: 'overwrite-repo',
-      message: `${settings.repository} has commits that this app did not release. Publishing replaces its src, dist, types, README.md and workflow with this app's module; changes made only in the repository are removed from its latest commit. Use link to keep the repository as the source.`,
+      message: `The latest commit in ${settings.repository} was not released from an app by this tool. Publishing replaces its src, dist, types, README.md and workflow with this app's module; changes made only in the repository are removed from its latest commit. Use link to keep the repository as the source.`,
+    })
+  if (
+    prepared.linkedBranch &&
+    repository?.defaultBranch &&
+    prepared.linkedBranch !== repository.defaultBranch
+  )
+    risks.push({
+      flag: 'allow-branch',
+      message: `The module checkout is on branch ${prepared.linkedBranch}, not the repository default branch ${repository.defaultBranch}. The npm release would be built from this branch.`,
     })
   if (prepared.installScripts?.length)
     risks.push({
@@ -457,7 +494,7 @@ function publishRepository(
   options: PublishOptions = {},
 ) {
   if (prepared.linkedCheckout)
-    return publishLinkedRepository(prepared, settings, execute, options)
+    return publishLinkedRepository(prepared, settings, execute)
   const state = githubState(settings.repository!, prepared.workspace, execute)
   if (state === 'missing')
     execute(
@@ -549,12 +586,17 @@ function publishRepository(
   ) {
     execute(
       'git',
-      ['commit', '-m', `Release ${settings.packageName}@${settings.version}`],
+      [
+        'commit',
+        '-m',
+        `Release ${settings.packageName}@${settings.version}`,
+        '-m',
+        `${sourceTrailer} app`,
+      ],
       checkout,
     )
   }
   execute('git', ['push', '-u', 'origin', 'HEAD'], checkout)
-  reportPushed(checkout, execute, options)
   fs.rmSync(checkout, { recursive: true, force: true })
 }
 
