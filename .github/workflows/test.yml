@@ -33,6 +33,45 @@ jobs:
       - run: npm test
       - run: npm pack --dry-run
 
+  # Runs every unit test, including the ones that need a built Open Mercato
+  # checkout: real module discovery, eject, linked development and a Next.js
+  # dev server. The checkout follows the develop branch, like the scaffold
+  # used by the release checks.
+  framework-tests:
+    name: Tests against Open Mercato
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: open-mercato/open-mercato
+          ref: develop
+          path: open-mercato
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: corepack enable
+      - name: Install and build Open Mercato packages
+        working-directory: open-mercato
+        run: |
+          yarn install --immutable
+          yarn turbo run build --filter=@open-mercato/core --filter=@open-mercato/shared --filter=@open-mercato/ui --filter=@open-mercato/cli
+      - run: npm ci
+      - name: Run all tests, none skipped
+        env:
+          OPEN_MERCATO_ROOT: ${{ github.workspace }}/open-mercato
+        run: |
+          npm test | tee "$RUNNER_TEMP/tests.log"
+          if grep -q '# SKIP' "$RUNNER_TEMP/tests.log"; then
+            echo "::error::Tests were skipped although Open Mercato is available."
+            exit 1
+          fi
+
   # Publishes a fixture module with this tool and installs it into fresh apps.
   # The job holds no npm or GitHub credential: the registry is a throwaway
   # container without an uplink and "GitHub" is a set of local bare repositories,
