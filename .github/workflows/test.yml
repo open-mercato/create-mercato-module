@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -16,10 +20,57 @@ jobs:
         node: [24, 26]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
       - run: npm test
       - run: npm pack --dry-run
+
+  # Publishes a fixture module with this tool and installs it into fresh apps.
+  # The job holds no npm or GitHub credential: the registry is a throwaway
+  # container without an uplink and "GitHub" is a set of local bare repositories,
+  # so a run cannot leave packages on npmjs.com or repositories on github.com.
+  release-checks:
+    name: Publish and install (local registry, no secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: corepack enable
+      - run: npm ci
+      - run: npm run build
+      - name: Start the throwaway registry
+        run: |
+          docker run -d --name mercato-e2e-registry -p 127.0.0.1:4874:4873 \
+            -v "$PWD/test/release-e2e/verdaccio.yaml:/verdaccio/conf/config.yaml:ro" \
+            verdaccio/verdaccio@sha256:560744912b640ddc0f23cd475d296b663b656c0fcfa0ba17cc5ca1cbcb620225 # 6.10.5
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4874/-/ping >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs mercato-e2e-registry
+          exit 1
+      - name: Local release checks
+        run: npm run test:release:local -- --registry http://127.0.0.1:4874/ --results "$RUNNER_TEMP/release-checks"
+      - name: Keep diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-checks
+          path: |
+            ${{ runner.temp }}/release-checks/**/*.log
+            ${{ runner.temp }}/release-checks/**/*results.json
+          retention-days: 7

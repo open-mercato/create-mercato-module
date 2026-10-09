@@ -251,6 +251,8 @@ With a built Open Mercato checkout, also verify archive installation, standalone
 OPEN_MERCATO_ROOT=/path/to/open-mercato npm test
 ```
 
+To rehearse a whole publication without touching npmjs.com or GitHub, run the local release checks: they point the tool at a throwaway registry with `MERCATO_NPM_REGISTRY` (addresses on your machine only) and at local Git repositories.
+
 For release verification against **fresh, fully installed `create-mercato-app` applications**, use the repeatable [release end-to-end scripts](https://github.com/open-mercato/create-mercato-module/blob/main/test/release-e2e/README.md). They install a real module from both npm and GitHub, verify discovery and runtime behavior, and save sanitized results. Fixture publication is a separate explicit step; the harness does not create remote repositories or publish packages. Private fixture packages/repositories are supported.
 
 The Next source-link test verifies HTTP rendering and edits in a running dev server. It does not claim a database-backed CRUD flow or browser-level Fast Refresh coverage. Trusted Publishing requires the real npm publisher configuration and an Actions runner; local OIDC simulation is not evidence of a successful registry publication.

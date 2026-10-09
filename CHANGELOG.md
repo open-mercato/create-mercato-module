@@ -18,4 +18,9 @@
 - Keep npm commands on the npm registry for scoped packages.
 - Detect more credential formats and files; allow `.env.example`.
 - Generated workflow: actions pinned to commits, manual runs limited to the default branch, and without a lockfile only the pinned compiler is installed.
+- `MERCATO_NPM_REGISTRY` points publication at a test registry and accepts only addresses on this machine.
 - Captured commands have a timeout; stale exports under `.mercato/module-publish/` are removed.
+
+### Development
+
+- CI runs lint, typecheck, and build, and a secret-free job that publishes a fixture to a throwaway registry and local Git repositories, then installs it into fresh apps. See `test/release-e2e/README.md`.

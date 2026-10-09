@@ -12,7 +12,7 @@ import {
 } from './publish.js'
 import { loadConfig, saveConfig, saveDevelopment } from './config.js'
 import { linkDevelopment } from './development.js'
-import { checkAuthentication } from './npm-auth.js'
+import { checkAuthentication, resolveRegistry } from './npm-auth.js'
 
 const help = `Create and publish one module from an existing Open Mercato app.
 
@@ -158,6 +158,10 @@ async function main(argv = process.argv.slice(2)) {
   const settings = publicationSettings(previous, args.flags)
   if (settings.repository === '-') settings.repository = ''
   const initialRepository = settings.repository
+  if (args.command === 'publish' && process.env.MERCATO_NPM_REGISTRY)
+    console.log(
+      `🧪 Using the local test registry ${resolveRegistry()} (MERCATO_NPM_REGISTRY). Nothing is sent to npmjs.com.`,
+    )
   const authenticatedMode =
     args.command === 'publish' && !args.flags['dry-run']
       ? checkAuthentication(app.directory, settings)

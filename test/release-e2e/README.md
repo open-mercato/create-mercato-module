@@ -1,3 +1,44 @@
+# Release checks
+
+Two sets of checks install a published module into fresh `create-mercato-app` apps:
+
+- **Local release checks** publish and install with a throwaway registry and local Git repositories. They need no account, leave nothing on npmjs.com or github.com, and run in CI on every pull request.
+- **Real release installation checks** install a fixture you already published to npm and GitHub. Run them by hand before a release.
+
+## Local release checks
+
+```bash
+docker run -d --rm --name mercato-e2e-registry -p 127.0.0.1:4874:4873 \
+  -v "$PWD/test/release-e2e/verdaccio.yaml:/verdaccio/conf/config.yaml:ro" \
+  verdaccio/verdaccio:6
+
+npm run build
+npm run test:release:local -- --registry http://127.0.0.1:4874/ --results /tmp/mercato-module-local-checks
+
+docker rm -f mercato-e2e-registry
+```
+
+Use a port that is free on your machine, and a new results directory for every run. Stopping the container deletes everything that was published.
+
+What a run does:
+
+1. Scaffolds a real app, installs it, and writes the fixture module.
+2. Publishes the fixture twice with this tool (`publish --repo ... --yes`): the first run creates the repository, the second updates it. Each run really executes `npm publish`, `git commit`, and `git push`.
+3. Confirms that a run without approval publishes nothing.
+4. Installs the published module in that app from the registry, and in a second fresh app from the Git repository, then runs every check in the table below.
+
+How it stays local:
+
+| Real service | Stand-in | Why nothing can leak |
+| --- | --- | --- |
+| npmjs.com | [Verdaccio](https://verdaccio.org/) in a container, configured by `verdaccio.yaml` | No uplink, accepts only the `@mercato-e2e` scope. The tool is pointed at it with `MERCATO_NPM_REGISTRY`, which accepts only addresses on this machine. |
+| GitHub API and `gh` | `gh-shim.mjs`, first on `PATH` | Answers from bare repositories in the results directory and refuses any other command. |
+| GitHub as a Git host | The same bare repositories, served on a loopback port | Yarn installs from `http://127.0.0.1:<port>/...` instead of `github:`. |
+
+`NPM_TOKEN`, `NODE_AUTH_TOKEN`, `GH_TOKEN`, and `GITHUB_TOKEN` are removed from every command the checks start. The CI job has no secrets and a read-only token, so even a defect could not publish.
+
+Not covered locally, because there is no faithful stand-in: npm Trusted Publishing (OIDC), real GitHub permissions and branch protection, and `link` with a linked-repository release. Unit tests cover the linked flow against local repositories; verify Trusted Publishing on a real repository.
+
 # Real release installation checks
 
 These checks install actual registry and GitHub packages into two **fresh `create-mercato-app` apps**. They do not replace Yarn, framework packages, or the generated module with stubs. They never publish packages, create GitHub repositories, initialize a database, or modify a working application.
