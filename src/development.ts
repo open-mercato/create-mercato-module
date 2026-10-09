@@ -318,6 +318,58 @@ function excludeDependencies(checkout: string): void {
   )
 }
 
+// Linking needs the module to be released to its GitHub repository already.
+// Checked before anything is cloned or moved, with the command that fixes it.
+function assertPublishedRepository(
+  root: string,
+  id: string,
+  options: DevelopmentOptions,
+  execute: DevelopmentRunner,
+): void {
+  const publish = `  npx create-mercato-module publish ${id} --package ${options.packageName} --repo ${options.repository}`
+  const details = execute('gh', ['api', `repos/${options.repository}`], root, {
+    capture: true,
+    allowFailure: true,
+  })
+  if (details.status !== 0) {
+    if (/HTTP 404/.test(details.stderr))
+      throw new Error(
+        `🐙 ${options.repository} does not exist on GitHub yet, or your account cannot see it. Linking needs the module in its dedicated repository first. Publish it there:\n\n${publish}\n\nThen run link again. If the repository exists, check the owner/name and gh auth status. No files were changed.`,
+      )
+    throw new Error(
+      '🐙 Cannot inspect the GitHub repository. Check gh auth login and network access, then retry. No files were changed.',
+    )
+  }
+  const file = execute(
+    'gh',
+    [
+      'api',
+      `repos/${options.repository}/contents/package.json`,
+      '-H',
+      'Accept: application/vnd.github.raw',
+    ],
+    root,
+    { capture: true, allowFailure: true },
+  )
+  if (file.status !== 0) {
+    if (/HTTP 404/.test(file.stderr))
+      throw new Error(
+        `🐙 ${options.repository} exists, but this module has not been published to it yet. Publish it first:\n\n${publish}\n\nThen run link again. No files were changed.`,
+      )
+    throw new Error(
+      '🐙 Cannot read the GitHub repository. Check gh auth login and network access, then retry. No files were changed.',
+    )
+  }
+  let manifest: { name?: unknown; mercatoModule?: { id?: unknown } } = {}
+  try {
+    manifest = JSON.parse(file.stdout)
+  } catch {}
+  if (manifest.name !== options.packageName || manifest.mercatoModule?.id !== id)
+    throw new Error(
+      `🐙 ${options.repository} holds ${typeof manifest.name === 'string' ? manifest.name : 'another project'}, not ${options.packageName} / ${id}. Pass the repository this module was published to with --repo, or publish the module to a new dedicated repository:\n\n  npx create-mercato-module publish ${id} --package ${options.packageName} --repo <owner>/<new-repository>\n\nNo files were changed.`,
+    )
+}
+
 export function linkedModuleDirectory(
   app: DevelopmentApp,
   id: string,
@@ -403,6 +455,7 @@ export function linkDevelopment(
     throw new Error(
       `No local module found at src/modules/${id}/index.ts. Publish or create the local module before linking development.`,
     )
+  assertPublishedRepository(root, id, options, execute)
   const repoRoot = realDirectories(root, '.mercato/module-repos', true)
   const backupRoot = realDirectories(root, '.mercato/module-backups', true)
   const checkout = path.join(repoRoot, id)

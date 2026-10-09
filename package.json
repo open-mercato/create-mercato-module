@@ -36,10 +36,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
     "test": "npm run build && node --test test/*.test.cjs",
     "prepack": "npm run build",
     "prepare": "npm run build",
-    "test:release": "node test/release-e2e/run.mts"
+    "test:release": "node test/release-e2e/run.mts",
+    "test:release:local": "node test/release-e2e/local.mts"
   },
   "dependencies": {
     "typescript": "6.0.3"
@@ -49,6 +51,9 @@
     "registry": "https://registry.npmjs.org/"
   },
   "devDependencies": {
-    "@types/node": "^24.19.1"
+    "@eslint/js": "10.0.1",
+    "@types/node": "^24.19.1",
+    "eslint": "10.12.0",
+    "typescript-eslint": "8.71.1"
   }
 }

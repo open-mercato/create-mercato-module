@@ -52,6 +52,8 @@ yarn setup
 
 `init` creates `src/modules/visits`, registers it as `@app`, and runs generation. `yarn setup` initializes your new app and starts its development server; leave it running. Open `/backend/visits` using the app credentials printed in the terminal, then build your feature in `src/modules/visits`.
 
+The scaffold is a starting point: one page and its translations. From here you will probably want a coding agent to build the module out. The app already carries agent instructions (`AGENTS.md`) for the tools you chose in step 1, so open the app in your agent once `yarn setup` is running and describe the feature, for example: "In `src/modules/visits`, add a Visit entity with a list page and a create form." Keep the dev server running so you can check each change at `/backend/visits`.
+
 If your app is already initialized and running, use only `init` and continue with its existing dev server.
 
 ### 3. Publish your module
@@ -91,11 +93,19 @@ Keep developing locally and run the same command for later releases. The app can
 
 ## Develop in a dedicated repository
 
-After publishing, connect the module repository to your current app:
+The module must be in its dedicated GitHub repository before you can link it. Publish it there first; `--repo` creates the repository when it does not exist:
+
+```bash
+npx create-mercato-module publish visits --repo your-name/mercato-visits
+```
+
+Then connect that repository to your current app:
 
 ```bash
 npx create-mercato-module link visits
 ```
+
+`link` checks GitHub before it changes anything. If the repository does not exist, is empty, or holds a different package, it stops and prints the `publish` command to run.
 
 The tool clones the repository under `.mercato`, backs up your original source, and links `src/modules/visits` to the checkout. Keep editing and running the same app; those edits now belong to the module repository.
 

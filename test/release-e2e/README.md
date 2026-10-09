@@ -1,3 +1,55 @@
+# Release checks
+
+Two sets of checks install a published module into fresh `create-mercato-app` apps:
+
+- **Local release checks** publish and install with a throwaway registry and local Git repositories. They need no account, leave nothing on npmjs.com or github.com, and run in CI on every pull request.
+- **Real release installation checks** install a fixture you already published to npm and GitHub. Run them by hand before a release.
+
+## Local release checks
+
+```bash
+docker run -d --rm --name mercato-e2e-registry -p 127.0.0.1:4874:4873 \
+  -v "$PWD/test/release-e2e/verdaccio.yaml:/verdaccio/conf/config.yaml:ro" \
+  verdaccio/verdaccio:6
+
+docker run -d --rm --name mercato-e2e-db -p 127.0.0.1:54329:5432 \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=open-mercato \
+  -v "$PWD/test/release-e2e/postgres-init.sql:/docker-entrypoint-initdb.d/00-extensions.sql:ro" \
+  pgvector/pgvector:pg17-trixie
+
+npm run build
+npm run test:release:local -- \
+  --registry http://127.0.0.1:4874/ \
+  --database-url postgres://postgres:postgres@127.0.0.1:54329/open-mercato \
+  --results /tmp/mercato-module-local-checks
+
+docker rm -f mercato-e2e-registry mercato-e2e-db
+```
+
+Use ports that are free on your machine, and a new results directory for every run. Stopping the containers deletes everything that was published and the database. Both addresses must be on this machine; the checks initialize the database from scratch, so never point them at one you use. Without `--database-url` the full-app step is skipped.
+
+What a run does:
+
+1. Scaffolds a real app, installs it, creates a module with `init`, and adds a page, API, entity, translations, and an asset to it.
+2. Publishes that module twice with this tool (`publish --repo ... --yes`): the first run creates the repository, the second updates it. Each run really executes `npm publish`, `git commit`, and `git push`.
+3. Confirms that a run without approval publishes nothing.
+4. Scaffolds two more fresh apps and installs the published module into one from the registry and into the other from the Git repository, then runs every check in the table below.
+5. Initializes the first of those apps against the database, starts it, and uses the module as a signed-in user: the module API refuses anonymous requests and answers the seeded admin, and `/backend/release_checks` renders the module page.
+
+How it stays local:
+
+| Real service | Stand-in | Why nothing can leak |
+| --- | --- | --- |
+| npmjs.com | [Verdaccio](https://verdaccio.org/) in a container, configured by `verdaccio.yaml` | No uplink, accepts only the `@mercato-e2e` scope. The tool is pointed at it with `MERCATO_NPM_REGISTRY`, which accepts only addresses on this machine. |
+| GitHub API and `gh` | `gh-shim.mjs`, first on `PATH` | Answers from bare repositories in the results directory and refuses any other command. |
+| GitHub as a Git host | The same bare repositories, served on a loopback port | Yarn installs from `http://127.0.0.1:<port>/...` instead of `github:`. |
+
+`NPM_TOKEN`, `NODE_AUTH_TOKEN`, `GH_TOKEN`, and `GITHUB_TOKEN` are removed from every command the checks start. The CI job has no secrets and a read-only token, so even a defect could not publish.
+
+The app in step 5 runs its development server; the scaffold's production build is not part of these checks. The module's entity is discovered and loaded but has no migration, so no table is created for it.
+
+Not covered locally, because there is no faithful stand-in: npm Trusted Publishing (OIDC), real GitHub permissions and branch protection, and `link` with a linked-repository release. Unit tests cover the linked flow against local repositories; verify Trusted Publishing on a real repository.
+
 # Real release installation checks
 
 These checks install actual registry and GitHub packages into two **fresh `create-mercato-app` apps**. They do not replace Yarn, framework packages, or the generated module with stubs. They never publish packages, create GitHub repositories, initialize a database, or modify a working application.

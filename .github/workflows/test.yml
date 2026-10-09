@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -16,10 +20,107 @@ jobs:
         node: [24, 26]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
       - run: npm test
       - run: npm pack --dry-run
+
+  # Runs every unit test, including the ones that need a built Open Mercato
+  # checkout: real module discovery, eject, linked development and a Next.js
+  # dev server. The checkout follows the develop branch, like the scaffold
+  # used by the release checks.
+  framework-tests:
+    name: Tests against Open Mercato
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: open-mercato/open-mercato
+          ref: develop
+          path: open-mercato
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: corepack enable
+      - name: Install and build Open Mercato packages
+        working-directory: open-mercato
+        run: |
+          yarn install --immutable
+          yarn turbo run build --filter=@open-mercato/core --filter=@open-mercato/shared --filter=@open-mercato/ui --filter=@open-mercato/cli
+      - run: npm ci
+      - name: Run all tests, none skipped
+        env:
+          OPEN_MERCATO_ROOT: ${{ github.workspace }}/open-mercato
+        run: |
+          npm test | tee "$RUNNER_TEMP/tests.log"
+          if grep -q '# SKIP' "$RUNNER_TEMP/tests.log"; then
+            echo "::error::Tests were skipped although Open Mercato is available."
+            exit 1
+          fi
+
+  # Creates a module with init in a fresh app, publishes it with this tool,
+  # installs it into other fresh apps, then starts one of them with a database
+  # and uses the module as a signed-in user.
+  # The job holds no npm or GitHub credential: the registry is a throwaway
+  # container without an uplink and "GitHub" is a set of local bare repositories,
+  # so a run cannot leave packages on npmjs.com or repositories on github.com.
+  release-checks:
+    name: Create, publish, install and run (local, no secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: corepack enable
+      - run: npm ci
+      - run: npm run build
+      - name: Start the throwaway registry and database
+        run: |
+          docker run -d --name mercato-e2e-registry -p 127.0.0.1:4874:4873 \
+            -v "$PWD/test/release-e2e/verdaccio.yaml:/verdaccio/conf/config.yaml:ro" \
+            verdaccio/verdaccio@sha256:560744912b640ddc0f23cd475d296b663b656c0fcfa0ba17cc5ca1cbcb620225 # 6.10.5
+          docker run -d --name mercato-e2e-db -p 127.0.0.1:54329:5432 \
+            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=open-mercato \
+            -v "$PWD/test/release-e2e/postgres-init.sql:/docker-entrypoint-initdb.d/00-extensions.sql:ro" \
+            pgvector/pgvector@sha256:724a4041afdb1750446e3f6b5cfa8f3b0ac5a2cf538ddfa6bfee4f94c2fa85c6 # pg17-trixie
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4874/-/ping >/dev/null && docker exec mercato-e2e-db psql -U postgres -h 127.0.0.1 -d open-mercato -c 'select 1' >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          docker logs mercato-e2e-registry
+          docker logs mercato-e2e-db
+          exit 1
+      - name: Local release checks
+        run: >-
+          npm run test:release:local --
+          --registry http://127.0.0.1:4874/
+          --database-url postgres://postgres:postgres@127.0.0.1:54329/open-mercato
+          --results "$RUNNER_TEMP/release-checks"
+      - name: Keep diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-checks
+          path: |
+            ${{ runner.temp }}/release-checks/**/*.log
+            ${{ runner.temp }}/release-checks/**/*results.json
+          retention-days: 7
