@@ -7,7 +7,7 @@ Run these checks before releasing the tool. Ordinary unit tests are fast and rem
 ## Prerequisites
 
 - Node 24 or newer; Yarn 4 matching the scaffolded app; npm; Git; authenticated GitHub CLI for a private fixture repository.
-- A published fixture package and corresponding Git commit/tag. Use the fixture source below so assertions cover real behavior.
+- A published fixture package and corresponding Git commit/tag. Use the fixture source below so assertions cover real behavior. Private npm fixture publication requires an account or organization plan that permits private packages; otherwise npm rejects publication with `E402`.
 - For private npm packages, set `NPM_TOKEN` or `NODE_AUTH_TOKEN`, or log in with `npm login`. The harness reads the registry token from the active npm user config in memory when no token environment variable exists. It never prints or writes the token. Generated app Yarn config contains an environment placeholder and is restored afterward.
 - Available disk space for two complete apps and the Yarn package cache (approximately 8 GB). Dependencies are installed independently into each app.
 

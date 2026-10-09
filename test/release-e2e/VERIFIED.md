@@ -29,9 +29,11 @@ Verified:
 
 The complete command logs and stage report were retained locally in `/tmp/mercato-module-release-github-v011-node24-r2-20261009/`. Private test repositories and credentials are not required by the reusable scripts; use fixture inputs you control.
 
-## npm registry installation: pending
+## npm registry installation: blocked by account capability
 
-Private npm fixture publication requires the account's interactive publishing approval. Registry installation is not recorded as passed until the exact version is available and the `npm` lane completes with real downloads into a fresh app without Git.
+The account successfully authenticated and approved the private fixture publication, but npm rejected it with `E402: You must sign up for private packages`. The account used for this run cannot publish private npm packages without an eligible plan. No private fixture version became available in the registry, so the real npm installation lane could not start.
+
+The npm lane remains unverified. Complete it with an npm scope that permits private publication, or with explicit approval to publish the synthetic fixture publicly. The harness still requires the exact registry version before creating its fresh app without Git; it does not substitute a local archive for this check.
 
 ## Scope of HTTP verification
 
