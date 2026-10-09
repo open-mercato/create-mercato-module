@@ -90,6 +90,9 @@ function findApp(start = process.cwd()): App {
   }
 }
 
+const captureTimeout = 120_000
+const captureBuffer = 64 * 1024 * 1024
+
 function run(
   command: string,
   args: string[],
@@ -100,12 +103,20 @@ function run(
     cwd,
     encoding: 'utf8',
     stdio: options.capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    ...(options.capture
+      ? { timeout: captureTimeout, maxBuffer: captureBuffer }
+      : {}),
     ...options,
   })
-  if (result.error)
+  if (result.error) {
+    if ('code' in result.error && result.error.code === 'ETIMEDOUT')
+      throw new Error(
+        `${command} ${args[0] ?? ''} did not finish in time. Check network access and retry.`,
+      )
     throw new Error(
       `Cannot run ${command}: ${safeCommandOutput(result.error.message, options.env)}`,
     )
+  }
   if (result.status !== 0 && !options.allowFailure) {
     const details = options.capture
       ? safeCommandOutput(
@@ -145,6 +156,7 @@ function safeCommandOutput(
     for (const [key, value] of Object.entries(source)) {
       if (
         value &&
+        value.length >= 8 &&
         /token|secret|password|passwd|api_?key|authorization/i.test(key)
       )
         sanitized = sanitized.split(value).join('[REDACTED]')

@@ -48,11 +48,18 @@ const executeCommand: DevelopmentRunner = (
     cwd,
     encoding: 'utf8',
     stdio: options.capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    ...(options.capture
+      ? { timeout: 120_000, maxBuffer: 64 * 1024 * 1024 }
+      : {}),
   })
   if (result.error)
     throw new Error(`Cannot run ${command}: ${result.error.message}`)
-  if (result.status !== 0 && !options.allowFailure)
-    throw new Error(`${command} failed. Fix the reported error and retry.`)
+  if (result.status !== 0 && !options.allowFailure) {
+    const details = options.capture ? (result.stderr ?? '').trim() : ''
+    throw new Error(
+      `${command} failed.${details ? `\n\n${details.slice(-3000)}\n\nFix this error and retry.` : ' Fix the reported error and retry.'}`,
+    )
+  }
   return {
     status: result.status,
     stdout: result.stdout ?? '',
@@ -283,6 +290,32 @@ function shareDependencies(appRoot: string, checkout: string): void {
         'The module checkout has its own node_modules. Remove it before linking so the module shares the app React and framework packages.',
       )
   } else fs.symlinkSync(path.relative(checkout, dependencies), link, 'dir')
+  excludeDependencies(checkout)
+}
+
+// A `node_modules/` ignore rule does not match the symlink created above.
+function excludeDependencies(checkout: string): void {
+  const git = path.join(checkout, '.git')
+  if (
+    !exists(git) ||
+    !fs.lstatSync(git).isDirectory() ||
+    fs.lstatSync(git).isSymbolicLink()
+  )
+    return
+  const info = path.join(git, 'info')
+  if (!exists(info)) fs.mkdirSync(info)
+  const file = path.join(info, 'exclude')
+  if (
+    fs.lstatSync(info).isSymbolicLink() ||
+    (exists(file) && !fs.lstatSync(file).isFile())
+  )
+    return
+  const current = exists(file) ? fs.readFileSync(file, 'utf8') : ''
+  if (current.split(/\r?\n/).includes('/node_modules')) return
+  fs.writeFileSync(
+    file,
+    `${current}${current && !current.endsWith('\n') ? '\n' : ''}/node_modules\n`,
+  )
 }
 
 export function linkedModuleDirectory(
@@ -325,6 +358,7 @@ export function linkDevelopment(
   id: string,
   options: DevelopmentOptions,
   execute: DevelopmentRunner = executeCommand,
+  commit: (link: DevelopmentLink) => void = () => {},
 ): DevelopmentLink {
   validateIdentity(id, options)
   const root = fs.realpathSync(app.directory)
@@ -357,6 +391,7 @@ export function linkDevelopment(
       root,
       path.join(root, options.linkedDevelopment.checkoutPath),
     )
+    commit(options.linkedDevelopment)
     return options.linkedDevelopment
   }
   if (
@@ -416,7 +451,7 @@ export function linkDevelopment(
     const source = path.join(checkout, 'src/modules', id)
     fs.symlinkSync(path.relative(modules, source), moduleDirectory, 'dir')
     installedLink = true
-    return {
+    const link: DevelopmentLink = {
       formatVersion: 1,
       repository: options.repository,
       packageName: options.packageName,
@@ -424,6 +459,9 @@ export function linkDevelopment(
       sourcePath: path.relative(root, source).split(path.sep).join('/'),
       backupPath: path.relative(root, backup).split(path.sep).join('/'),
     }
+    // Saved inside the rollback scope: a link without metadata cannot be reused.
+    commit(link)
+    return link
   } catch (error) {
     if (installedLink) fs.unlinkSync(moduleDirectory)
     if (movedSource) fs.renameSync(backup, moduleDirectory)

@@ -58,6 +58,9 @@ export interface ExportedPackage extends PreparedPackage {
   integrity: string
   linkedCheckout?: string
   linkedFingerprint?: string
+  linkedBranch?: string
+  installScripts?: string[]
+  notes?: string[]
 }
 
 export type RunOptions = Omit<

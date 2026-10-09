@@ -6,6 +6,10 @@ import { createRequire } from 'node:module'
 import { readJson, writeJson, moduleDirectory } from './common.js'
 import { filesIn, rewriteSource, build, codePattern } from './build.js'
 import { createPublishWorkflow } from './workflow.js'
+import { assertNoCredentials } from './repository-safety.js'
+
+const localLocator =
+  /^(?:workspace:|file:|link:|portal:|patch:|git\+|git:|ssh:|https?:|github:)/
 
 function validateSettings(settings: Settings): void {
   if (
@@ -89,14 +93,7 @@ function preparePackage(
   const rewritten = new Map<string, string>()
   for (const file of files) {
     const contents = fs.readFileSync(file)
-    if (
-      /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9]{30,}|npm_[A-Za-z0-9]{30,})/.test(
-        contents.toString('utf8'),
-      )
-    )
-      throw new Error(
-        `Possible credential in ${path.relative(sourceRoot, file)}. Remove it before publishing.`,
-      )
+    assertNoCredentials(path.relative(sourceRoot, file), contents)
     if (codePattern.test(file)) {
       const source = contents.toString('utf8')
       rewritten.set(
@@ -115,12 +112,7 @@ function preparePackage(
       app.manifest.dependencies?.[name] ??
       app.manifest.devDependencies?.[name] ??
       app.manifest.peerDependencies?.[name]
-    if (
-      declared &&
-      /^(?:workspace:|file:|link:|portal:|patch:|git\+|https?:|github:)/.test(
-        declared,
-      )
-    )
+    if (declared && localLocator.test(declared))
       throw new Error(
         `Dependency ${name} uses a local/Git locator. Publish that dependency first and install its npm version.`,
       )
@@ -198,7 +190,7 @@ function preparePackage(
   )
   fs.writeFileSync(
     path.join(destination, '.gitignore'),
-    'node_modules/\n*.tgz\n.env*\n.npmrc\n',
+    'node_modules\n*.tgz\n.env*\n!.env.example\n.npmrc\n',
   )
   fs.mkdirSync(path.join(destination, '.github/workflows'), { recursive: true })
   fs.writeFileSync(
@@ -213,4 +205,4 @@ function preparePackage(
   return { destination, manifest, fileCount: files.length }
 }
 
-export { validateSettings, installedVersion, preparePackage }
+export { validateSettings, installedVersion, preparePackage, localLocator }

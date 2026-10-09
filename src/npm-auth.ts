@@ -4,6 +4,8 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { run } from './common.js'
 
+const registry = 'https://registry.npmjs.org/'
+
 function resolveAuth(
   requested = 'auto',
   environment: NodeJS.ProcessEnv = process.env,
@@ -38,12 +40,17 @@ function createNpmRunner(
   requested: string,
   execute: Executor = run,
   environment: NodeJS.ProcessEnv = process.env,
+  packageName = '',
 ) {
   const auth = resolveAuth(requested, environment)
-  const childEnvironment: NodeJS.ProcessEnv = {
-    ...environment,
-    npm_config_registry: 'https://registry.npmjs.org/',
+  const childEnvironment: NodeJS.ProcessEnv = { ...environment }
+  for (const key of Object.keys(childEnvironment)) {
+    if (/^npm_config_registry$/i.test(key)) delete childEnvironment[key]
   }
+  childEnvironment.npm_config_registry = registry
+  // A user-level @scope:registry mapping outranks the default registry.
+  const scope = /^(@[^/]+)\//.exec(packageName)?.[1]
+  const pinned = scope ? [`--${scope}:registry=${registry}`] : []
   let directory: string | undefined
   if (auth.mode !== 'login') {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-npm-auth-'))
@@ -72,7 +79,7 @@ function createNpmRunner(
     ) {
       return execute(
         command,
-        args,
+        command === 'npm' ? [...args, ...pinned] : args,
         command === 'npm' && directory ? directory : cwd,
         command === 'npm' ? { ...options, env: childEnvironment } : options,
       )
@@ -88,7 +95,12 @@ function checkAuthentication(
   settings: Settings,
   execute: Executor = run,
 ): string {
-  const npm = createNpmRunner(settings.auth || 'auto', execute)
+  const npm = createNpmRunner(
+    settings.auth || 'auto',
+    execute,
+    process.env,
+    settings.packageName,
+  )
   try {
     if (npm.mode === 'trusted') {
       const rawVersion = npm

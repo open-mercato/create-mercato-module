@@ -101,6 +101,12 @@ Packages one local module and publishes it after confirmation.
 | `--configure` | Reopen the wizard to edit remembered settings |
 | `--dry-run` | Build the archive without publishing or saving settings |
 | `--yes` | Publish the displayed package without an interactive prompt |
+| `--allow-public-repo` | Approve pushing a restricted package's source to an existing public GitHub repository |
+| `--overwrite-repo` | Approve replacing repository changes that this app did not release |
+| `--allow-branch` | Approve releasing a linked module from a branch other than the repository default |
+| `--allow-install-scripts` | Approve publishing `preinstall`, `install`, or `postinstall` scripts from a linked module repository |
+
+Nothing is published without approval. In a terminal, the tool shows the destinations and every warning, then asks you to retype the package name; anything else cancels. `y` is not accepted.
 
 For scripts or CI, supply the settings and explicit approval:
 
@@ -112,7 +118,7 @@ npx create-mercato-module publish visits \
   --yes
 ```
 
-Without `--yes`, a noninteractive invocation builds the archive and cancels publication. Private npm packages require the corresponding npm permissions. Repository visibility flags apply when creating a new repository; existing repository visibility is preserved.
+Without `--yes`, a noninteractive invocation builds the archive, publishes nothing, and exits with an error. Each warning in the summary additionally needs its own option, named next to the warning; `--yes` alone never approves a warning. Private npm packages require the corresponding npm permissions. Repository visibility flags apply when creating a new repository; existing repository visibility is preserved.
 
 ### `link <module_id>`
 
@@ -211,7 +217,7 @@ For an entity identifier, use the owning module's stable `module:entity` ID, or 
 
 ### How Git and releases work
 
-Without `link`, the application module remains the source of truth. The tool does not commit, push, or change the app's Git origin. GitHub export uses an isolated checkout under `.mercato/module-publish/`, then pushes a normal commit without forcing history. Existing repositories must be empty or contain the matching package and this tool's ownership marker. With `link`, the independent checkout becomes the module source; the app's symlink keeps development inside the same app.
+Without `link`, the application module remains the source of truth. The tool does not commit, push, or change the app's Git origin. GitHub export uses an isolated checkout under `.mercato/module-publish/`, then pushes a normal commit without forcing history. Existing repositories must be empty or contain the matching package and this tool's ownership marker. The export replaces the repository's `src`, `dist`, `types`, `README.md`, and workflow with the app's module, so when the repository's latest commit was not released from an app by this tool (a merged pull request, an edit on GitHub, a release from a linked checkout), the tool warns and asks for approval first. Release commits carry a `Mercato-Source:` trailer for this, so the check works from any machine and in CI. Exports older than 15 minutes are removed from `.mercato/module-publish/` on the next export. With `link`, the independent checkout becomes the module source; the app's symlink keeps development inside the same app.
 
 GitHub is updated before npm publication. If npm fails after the push, that Git commit may already exist; fix the reported login or version issue and retry. Published npm versions cannot be overwritten.
 

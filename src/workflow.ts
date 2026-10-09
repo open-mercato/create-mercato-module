@@ -16,17 +16,25 @@ concurrency:
 
 jobs:
   publish:
+    # Manual runs publish only from the default branch; tags publish their own commit.
+    if: github.ref_type == 'tag' || github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
-          if [ -f package-lock.json ]; then npm ci --ignore-scripts; else npm install --ignore-scripts; fi
+          if [ -f package-lock.json ]; then
+            npm ci --ignore-scripts
+          else
+            # Without a lockfile, install only the pinned compiler the build needs.
+            npm install --prefix "$RUNNER_TEMP/module-build" --no-save --no-package-lock --ignore-scripts "typescript@$(node -p "require('./package.json').devDependencies.typescript")"
+            echo "NODE_PATH=$RUNNER_TEMP/module-build/node_modules" >> "$GITHUB_ENV"
+          fi
         env:
           NODE_AUTH_TOKEN: \${{ secrets.NPM_READ_TOKEN }}
       - name: Check release tag
