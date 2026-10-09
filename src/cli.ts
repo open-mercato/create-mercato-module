@@ -10,15 +10,18 @@ import {
   inspectRepository,
   publicationRisks,
 } from './publish.js'
-import { loadConfig, saveConfig, saveDevelopment } from './config.js'
-import { linkDevelopment } from './development.js'
+import { loadConfig, saveConfig } from './config.js'
+import { linkFromInput } from './link.js'
+import { validateCheckoutName } from './development.js'
 import { checkAuthentication, resolveRegistry } from './npm-auth.js'
 
 const help = `Create and publish one module from an existing Open Mercato app.
 
   npx create-mercato-module init visits
   npx create-mercato-module publish visits
-  npx create-mercato-module link visits
+  npx create-mercato-module link <repo-or-npm-package> [local-name]
+  npx create-mercato-module link pkarw/visits-example
+  npx create-mercato-module link @piotrkarwatka/visits
 
 Existing modules can be published directly; init is optional.
 Settings are saved per module in .mercato/module-tool.json.
@@ -39,8 +42,12 @@ Publish options:
   --allow-install-scripts    approve publishing install scripts from the module repository
 
 Link options:
-  --package @your-name/visits  use this published module package
-  --repo your-name/visits     its dedicated GitHub repository
+  Repository URL, owner/repo, or repo name (your GitHub account).
+  npm packages discover their GitHub repository automatically.
+  Package name and module ID are read from the repository.
+  local-name optionally names the checkout folder; the module ID stays the same.
+  --package @your-name/visits  optional package identity check
+  --repo your-name/visits     repository override for link <module_id>
   --no-generate              link without running yarn generate
 
 Init options:
@@ -56,17 +63,24 @@ The app repository, its origin, and all other modules are preserved.
 
 type Flags = Record<string, string | boolean>
 type ParsedArguments =
-  { help: true } | { command: string; id: string; flags: Flags; help?: false }
+  | { help: true }
+  | {
+      command: string
+      id: string
+      localName?: string
+      flags: Flags
+      help?: false
+    }
 
 function parse(argv: string[]): ParsedArguments {
   if (!argv.length || argv.includes('--help') || argv.includes('-h'))
     return { help: true }
-  const [command, id, ...rest] = argv
+  const [command, ...rest] = argv
+  const positional: string[] = []
   if (!['init', 'publish', 'link'].includes(command))
     throw new Error(
       'Choose init, publish, or link. Run with --help for examples.',
     )
-  validateId(id)
   const flags: Flags = {}
   const booleans =
     command === 'publish'
@@ -87,6 +101,10 @@ function parse(argv: string[]): ParsedArguments {
         ? ['package', 'repo']
         : []
   for (let index = 0; index < rest.length; index += 1) {
+    if (!rest[index].startsWith('-')) {
+      positional.push(rest[index])
+      continue
+    }
     const key = rest[index].replace(/^--/, '')
     if (rest[index] !== `--${key}` || Object.hasOwn(flags, key))
       throw new Error(`Invalid or repeated option: ${rest[index]}`)
@@ -99,7 +117,14 @@ function parse(argv: string[]): ParsedArguments {
       flags[key] = rest[++index]
     else throw new Error(`Unknown option or missing value: --${key}`)
   }
-  return { command, id, flags }
+  const [id = '', localName] = positional
+  if (positional.length > (command === 'link' ? 2 : 1))
+    throw new Error(
+      'Too many arguments. Use link <repo-or-npm-package> [local-name].',
+    )
+  if (command !== 'link') validateId(id)
+  if (localName) validateCheckoutName(localName)
+  return { command, id, flags, ...(localName ? { localName } : {}) }
 }
 
 function releaseTag(
@@ -119,12 +144,12 @@ function publicationSettings(
   previous: Partial<SavedSettings>,
   flags: Flags,
 ): Settings {
+  const releasedVersion =
+    previous.lastPublishedVersion ||
+    (previous.development ? previous.version : undefined)
   const nextVersion =
-    previous.lastPublishedVersion &&
-    /^\d+\.\d+\.\d+$/.test(previous.lastPublishedVersion)
-      ? previous.lastPublishedVersion.replace(/\d+$/, (patch) =>
-          String(Number(patch) + 1),
-        )
+    releasedVersion && /^\d+\.\d+\.\d+$/.test(releasedVersion)
+      ? releasedVersion.replace(/\d+$/, (patch) => String(Number(patch) + 1))
       : previous.version || '0.1.0'
   const version = String(flags.version || '') || nextVersion
   return {
@@ -151,6 +176,38 @@ async function main(argv = process.argv.slice(2)) {
     console.log(
       `\nOpen /backend/${args.id} in the app. Build your feature in src/modules/${args.id}.\n🤖 Tip: with the app running (yarn setup), open it in your coding agent to build the module further.\nWhen ready: npx create-mercato-module publish ${args.id}`,
     )
+    return
+  }
+  if (args.command === 'link') {
+    let input = args.id
+    if (!input && process.stdin.isTTY) {
+      const prompt = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      })
+      try {
+        input = (
+          await prompt.question('🐙 GitHub repository or npm package: ')
+        ).trim()
+      } finally {
+        prompt.close()
+      }
+    }
+    if (!input)
+      throw new Error(
+        'Provide a GitHub repository or npm package: npx create-mercato-module link pkarw/visits-example',
+      )
+    const { id, development } = linkFromInput(
+      app,
+      input,
+      args.localName,
+      args.flags,
+    )
+    console.log(
+      `\n🔗 src/modules/${id} now points to ${development.sourcePath}.\n📦 Package: ${development.packageName}\n🐙 Edit your module in this app; changes belong to ${development.repository}.${development.backupPath ? `\n📁 Previous local source: ${development.backupPath}` : ''}\n🧩 Registered as @app.`,
+    )
+    if (!args.flags['no-generate']) run('yarn', ['generate'], app.directory)
+    console.log(`\nNext release: npx create-mercato-module publish ${id}`)
     return
   }
   const previous: Partial<SavedSettings> =
@@ -182,42 +239,6 @@ async function main(argv = process.argv.slice(2)) {
     return answer.trim() || value
   }
   try {
-    if (args.command === 'link') {
-      if (!args.flags.package && !settings.packageName)
-        settings.packageName = await ask(
-          '📦 npm package from the dedicated module repository',
-          '',
-        )
-      if (!args.flags.repo && !settings.repository)
-        settings.repository = await ask(
-          '🐙 Dedicated GitHub repo owner/name',
-          '',
-        )
-      validateSettings(settings)
-      if (!settings.repository || settings.repository === '-')
-        throw new Error(
-          '🐙 Linking development needs a dedicated GitHub repository. Publish with --repo owner/name first, or pass --repo owner/name to link.',
-        )
-      const development = linkDevelopment(
-        app,
-        args.id,
-        {
-          repository: settings.repository,
-          packageName: settings.packageName,
-          linkedDevelopment: previous.development,
-        },
-        undefined,
-        (link) => saveDevelopment(app, args.id, link, settings),
-      )
-      console.log(
-        `\n🔗 src/modules/${args.id} now points to ${development.sourcePath}.\n🐙 Edit your module in this app; changes belong to ${development.repository}.\n📁 Previous local source: ${development.backupPath}\n🧩 Registration remains @app.`,
-      )
-      if (!args.flags['no-generate']) run('yarn', ['generate'], app.directory)
-      console.log(
-        `\nNext release: npx create-mercato-module publish ${args.id}`,
-      )
-      return
-    }
     if (prompt) {
       console.log('\n🧩 Publish your Open Mercato module\n')
       const configure = Boolean(args.flags.configure)

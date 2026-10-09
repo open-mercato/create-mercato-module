@@ -33,6 +33,16 @@ if (args[0] === 'api' && args[1] === 'user') {
   process.exit(0)
 }
 
+const contents = args[0] === 'api' ? /^repos\/([^/]+\/[^/]+)\/contents\/package\.json$/.exec(args[1] ?? '') : null
+if (contents) {
+  const directory = repository(contents[1])
+  if (!fs.existsSync(directory)) fail('gh: Not Found (HTTP 404)')
+  const file = git(['show', 'main:package.json'], directory)
+  if (file.status !== 0) fail('gh: Not Found (HTTP 404)')
+  process.stdout.write(file.stdout)
+  process.exit(0)
+}
+
 const api = args[0] === 'api' ? /^repos\/([^/]+\/[^/]+)(?:\/commits\/(.+))?$/.exec(args[1] ?? '') : null
 if (api) {
   const directory = repository(api[1])
@@ -70,6 +80,11 @@ if (args[0] === 'repo' && args[1] === 'clone' && args[3]) {
   const directory = repository(args[2])
   if (!fs.existsSync(directory)) fail('gh: Not Found (HTTP 404)')
   const cloned = git(['clone', directory, args[3]], process.cwd())
+  if (cloned.status === 0) {
+    // Keep GitHub identity for validation; route pushes to the local bare repo.
+    git(['remote', 'set-url', 'origin', `https://github.com/${args[2]}.git`], args[3])
+    git(['remote', 'set-url', '--push', 'origin', directory], args[3])
+  }
   process.stderr.write(cloned.stderr)
   process.exit(cloned.status ?? 1)
 }

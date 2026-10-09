@@ -33,8 +33,9 @@ What a run does:
 1. Scaffolds a real app, installs it, creates a module with `init`, and adds a page, API, entity, translations, and an asset to it.
 2. Publishes that module twice with this tool (`publish --repo ... --yes`): the first run creates the repository, the second updates it. Each run really executes `npm publish`, `git commit`, and `git push`.
 3. Confirms that a run without approval publishes nothing.
-4. Scaffolds two more fresh apps and installs the published module into one from the registry and into the other from the Git repository, then runs every check in the table below.
-5. Initializes the first of those apps against the database, starts it, and uses the module as a signed-in user: the module API refuses anonymous requests and answers the seeded admin, and `/backend/release_checks` renders the module page.
+4. Links by npm package name alone with a custom checkout folder, edits source through the app, and publishes a third version from the linked repository, preserving its documentation.
+5. Scaffolds two more fresh apps and installs the published module into one from the registry and into the other from the Git repository, then runs every check in the table below.
+6. Initializes the first of those apps against the database, starts it, and uses the module as a signed-in user: the module API refuses anonymous requests and answers the seeded admin, and `/backend/release_checks` renders the module page.
 
 How it stays local:
 
@@ -46,9 +47,9 @@ How it stays local:
 
 `NPM_TOKEN`, `NODE_AUTH_TOKEN`, `GH_TOKEN`, and `GITHUB_TOKEN` are removed from every command the checks start. The CI job has no secrets and a read-only token, so even a defect could not publish.
 
-The app in step 5 runs its development server; the scaffold's production build is not part of these checks. The module's entity is discovered and loaded but has no migration, so no table is created for it.
+The app in step 6 runs its development server; the scaffold's production build is not part of these checks. The module's entity is discovered and loaded but has no migration, so no table is created for it.
 
-Not covered locally, because there is no faithful stand-in: npm Trusted Publishing (OIDC), real GitHub permissions and branch protection, and `link` with a linked-repository release. Unit tests cover the linked flow against local repositories; verify Trusted Publishing on a real repository.
+Not covered locally, because there is no faithful stand-in: npm Trusted Publishing (OIDC) and real GitHub permissions and branch protection. CLI integration tests and the local release harness cover linking and linked releases against local repositories; verify Trusted Publishing on a real repository.
 
 # Real release installation checks
 

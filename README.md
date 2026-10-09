@@ -93,21 +93,32 @@ Keep developing locally and run the same command for later releases. The app can
 
 ## Develop in a dedicated repository
 
-The module must be in its dedicated GitHub repository before you can link it. Publish it there first; `--repo` creates the repository when it does not exist:
+Run inside any Open Mercato app. Give `link` a repository or an npm package:
 
 ```bash
-npx create-mercato-module publish visits --repo your-name/mercato-visits
+npx create-mercato-module link pkarw/visits-example
+# These work too:
+npx create-mercato-module link https://github.com/pkarw/visits-example.git
+npx create-mercato-module link @piotrkarwatka/visits
 ```
 
-Then connect that repository to your current app:
+The npm form discovers the GitHub repository from the package's npm metadata. The package name and module ID come from the repository; no npm package name prompt or prior `init` is needed. A bare repository name uses your authenticated GitHub account. If the package has no dedicated module repository, the command explains how to fix it.
+
+Optionally name the local checkout folder:
 
 ```bash
-npx create-mercato-module link visits
+npx create-mercato-module link pkarw/visits-example my-visits
 ```
 
-`link` checks GitHub before it changes anything. If the repository does not exist, is empty, or holds a different package, it stops and prints the `publish` command to run.
+The tool clones under `.mercato/module-repos/my-visits` (default: the module ID), links `src/modules/visits`, registers it as `@app`, and runs generation. Existing local source is backed up. The local folder name does not change the module ID, routes, or imports.
 
-The tool clones the repository under `.mercato`, backs up your original source, and links `src/modules/visits` to the checkout. Keep editing and running the same app; those edits now belong to the module repository.
+Edit through the app, then release from the linked repository using the saved package and repository settings:
+
+```bash
+npx create-mercato-module publish visits
+```
+
+Publication includes your linked edits, preserves repository customizations, and suggests the next patch version. `link visits` still works when the repository is saved. For a new local module, publish it with `publish visits --repo owner/repo` before linking it.
 
 This link is local: a fresh clone of the whole app needs the module source restored or linked again. See [repository development and PR workflow](docs/guide.md#develop-in-the-dedicated-repository-without-leaving-your-app) for details.
 

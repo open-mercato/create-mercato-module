@@ -282,3 +282,20 @@ test('Next development server renders linked repository source and sees edits ma
   await waitForLabel('Linked repository edit without rebuilding')
   assert.match(fs.readFileSync(path.join(app.directory, metadata.sourcePath, 'backend/visits/page.tsx'), 'utf8'), /edit without rebuilding/)
 })
+
+for (const localSource of [true, false]) {
+  test(`automatic registration and source are restored when link metadata cannot be saved (local source: ${localSource})`, context => {
+    const app = fixture(context)
+    fs.writeFileSync(path.join(app.directory, 'src/modules.ts'), 'export const enabledModules = []\n')
+    if (!localSource) fs.rmSync(path.join(app.directory, 'src/modules'), { recursive: true })
+    assert.throws(() => linkDevelopment(app, 'visits', { ...settings, registerMissing: true, checkoutName: 'my-visits' }, app.execute, () => { throw new Error('metadata write refused') }), /metadata write refused/)
+    assert.equal(fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8'), 'export const enabledModules = []\n')
+    assert.equal(fs.existsSync(path.join(app.directory, 'src/modules')), localSource)
+    if (localSource) assert.match(fs.readFileSync(path.join(app.directory, 'src/modules/visits/index.ts'), 'utf8'), /Original local visits/)
+    assert.deepEqual(fs.readdirSync(path.join(app.directory, '.mercato/module-repos')), [])
+    assert.deepEqual(fs.readdirSync(path.join(app.directory, '.mercato/module-backups')), [])
+    const linked = linkDevelopment(app, 'visits', { ...settings, registerMissing: true }, app.execute)
+    assert.equal(Boolean(linked.backupPath), localSource)
+    assert.match(fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8'), /id: 'visits', from: '@app'/)
+  })
+}

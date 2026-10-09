@@ -204,7 +204,22 @@ export async function main(args: string[]): Promise<void> {
     assert.match(refused, /Nothing was published/)
     assert.equal((await (await fetch(new URL(packageName.replace('/', '%2f'), options.registry))).json() as { versions: Record<string, unknown> }).versions['0.0.3'], undefined, 'An unapproved run must not publish')
 
-    const version = versions.at(-1)!
+    // Link by the npm name alone, edit through the app, then publish from the
+    // owned checkout with saved settings. The registry and all pushes stay local.
+    const linked = await command('link-npm-module', process.execPath, [toolBin, 'link', packageName, 'linked-checks'], sourceApp)
+    assert.match(linked, /Registered as @app/)
+    const linkMetadata = JSON.parse(fs.readFileSync(path.join(sourceApp, '.mercato/module-tool.json'), 'utf8')).modules[fixtureContract.moduleId].development
+    assert.equal(linkMetadata.checkoutPath, '.mercato/module-repos/linked-checks')
+    const checkout = path.join(sourceApp, linkMetadata.checkoutPath)
+    const readme = fs.readFileSync(path.join(checkout, 'README.md'), 'utf8')
+    fs.writeFileSync(path.join(sourceApp, 'src/modules', fixtureContract.moduleId, 'linked-edit.ts'), 'export const linkedEdit = 42\n')
+    const linkedRelease = await command('publish-linked-module', process.execPath, [toolBin, 'publish', fixtureContract.moduleId, '--yes'], sourceApp)
+    assert.match(linkedRelease, /@mercato-e2e\/release-checks@0\.0\.3/)
+    assert.match(await command('linked-release-source', 'git', ['--git-dir', bare, 'show', `main:dist/modules/${fixtureContract.moduleId}/linked-edit.js`], options.results), /42/)
+    assert.equal(fs.readFileSync(path.join(checkout, 'README.md'), 'utf8'), readme)
+    assert.ok((await (await fetch(new URL(packageName.replace('/', '%2f'), options.registry))).json() as { versions: Record<string, unknown> }).versions['0.0.3'])
+
+    const version = '0.0.3'
     await command('prepare-git-server', 'git', ['--git-dir', bare, 'update-server-info'], options.results)
     server = await serveRepositories(githubRoot)
     fs.writeFileSync(path.join(options.results, 'local-results.json'), JSON.stringify({ createdAt: new Date().toISOString(), registry: options.registry, packageName, version, stages }, null, 2) + '\n')
