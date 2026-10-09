@@ -5,11 +5,11 @@ const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
-const { scaffold, registration } = require('../lib/scaffold.cjs')
-const { findApp, writeJson, readJson, run } = require('../lib/common.cjs')
-const { preparePackage, validateSettings } = require('../lib/package.cjs')
-const { exportPackage, githubState, publish, publishRepository, loadConfig, saveConfig } = require('../lib/publish.cjs')
-const { parse } = require('../bin/cli.cjs')
+const { scaffold, registration } = require('../dist/scaffold.js')
+const { findApp, writeJson, readJson, run } = require('../dist/common.js')
+const { preparePackage, validateSettings } = require('../dist/package.js')
+const { exportPackage, githubState, publish, publishRepository, loadConfig, saveConfig } = require('../dist/publish.js')
+const { parse } = require('../dist/cli.js')
 
 const settings = { packageName: '@fixture/visits', version: '0.1.0', repository: '', access: 'public' }
 
@@ -57,7 +57,7 @@ test('init and publish outside an Open Mercato app show actionable guidance and 
   fs.writeFileSync(path.join(unrelated, 'src/modules.ts'), 'export const enabledModules = []\n')
   const before = fs.readdirSync(unrelated, { recursive: true })
   for (const command of ['init', 'publish']) {
-    const result = spawnSync(process.execPath, [path.join(__dirname, '../bin/cli.cjs'), command, 'visits'], { cwd: unrelated, encoding: 'utf8' })
+    const result = spawnSync(process.execPath, [path.join(__dirname, '../dist/cli.js'), command, 'visits'], { cwd: unrelated, encoding: 'utf8' })
     assert.equal(result.status, 1)
     assert.match(result.stderr, /No Open Mercato app found here/)
     assert.ok(result.stderr.includes(unrelated))
@@ -66,7 +66,7 @@ test('init and publish outside an Open Mercato app show actionable guidance and 
     assert.match(result.stderr, /No files were changed/)
     assert.deepEqual(fs.readdirSync(unrelated, { recursive: true }), before)
   }
-  const help = spawnSync(process.execPath, [path.join(__dirname, '../bin/cli.cjs'), '--help'], { cwd: unrelated, encoding: 'utf8' })
+  const help = spawnSync(process.execPath, [path.join(__dirname, '../dist/cli.js'), '--help'], { cwd: unrelated, encoding: 'utf8' })
   assert.equal(help.status, 0)
 })
 
@@ -103,6 +103,11 @@ test('package contains only the selected module, both source/dist, assets and mi
   assert.ok(!fs.existsSync(path.join(destination, 'src/modules/visits/__tests__')))
   assert.equal(prepared.manifest.peerDependencies['@open-mercato/core'], '0.9.0')
   assert.equal(prepared.manifest.license, 'UNLICENSED')
+  fs.symlinkSync(path.resolve(__dirname, '../node_modules'), path.join(destination, 'node_modules'))
+  fs.rmSync(path.join(destination, 'dist'), { recursive: true })
+  run(process.execPath, ['build.cjs'], destination, { capture: true })
+  assert.ok(fs.existsSync(path.join(destination, 'dist/modules/visits/backend/visits/page.js')))
+  assert.ok(fs.existsSync(path.join(destination, 'dist/modules/visits/assets/mark.svg')))
 })
 
 test('rewrites own aliases, index imports and dynamic imports and records external dependencies', async (context) => {
@@ -201,7 +206,7 @@ test('real npm pack produces a usable archive without changing the source app Gi
 
 test('dry-run works without a source Git repository and makes no external publication calls', (context) => {
   const { app } = fixture(context)
-  const result = spawnSync(process.execPath, [path.join(__dirname, '../bin/cli.cjs'), 'publish', 'visits', '--package', settings.packageName, '--version', '0.1.0', '--repo', 'fixture/visits', '--dry-run'], { cwd: app.directory, encoding: 'utf8' })
+  const result = spawnSync(process.execPath, [path.join(__dirname, '../dist/cli.js'), 'publish', 'visits', '--package', settings.packageName, '--version', '0.1.0', '--repo', 'fixture/visits', '--dry-run'], { cwd: app.directory, encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /Dry run complete/)
   assert.ok(!fs.existsSync(path.join(app.directory, '.git')))

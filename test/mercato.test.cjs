@@ -3,9 +3,9 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { scaffold } = require('../lib/scaffold.cjs')
-const { writeJson, readJson, run } = require('../lib/common.cjs')
-const { exportPackage } = require('../lib/publish.cjs')
+const { scaffold } = require('../dist/scaffold.js')
+const { writeJson, readJson, run } = require('../dist/common.js')
+const { exportPackage } = require('../dist/publish.js')
 
 test('packed module installs and is discovered by the real standalone Mercato CLI, including eject', { skip: !process.env.OPEN_MERCATO_ROOT }, (context) => {
   const framework = fs.realpathSync(process.env.OPEN_MERCATO_ROOT)

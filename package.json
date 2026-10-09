@@ -1,16 +1,53 @@
 {
   "name": "create-mercato-module",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Create and publish a single module from an existing Open Mercato app.",
   "homepage": "https://github.com/open-mercato/create-mercato-module#readme",
-  "repository": { "type": "git", "url": "git+https://github.com/open-mercato/create-mercato-module.git" },
-  "bugs": { "url": "https://github.com/open-mercato/create-mercato-module/issues" },
-  "keywords": ["open-mercato", "mercato", "module", "cli", "scaffold", "npm", "sandbox"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/open-mercato/create-mercato-module.git"
+  },
+  "bugs": {
+    "url": "https://github.com/open-mercato/create-mercato-module/issues"
+  },
+  "keywords": [
+    "open-mercato",
+    "mercato",
+    "module",
+    "cli",
+    "scaffold",
+    "npm",
+    "sandbox"
+  ],
   "license": "MIT",
-  "bin": { "create-mercato-module": "bin/cli.cjs" },
-  "files": ["bin", "lib", "README.md", "LICENSE"],
-  "engines": { "node": ">=24" },
-  "scripts": { "test": "node --test test/*.test.cjs" },
-  "dependencies": { "typescript": "6.0.3" },
-  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" }
+  "bin": {
+    "create-mercato-module": "bin/cli.cjs"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.cjs",
+    "prepack": "npm run build",
+    "prepare": "npm run build",
+    "test:release": "node test/release-e2e/run.mts"
+  },
+  "dependencies": {
+    "typescript": "6.0.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1"
+  }
 }
