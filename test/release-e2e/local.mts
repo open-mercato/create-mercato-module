@@ -99,11 +99,15 @@ export async function main(args: string[]): Promise<void> {
 
   let server: Awaited<ReturnType<typeof serveRepositories>> | undefined
   try {
-    const sourceApp = path.join(options.results, 'npm-app')
+    const sourceApp = path.join(options.results, 'source-app')
     if (fs.existsSync(sourceApp)) throw new Error(`Refusing to overwrite existing app: ${sourceApp}`)
     await command('scaffold-source-app', npx, ['--yes', '--package', options.createApp, '--', 'create-mercato-app', sourceApp, '--preset', 'empty', '--agents', 'none', '--no-init-git'], options.results)
     await command('install-source-app', yarn, ['install'], sourceApp)
-    writeFixture(sourceApp)
+    // The published module starts as a real `init` scaffold and gains a page, API, entity and assets.
+    await command('init-module', process.execPath, [toolBin, 'init', fixtureContract.moduleId], sourceApp)
+    assert.match(fs.readFileSync(path.join(sourceApp, 'src/modules.ts'), 'utf8'), new RegExp(`id: '${fixtureContract.moduleId}', from: '@app'`), 'init must register the new module')
+    writeFixture(sourceApp, { extend: true })
+    await command('generate-source-app', yarn, ['generate'], sourceApp)
 
     const bare = path.join(githubRoot, `${repository}.git`)
     for (const [index, version] of versions.entries()) {
@@ -123,16 +127,14 @@ export async function main(args: string[]): Promise<void> {
     assert.equal((await (await fetch(new URL(packageName.replace('/', '%2f'), options.registry))).json() as { versions: Record<string, unknown> }).versions['0.0.3'], undefined, 'An unapproved run must not publish')
 
     const version = versions.at(-1)!
-    fs.rmSync(path.join(sourceApp, 'src/modules', fixtureContract.moduleId), { recursive: true })
     await command('prepare-git-server', 'git', ['--git-dir', bare, 'update-server-info'], options.results)
     server = await serveRepositories(githubRoot)
     fs.writeFileSync(path.join(options.results, 'local-results.json'), JSON.stringify({ createdAt: new Date().toISOString(), registry: options.registry, packageName, version, stages }, null, 2) + '\n')
 
     process.env.RELEASE_E2E_LOCAL_TOKEN = token
     const shared = ['--package', packageName, '--version', version, '--repo', repository, '--ref', 'main', '--create-app', options.createApp, '--registry', options.registry, '--git-url', `${server.url}${repository}.git`]
-    // The app that published the module becomes the registry consumer; the Git lane gets a fresh app.
-    await runLanes([...shared, '--lanes', 'npm', '--reuse-app', sourceApp, '--results', path.join(options.results, 'npm-lane')])
-    await runLanes([...shared, '--lanes', 'github', '--results', path.join(options.results, 'github-lane')])
+    // Each lane installs into its own fresh app, never the one that published the module.
+    await runLanes([...shared, '--lanes', 'npm,github', '--results', path.join(options.results, 'consumers')])
     process.stdout.write(`\n✅ Local release checks passed without contacting npmjs.com or github.com for the fixture. Results: ${options.results}\n`)
   } finally {
     delete process.env.RELEASE_E2E_LOCAL_TOKEN
