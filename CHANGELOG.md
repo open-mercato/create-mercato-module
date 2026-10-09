@@ -24,4 +24,4 @@
 ### Development
 
 - CI clones and builds Open Mercato and runs the framework integration tests that were skipped before.
-- CI runs lint, typecheck, and build, and a secret-free job that publishes a fixture to a throwaway registry and local Git repositories, then installs it into fresh apps. See `test/release-e2e/README.md`.
+- CI runs lint, typecheck, and build, and a secret-free job that creates a module with `init`, publishes it to a throwaway registry and local Git repositories, installs it into fresh apps, and starts one with a database to use the module as a signed-in user. See `test/release-e2e/README.md`.

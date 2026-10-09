@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import http from 'node:http'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
@@ -17,20 +18,26 @@ const packageName = '@mercato-e2e/release-checks'
 const repository = 'mercato-e2e/release-checks'
 const versions = ['0.0.1', '0.0.2']
 
-type Options = { registry: string; results: string; createApp: string }
+type Options = { registry: string; results: string; createApp: string; databaseUrl?: string }
 
 export function parseLocalOptions(args: string[]): Options {
   const values: Record<string, string> = {}
   for (let index = 0; index < args.length; index += 2) {
     const option = args[index]?.replace(/^--/, '')
     const value = args[index + 1]
-    if (!args[index]?.startsWith('--') || !['registry', 'results', 'create-app'].includes(option) || !value || value.startsWith('--') || values[option]) throw new Error(`Invalid option: ${args[index]}. See test/release-e2e/README.md.`)
+    if (!args[index]?.startsWith('--') || !['registry', 'results', 'create-app', 'database-url'].includes(option) || !value || value.startsWith('--') || values[option]) throw new Error(`Invalid option: ${args[index]}. See test/release-e2e/README.md.`)
     values[option] = value
   }
   let registry: URL | undefined
   try { registry = new URL(values.registry ?? process.env.RELEASE_E2E_REGISTRY ?? '') } catch {}
   if (!registry || registry.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(registry.hostname) || registry.username || registry.password || registry.search || registry.hash) throw new Error('--registry must be a throwaway registry on this machine, for example http://127.0.0.1:4874/. It never accepts a remote host.')
-  return { registry: registry.href, results: path.resolve(values.results ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-local-'))), createApp: values['create-app'] ?? 'create-mercato-app@develop' }
+  let database: URL | undefined
+  const databaseValue = values['database-url'] ?? process.env.RELEASE_E2E_DATABASE_URL
+  if (databaseValue) {
+    try { database = new URL(databaseValue) } catch {}
+    if (!database || !['postgres:', 'postgresql:'].includes(database.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(database.hostname)) throw new Error('--database-url must be a throwaway Postgres on this machine, for example postgres://postgres:postgres@127.0.0.1:54329/open-mercato. The checks initialize it from scratch.')
+  }
+  return { databaseUrl: database?.href, registry: registry.href, results: path.resolve(values.results ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-local-'))), createApp: values['create-app'] ?? 'create-mercato-app@develop' }
 }
 
 // Serves the bare repositories over loopback HTTP so Yarn can install from them.
@@ -97,6 +104,77 @@ export async function main(args: string[]): Promise<void> {
     })
   }
 
+  // Starts the consumer app itself, with its database, and uses the installed module the way a
+  // signed-in user would: the API must refuse anonymous calls and the backend page must render.
+  async function fullAppCheck(app: string, databaseUrl: string): Promise<void> {
+    const port = await new Promise<number>((resolve, reject) => {
+      const probe = net.createServer()
+      probe.once('error', reject)
+      probe.listen(0, '127.0.0.1', () => { const address = probe.address(); probe.close(() => (address && typeof address !== 'string' ? resolve(address.port) : reject(new Error('Cannot allocate an app port')))) })
+    })
+    const baseUrl = `http://127.0.0.1:${port}`
+    const saved = { ...environment }
+    Object.assign(environment, { DATABASE_URL: databaseUrl, PORT: String(port), APP_URL: baseUrl, NEXT_PUBLIC_APP_URL: baseUrl, NEXT_TELEMETRY_DISABLED: '1', OM_INIT_ADMIN_PASSWORD: 'secret', OM_INIT_EMPLOYEE_PASSWORD: 'secret', AUTO_SPAWN_WORKERS: 'false', AUTO_SPAWN_SCHEDULER: 'false' })
+    for (const name of ['NPM_TOKEN', 'MERCATO_NPM_REGISTRY']) delete environment[name]
+    const started = Date.now()
+    let output = ''
+    let child: ReturnType<typeof spawn> | undefined
+    try {
+      await command('full-app-initialize', yarn, ['initialize'], app)
+      process.stdout.write('\n🌐 local: full app with database and sign-in\n')
+      child = spawn(yarn, ['mercato', 'server', 'dev'], { cwd: app, env: environment, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+      let exited = false
+      child.stdout!.on('data', (chunk: Buffer) => { output += chunk.toString() })
+      child.stderr!.on('data', (chunk: Buffer) => { output += chunk.toString() })
+      child.on('close', () => { exited = true })
+      let ready = false
+      while (!ready && Date.now() - started < 10 * 60 * 1000) {
+        if (exited) throw new Error('The app stopped before it answered requests')
+        try { ready = (await fetch(`${baseUrl}/login`, { signal: AbortSignal.timeout(60000) })).status === 200 } catch {}
+        if (!ready) await new Promise((resolve) => setTimeout(resolve, 2000))
+      }
+      assert.ok(ready, 'The app must serve its login page within ten minutes')
+      const route = `${baseUrl}/api/${fixtureContract.moduleId}/status`
+      assert.equal((await fetch(route, { signal: AbortSignal.timeout(180000) })).status, 401, 'The module API must refuse anonymous requests')
+      const login = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ email: 'admin@acme.com', password: 'secret' }).toString(), signal: AbortSignal.timeout(180000) })
+      assert.equal(login.status, 200, 'The seeded admin must be able to sign in')
+      const session = (await login.json()) as { token?: string }
+      const cookies = new Map(login.headers.getSetCookie().map((cookie) => cookie.split(';')[0].split(/=(.*)/s).slice(0, 2) as [string, string]))
+      assert.ok(session.token && cookies.size, 'Sign-in must return a token and a session cookie')
+      const api = await fetch(route, { headers: { authorization: `Bearer ${session.token}` }, signal: AbortSignal.timeout(180000) })
+      assert.equal(api.status, 200, 'The module API must answer a signed-in user')
+      assert.deepEqual(await api.json(), { marker: fixtureContract.marker, field: 'status', entity: 'release_checks:release_check' })
+      let page = new URL(`/backend/${fixtureContract.moduleId}`, baseUrl)
+      let html = ''
+      for (let redirects = 0; ; redirects += 1) {
+        const response = await fetch(page, { redirect: 'manual', headers: { cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; ') }, signal: AbortSignal.timeout(240000) })
+        for (const cookie of response.headers.getSetCookie()) { const [name, value] = cookie.split(';')[0].split(/=(.*)/s); cookies.set(name, value) }
+        const location = response.headers.get('location')
+        if (response.status >= 300 && response.status < 400 && location && redirects < 5) { page = new URL(location, page); assert.equal(page.origin, baseUrl, 'The app must not redirect off this machine'); continue }
+        assert.equal(response.status, 200, `The module backend page must render for a signed-in user (${page.pathname})`)
+        html = await response.text()
+        break
+      }
+      assert.equal(page.pathname, `/backend/${fixtureContract.moduleId}`, 'A signed-in user must stay on the module page')
+      assert.ok(html.includes(`<h1>${fixtureContract.marker}</h1>`), 'The backend page must contain the module content')
+      stages.push({ stage: 'full-app-signed-in-module', status: 'passed', durationMs: Date.now() - started })
+    } catch (error) {
+      stages.push({ stage: 'full-app-signed-in-module', status: 'failed', durationMs: Date.now() - started })
+      throw error
+    } finally {
+      if (child?.pid && child.exitCode === null) {
+        const closed = new Promise<void>((resolve) => child!.once('close', () => resolve()))
+        try { process.kill(-child.pid, 'SIGTERM') } catch {}
+        const force = setTimeout(() => { try { process.kill(-child!.pid!, 'SIGKILL') } catch {} }, 10000)
+        await closed
+        clearTimeout(force)
+      }
+      fs.writeFileSync(path.join(options.results, 'local-full-app-server.log'), redact(output, [token]))
+      for (const name of Object.keys(environment)) delete environment[name]
+      Object.assign(environment, saved)
+    }
+  }
+
   let server: Awaited<ReturnType<typeof serveRepositories>> | undefined
   try {
     const sourceApp = path.join(options.results, 'source-app')
@@ -135,6 +213,8 @@ export async function main(args: string[]): Promise<void> {
     const shared = ['--package', packageName, '--version', version, '--repo', repository, '--ref', 'main', '--create-app', options.createApp, '--registry', options.registry, '--git-url', `${server.url}${repository}.git`]
     // Each lane installs into its own fresh app, never the one that published the module.
     await runLanes([...shared, '--lanes', 'npm,github', '--results', path.join(options.results, 'consumers')])
+    if (options.databaseUrl) await fullAppCheck(path.join(options.results, 'consumers/npm-app'), options.databaseUrl)
+    else process.stdout.write('\nℹ️ Full-app check not run: pass --database-url to start the app with a database and sign in.\n')
     process.stdout.write(`\n✅ Local release checks passed without contacting npmjs.com or github.com for the fixture. Results: ${options.results}\n`)
   } finally {
     delete process.env.RELEASE_E2E_LOCAL_TOKEN
