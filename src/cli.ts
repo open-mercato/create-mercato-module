@@ -149,7 +149,7 @@ async function main(argv = process.argv.slice(2)) {
     console.log(`✅ Created ${directory}\n🧩 Registered in src/modules.ts.`)
     if (!args.flags['no-generate']) run('yarn', ['generate'], app.directory)
     console.log(
-      `\nOpen /backend/${args.id} in the app. Build your feature in src/modules/${args.id}.\nWhen ready: npx create-mercato-module publish ${args.id}`,
+      `\nOpen /backend/${args.id} in the app. Build your feature in src/modules/${args.id}.\n🤖 Tip: with the app running (yarn setup), open it in your coding agent to build the module further.\nWhen ready: npx create-mercato-module publish ${args.id}`,
     )
     return
   }

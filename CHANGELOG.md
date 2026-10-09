@@ -14,6 +14,7 @@
 - Warn before pushing a restricted package's source to a public GitHub repository.
 - Warn before an app export replaces repository commits it did not release, and stop when the repository changes after approval.
 - Warn before releasing a linked module from a non-default branch or with install lifecycle scripts; reject local/Git dependency locators in its `package.json`.
+- `link` checks GitHub before changing anything and prints the `publish` command when the module is not in its repository yet.
 - Restore the local module when `link` cannot save its metadata, and keep the shared `node_modules` symlink out of the module repository.
 - Keep npm commands on the npm registry for scoped packages.
 - Detect more credential formats and files; allow `.env.example`.

@@ -15,11 +15,27 @@
 ## Develop in the dedicated repository without leaving your app
 
 
-After publishing to a dedicated repository, run this **inside the same app**:
+Linking works only after the module has been published to its dedicated GitHub repository. A module published to npm alone has no repository to link. If you have not done it yet, publish with `--repo` first; the repository is created when it does not exist:
+
+```bash
+npx create-mercato-module publish visits --repo your-name/mercato-visits
+```
+
+Then run this **inside the same app**:
 
 ```bash
 npx create-mercato-module link visits
 ```
+
+Before cloning or moving any file, `link` asks GitHub whether the module is there and tells you what to do when it is not:
+
+| What `link` finds | What it tells you |
+|---|---|
+| The repository does not exist, or your account cannot see it | Publish the module with `publish <module> --package <name> --repo <owner>/<name>`, or check the name and `gh auth status` |
+| The repository exists but has no module in it | Publish the module to it first, with the same command |
+| The repository holds a different package or module | Pass the right repository with `--repo`, or publish to a new dedicated repository |
+
+In each case nothing in your app is changed.
 
 No saved settings yet? Specify the module's existing package and repository:
 
@@ -84,6 +100,8 @@ Creates a translated starter page, registers the module, and runs generation. Mo
 |---|---|
 | `--no-generate` | Create and register the module; run generation yourself |
 
+The starter is one page. After `yarn setup` has the app running, you will probably want to open the app in your coding agent and have it build the module further; the app's `AGENTS.md` gives the agent the framework conventions.
+
 ### `publish <module_id>`
 
 Packages one local module and publishes it after confirmation.
@@ -122,7 +140,7 @@ Without `--yes`, a noninteractive invocation builds the archive, publishes nothi
 
 ### `link <module_id>`
 
-Connects the current app's local module source to its dedicated repository, with an original-source backup. Requires GitHub authentication and an existing matching repository created by this tool. Repeating the command with matching saved ownership metadata is safe; arbitrary module symlinks and existing checkout directories are rejected.
+Connects the current app's local module source to its dedicated repository, with an original-source backup. Requires GitHub authentication and the module already published to its dedicated repository with `publish --repo`; otherwise `link` stops before changing anything and prints the `publish` command to run. Repeating the command with matching saved ownership metadata is safe; arbitrary module symlinks and existing checkout directories are rejected.
 
 | Option | Behavior |
 |---|---|
