@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- Add `install <repository-or-npm-package>` for npm and GitHub module locators, delegating dependency registration, optional ejection, module selection, and generation to Open Mercato's CLI.
+
 ## 0.3.0
 
 ### Breaking

@@ -377,6 +377,7 @@ export function inspectDevelopmentRepository(
   repository: string,
   execute: DevelopmentRunner,
   expected?: { id: string; packageName: string },
+  ref?: string,
 ): {
   name: string
   version?: string
@@ -403,7 +404,7 @@ export function inspectDevelopmentRepository(
     'gh',
     [
       'api',
-      `repos/${repository}/contents/package.json`,
+      `repos/${repository}/contents/package.json${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`,
       '-H',
       'Accept: application/vnd.github.raw',
     ],

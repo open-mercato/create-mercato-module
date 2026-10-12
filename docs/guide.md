@@ -138,6 +138,36 @@ npx create-mercato-module publish visits \
 
 Without `--yes`, a noninteractive invocation builds the archive, publishes nothing, and exits with an error. Each warning in the summary additionally needs its own option, named next to the warning; `--yes` alone never approves a warning. Private npm packages require the corresponding npm permissions. Repository visibility flags apply when creating a new repository; existing repository visibility is preserved.
 
+### `install <repository-or-npm-package>`
+
+Installs and enables a published module in the current Open Mercato app. npm
+locators delegate to `yarn mercato module add`, so Open Mercato updates the app
+dependency, edits `src/modules.ts` through its supported implementation, and
+runs all generators. GitHub locators first discover the package identity from
+the dedicated repository, pin its current default-branch commit for a
+repeatable Yarn install, and then delegate activation to `yarn mercato module
+enable`.
+
+```bash
+npx create-mercato-module install @your-name/mercato-visits@beta
+npx create-mercato-module install npm:unscoped-visits
+npx create-mercato-module install your-name/mercato-visits
+npx create-mercato-module install https://github.com/your-name/mercato-visits.git
+```
+
+It accepts the same repository forms as `link`: GitHub `owner/repo`, HTTPS,
+SSH, `github:owner/repo`, and a bare repository name for the authenticated
+GitHub user. Scoped names are npm locators; prefix an unscoped npm package with
+`npm:` to distinguish it from a bare GitHub repository name. GitHub installs
+require `gh auth login`; npm authentication and registry settings remain under
+Yarn/Open Mercato control.
+
+| Option | Behavior |
+|---|---|
+| `--package @your-name/mercato-visits` | Verify the discovered/requested package identity before installation |
+| `--module module_id` | Choose one module from a package that contains multiple modules |
+| `--eject` | Ask Open Mercato to copy ejectable source into `src/modules` and register it as `@app` |
+
 ### `link <repository-or-npm-package> [local-name]`
 
 Connects repository source to the current app and remembers its identity for `publish <module_id>`. Accepts GitHub `owner/repo`, repository URLs, bare repository names for the signed-in GitHub user, scoped npm package names, and `npm:package-name`. With no argument, a terminal prompt asks for the repository or npm package. The optional local name only changes the checkout folder.
@@ -154,7 +184,7 @@ Linked publication reads the owned checkout, including custom local checkout nam
 
 ## Authentication
 
-Publication checks npm authentication before building the archive and checks GitHub authentication before work requiring a repository. `link` checks GitHub first. `init`, `--help`, and `publish --dry-run` do not require registry or GitHub authentication.
+Publication checks npm authentication before building the archive and checks GitHub authentication before work requiring a repository. GitHub forms of `install` and `link` check GitHub first. npm forms of `install`, `init`, `--help`, and `publish --dry-run` do not require GitHub authentication.
 
 | Mode | Credentials |
 |---|---|

@@ -102,7 +102,7 @@ For a different Node or Yarn executable, set `RELEASE_E2E_NODE`, `RELEASE_E2E_YA
 | App starts without/with its own Git | Without Git | Own local Git |
 | New local module initialized and generated | Yes | Yes |
 | Existing local module packed with `--dry-run` | Yes | Yes |
-| Remote module installation | `mercato module add name@version --allow-third-party` | `yarn add name@github:owner/repo#ref`, then `mercato module enable name --allow-third-party` |
+| Remote module installation | `create-mercato-module install name@version` (delegates to `mercato module add`) | `yarn add name@github:owner/repo#ref`, then `mercato module enable name --allow-third-party` |
 | Page/API/entity auto-discovery and generation | Yes | Yes |
 | Compiled React page renders using app React | Yes | Yes |
 | Compiled API handler executes | Yes | Yes |

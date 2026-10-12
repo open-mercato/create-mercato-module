@@ -2,9 +2,9 @@
 
 <h1 align="center">Create Mercato Module</h1>
 
-<p align="center"><strong>Build in your app. Publish one module.</strong></p>
+<p align="center"><strong>Build in your app. Publish or install one module.</strong></p>
 
-<p align="center">Turn a custom Open Mercato module into an npm package and a dedicated GitHub repository.<br />Two commands. From your terminal or an Open Mercato Cloud sandbox.</p>
+<p align="center">Turn a custom Open Mercato module into an npm package and a dedicated GitHub repository.<br />One CLI for creating, publishing, installing, and linking modules.</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/create-mercato-module"><img src="https://img.shields.io/npm/v/create-mercato-module?color=b4f372&amp;label=npm" alt="npm version" /></a>
@@ -76,8 +76,21 @@ Settings are remembered in `.mercato/module-tool.json`; later releases reuse the
 Once npm makes the published version available, run inside the receiving app:
 
 ```bash
-yarn mercato module add @your-name/mercato-visits --allow-third-party
+npx create-mercato-module install @your-name/mercato-visits
 ```
+
+`install` delegates registration and generation to Open Mercato, and also
+accepts a dedicated GitHub repository when the package is not on npm:
+
+```bash
+npx create-mercato-module install your-name/mercato-visits
+npx create-mercato-module install https://github.com/your-name/mercato-visits.git
+```
+
+Scoped npm packages, `npm:unscoped-package`, GitHub URLs, `owner/repository`,
+and a bare repository name for your authenticated GitHub account are supported.
+Use `--eject` for packages that allow source ejection, or `--module <module_id>`
+to choose one module from a multi-module package.
 
 ## Publish an existing module
 

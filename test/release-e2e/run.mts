@@ -214,7 +214,7 @@ export async function main(args: string[]): Promise<void> {
         assert.ok(fs.existsSync(path.join(app, 'src/modules', localId, 'index.ts')))
         const registrationsBeforeInstall = fs.readFileSync(path.join(app, 'src/modules.ts'), 'utf8')
         assert.match(registrationsBeforeInstall, /local_release_checks/)
-        if (lane === 'npm') await command(lane, 'install-module-from-npm', yarn, ['mercato', 'module', 'add', `${options.packageName}@${options.version}`, '--allow-third-party'], app)
+        if (lane === 'npm') await command(lane, 'install-module-from-npm', node, [toolBin, 'install', `${options.packageName}@${options.version}`], app)
         else {
           if (options.gitUrl) await command(lane, 'approve-local-git', yarn, ['config', 'set', 'approvedGitRepositories', '--json', JSON.stringify([`${new URL(options.gitUrl).origin}/**`])], app)
           await command(lane, 'install-module-from-github', yarn, ['add', options.gitUrl ? `${options.packageName}@${options.gitUrl}#commit=${githubCommit}` : `${options.packageName}@github:${options.repository}#${githubCommit}`], app)
