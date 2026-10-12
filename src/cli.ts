@@ -14,11 +14,15 @@ import { loadConfig, saveConfig } from './config.js'
 import { isUnconfiguredLocalModule, linkFromInput } from './link.js'
 import { validateCheckoutName } from './development.js'
 import { checkAuthentication, resolveRegistry } from './npm-auth.js'
+import { installFromInput } from './install.js'
 
 const help = `Create and publish one module from an existing Open Mercato app.
 
   npx create-mercato-module init visits
   npx create-mercato-module publish visits
+  npx create-mercato-module install <repo-or-npm-package>
+  npx create-mercato-module install pkarw/visits-example
+  npx create-mercato-module install @piotrkarwatka/visits
   npx create-mercato-module link <repo-or-npm-package> [local-name]
   npx create-mercato-module link pkarw/visits-example
   npx create-mercato-module link @piotrkarwatka/visits
@@ -51,6 +55,15 @@ Link options:
   --repo your-name/visits     repository override for link <module_id>
   --no-generate              link without running yarn generate
 
+Install options:
+  Repository URL, owner/repo, or repo name (your GitHub account).
+  Scoped npm packages and npm:package-name install from npm.
+  Package name and module ID are discovered automatically.
+  --package @your-name/visits  optional package identity check
+  --module module_id         choose one module from a multi-module package
+  --ref tag|branch|commit    pin a GitHub install to this ref's resolved commit
+  --eject                    copy ejectable module source into src/modules
+
 Init options:
   --no-generate              create/register the module without running yarn generate
 
@@ -78,9 +91,9 @@ function parse(argv: string[]): ParsedArguments {
     return { help: true }
   const [command, ...rest] = argv
   const positional: string[] = []
-  if (!['init', 'publish', 'link'].includes(command))
+  if (!['init', 'publish', 'install', 'link'].includes(command))
     throw new Error(
-      'Choose init, publish, or link. Run with --help for examples.',
+      'Choose init, publish, install, or link. Run with --help for examples.',
     )
   const flags: Flags = {}
   const booleans =
@@ -94,13 +107,17 @@ function parse(argv: string[]): ParsedArguments {
           'allow-branch',
           'allow-install-scripts',
         ]
-      : ['no-generate']
+      : command === 'install'
+        ? ['eject']
+        : ['no-generate']
   const values =
     command === 'publish'
       ? ['package', 'version', 'repo', 'access', 'auth', 'tag']
       : command === 'link'
         ? ['package', 'repo']
-        : []
+        : command === 'install'
+          ? ['package', 'module', 'ref']
+          : []
   for (let index = 0; index < rest.length; index += 1) {
     if (!rest[index].startsWith('-')) {
       positional.push(rest[index])
@@ -121,9 +138,13 @@ function parse(argv: string[]): ParsedArguments {
   const [id = '', localName] = positional
   if (positional.length > (command === 'link' ? 2 : 1))
     throw new Error(
-      'Too many arguments. Use link <repo-or-npm-package> [local-name].',
+      command === 'link'
+        ? 'Too many arguments. Use link <repo-or-npm-package> [local-name].'
+        : 'Too many arguments. Use one module name or locator.',
     )
-  if (command !== 'link') validateId(id)
+  if (!['link', 'install'].includes(command)) validateId(id)
+  if (command === 'install' && flags.module)
+    validateId(String(flags.module))
   if (localName) validateCheckoutName(localName)
   return { command, id, flags, ...(localName ? { localName } : {}) }
 }
@@ -233,6 +254,38 @@ async function main(argv = process.argv.slice(2)) {
     } finally {
       prompt?.close()
     }
+  }
+  if (args.command === 'install') {
+    let input = args.id
+    if (!input && process.stdin.isTTY) {
+      const prompt = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      })
+      try {
+        input = (
+          await prompt.question('📦 GitHub repository or npm package: ')
+        ).trim()
+      } finally {
+        prompt.close()
+      }
+    }
+    if (!input)
+      throw new Error(
+        'Provide a GitHub repository or npm package: npx create-mercato-module install pkarw/visits-example',
+      )
+    const installed = installFromInput(app, input, {
+      eject: Boolean(args.flags.eject),
+      expectedPackage: args.flags.package
+        ? String(args.flags.package)
+        : undefined,
+      moduleId: args.flags.module ? String(args.flags.module) : undefined,
+      ref: args.flags.ref ? String(args.flags.ref) : undefined,
+    })
+    console.log(
+      `\n✅ Installed ${installed.packageName} and enabled its Open Mercato module.${installed.repository ? `\n🐙 Source: ${installed.repository}` : `\n📦 Source: ${installed.specifier}`}${args.flags.eject ? '\n📁 Module source was ejected into this app.' : ''}`,
+    )
+    return
   }
   const previous: Partial<SavedSettings> =
     loadConfig(app).modules[args.id] || {}

@@ -11,6 +11,11 @@ import {
 import { createNpmRunner, resolveRegistry } from './npm-auth.js'
 import { validateSettings } from './package.js'
 
+export interface NpmPackageLocator {
+  packageName: string
+  specifier: string
+}
+
 export function isUnconfiguredLocalModule(app: App, input: string): boolean {
   if (!/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(input)) return false
   const saved = loadConfig(app).modules[input]
@@ -46,10 +51,9 @@ export function githubRepository(input: string): string {
   return repository
 }
 
-function npmRepository(
-  app: App,
-  specifier: string,
-): { repository: string; packageName: string } {
+export function npmPackageLocator(input: string): NpmPackageLocator | undefined {
+  if (!input.startsWith('@') && !input.startsWith('npm:')) return undefined
+  const specifier = input.replace(/^npm:/, '')
   const match =
     /^(?<name>(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*)(?:@(?<version>[a-zA-Z0-9][a-zA-Z0-9._-]*))?$/.exec(
       specifier,
@@ -58,7 +62,48 @@ function npmRepository(
     throw new Error(
       'Use an npm package name, for example @piotrkarwatka/visits.',
     )
-  const packageName = match.groups.name
+  return { packageName: match.groups.name, specifier }
+}
+
+export function githubRepositoryFromInput(
+  app: App,
+  input: string,
+  execute = run,
+): string {
+  if (
+    execute('gh', ['auth', 'status'], app.directory, {
+      capture: true,
+      allowFailure: true,
+    }).status !== 0
+  )
+    throw new Error(
+      '🔐 Sign in to GitHub with gh auth login, then retry. No files were changed.',
+    )
+  let repositoryInput = input
+  if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repositoryInput)) {
+    const user = execute('gh', ['api', 'user'], app.directory, { capture: true })
+    let login: unknown
+    try {
+      login = JSON.parse(user.stdout).login
+    } catch {}
+    if (typeof login !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(login))
+      throw new Error(
+        'Cannot determine your GitHub account. Use owner/repo or a full GitHub URL.',
+      )
+    repositoryInput = `${login}/${repositoryInput}`
+  }
+  return githubRepository(repositoryInput)
+}
+
+function npmRepository(
+  app: App,
+  specifier: string,
+): { repository: string; packageName: string } {
+  const locator = npmPackageLocator(
+    specifier.startsWith('@') ? specifier : `npm:${specifier}`,
+  )
+  if (!locator) throw new Error('Use an npm package name.')
+  const { packageName } = locator
   const registry = resolveRegistry()
   // Public lookups need no login. Reuse an explicit environment token for
   // private packages without putting credentials in arguments or app files.
@@ -124,8 +169,9 @@ export function linkFromInput(
   const saved = config.modules[input]
   let repositoryInput = String(flags.repo || '') || saved?.repository || input
   let expectedPackage = String(flags.package || '') || undefined
-  if (repositoryInput.startsWith('@') || repositoryInput.startsWith('npm:')) {
-    const npm = npmRepository(app, repositoryInput.replace(/^npm:/, ''))
+  const npmLocator = npmPackageLocator(repositoryInput)
+  if (npmLocator) {
+    const npm = npmRepository(app, npmLocator.specifier)
     repositoryInput = npm.repository
     if (expectedPackage && expectedPackage !== npm.packageName)
       throw new Error(
@@ -133,30 +179,9 @@ export function linkFromInput(
       )
     expectedPackage = npm.packageName
   }
-  if (
-    run('gh', ['auth', 'status'], app.directory, {
-      capture: true,
-      allowFailure: true,
-    }).status !== 0
-  )
-    throw new Error(
-      '🔐 Sign in to GitHub with gh auth login, then retry. No files were changed.',
-    )
   // A bare repository name belongs to the authenticated GitHub user. Saved
   // module settings take precedence so the original `link visits` keeps working.
-  if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repositoryInput)) {
-    const user = run('gh', ['api', 'user'], app.directory, { capture: true })
-    let login: unknown
-    try {
-      login = JSON.parse(user.stdout).login
-    } catch {}
-    if (typeof login !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(login))
-      throw new Error(
-        'Cannot determine your GitHub account. Use owner/repo or a full GitHub URL.',
-      )
-    repositoryInput = `${login}/${repositoryInput}`
-  }
-  const repository = githubRepository(repositoryInput)
+  const repository = githubRepositoryFromInput(app, repositoryInput)
   const manifest = inspectDevelopmentRepository(app.directory, repository, run)
   const id = validateId(manifest.mercatoModule.id)
   if (expectedPackage && expectedPackage !== manifest.name)
