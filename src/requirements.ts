@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { createRequire } from 'node:module'
 import * as ts from 'typescript'
 import {
   normalizeModuleLocator,
@@ -56,6 +57,57 @@ interface EnabledModule {
 
 const canonicalRequirement = normalizeModuleLocator
 
+function packageDirectory(appDirectory: string, packageName: string): string {
+  const requireFromApp = createRequire(path.join(appDirectory, 'package.json'))
+  try {
+    return path.dirname(requireFromApp.resolve(`${packageName}/package.json`))
+  } catch {}
+  let directory = path.resolve(appDirectory)
+  while (true) {
+    const candidate = path.join(
+      directory,
+      'node_modules',
+      ...packageName.split('/'),
+    )
+    if (fs.existsSync(path.join(candidate, 'package.json'))) return candidate
+    const parent = path.dirname(directory)
+    if (parent === directory) break
+    directory = parent
+  }
+  try {
+    directory = path.dirname(requireFromApp.resolve(packageName))
+    while (true) {
+      try {
+        const manifest: unknown = JSON.parse(
+          fs.readFileSync(path.join(directory, 'package.json'), 'utf8'),
+        )
+        if (
+          manifest &&
+          typeof manifest === 'object' &&
+          'name' in manifest &&
+          manifest.name === packageName
+        )
+          return directory
+      } catch {}
+      const parent = path.dirname(directory)
+      if (parent === directory) break
+      directory = parent
+    }
+  } catch {}
+  return path.join(appDirectory, 'node_modules', ...packageName.split('/'))
+}
+
+function moduleIndex(directory: string, moduleId: string): string {
+  const candidates = [
+    path.join(directory, 'src/modules', moduleId, 'index.ts'),
+    path.join(directory, 'src/modules', moduleId, 'index.js'),
+    path.join(directory, 'dist/modules', moduleId, 'index.js'),
+  ]
+  return (
+    candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0]
+  )
+}
+
 function installedRepository(
   appDirectory: string,
   packageName: string,
@@ -63,13 +115,9 @@ function installedRepository(
   registeredLocator?: string,
 ): string | undefined {
   try {
-    const packageDirectory = path.join(
-      appDirectory,
-      'node_modules',
-      ...packageName.split('/'),
-    )
+    const installedDirectory = packageDirectory(appDirectory, packageName)
     const manifest = JSON.parse(
-      fs.readFileSync(path.join(packageDirectory, 'package.json'), 'utf8'),
+      fs.readFileSync(path.join(installedDirectory, 'package.json'), 'utf8'),
     ) as {
       name?: string
       repository?: string | { url?: string; directory?: string }
@@ -93,9 +141,7 @@ function installedRepository(
       Boolean(manifest.repository?.directory)
     const metadataLocator = directoryScoped
       ? undefined
-      : declaredLocator(
-          path.join(packageDirectory, 'src/modules', moduleId, 'index.ts'),
-        )
+      : declaredLocator(moduleIndex(installedDirectory, moduleId))
     if (
       metadataLocator &&
       canonicalRequirement(metadataLocator)?.startsWith('github:')
@@ -161,16 +207,11 @@ function enabledModuleIds(appDirectory: string): ModuleIdentity[] | undefined {
         const identity = canonicalRequirement(`npm:${entry.packageName}`)
         if (identity) ids.add(identity)
       }
-      for (const locator of [
-        entry.locator,
-        declaredLocator(
-          path.join(appDirectory, 'src/modules', entry.id, 'index.ts'),
-        ),
-      ]) {
-        if (locator) {
-          const identity = canonicalRequirement(locator)
-          if (identity) ids.add(identity)
-        }
+      const locator =
+        entry.locator ?? declaredLocator(moduleIndex(appDirectory, entry.id))
+      if (locator) {
+        const identity = canonicalRequirement(locator)
+        if (identity) ids.add(identity)
       }
     }
     if (from && from !== '@app') {
@@ -202,6 +243,60 @@ function enabledModuleIds(appDirectory: string): ModuleIdentity[] | undefined {
   return modules
 }
 
+const unknownCondition = Symbol('unknownCondition')
+type ConditionValue =
+  string | number | boolean | null | undefined | typeof unknownCondition
+
+function conditionValue(expression: ts.Expression): ConditionValue {
+  const node = unwrap(expression)
+  if (node.kind === ts.SyntaxKind.TrueKeyword) return true
+  if (node.kind === ts.SyntaxKind.FalseKeyword) return false
+  if (node.kind === ts.SyntaxKind.NullKeyword) return null
+  if (ts.isStringLiteralLike(node)) return node.text
+  if (ts.isNumericLiteral(node)) return Number(node.text)
+  if (ts.isIdentifier(node) && node.text === 'undefined') return undefined
+  if (
+    ts.isPrefixUnaryExpression(node) &&
+    node.operator === ts.SyntaxKind.ExclamationToken
+  ) {
+    const value = conditionValue(node.operand)
+    return value === unknownCondition ? value : !value
+  }
+  if (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    ts.isIdentifier(node.expression.expression) &&
+    node.expression.expression.text === 'process' &&
+    node.expression.name.text === 'env'
+  )
+    return process.env[node.name.text]
+  if (
+    ts.isElementAccessExpression(node) &&
+    node.argumentExpression &&
+    ts.isStringLiteralLike(node.argumentExpression) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    ts.isIdentifier(node.expression.expression) &&
+    node.expression.expression.text === 'process' &&
+    node.expression.name.text === 'env'
+  )
+    return process.env[node.argumentExpression.text]
+  if (ts.isBinaryExpression(node)) {
+    const left = conditionValue(node.left)
+    if (left === unknownCondition) return left
+    if (node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken)
+      return left ? conditionValue(node.right) : left
+    if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+      return left ? left : conditionValue(node.right)
+    const right = conditionValue(node.right)
+    if (right === unknownCondition) return right
+    if (node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken)
+      return left === right
+    if (node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)
+      return left !== right
+  }
+  return unknownCondition
+}
+
 function enabledModuleEntries(
   appDirectory: string,
 ): EnabledModule[] | undefined {
@@ -210,6 +305,56 @@ function enabledModuleEntries(
   const entries: EnabledModule[] = []
   let found = false
   function visit(node: ts.Node): void {
+    if (ts.isIfStatement(node)) {
+      const condition = conditionValue(node.expression)
+      if (condition === unknownCondition) return
+      if (condition) visit(node.thenStatement)
+      else if (node.elseStatement) visit(node.elseStatement)
+      return
+    }
+    if (ts.isConditionalExpression(node)) {
+      const condition = conditionValue(node.condition)
+      if (condition !== unknownCondition)
+        visit(condition ? node.whenTrue : node.whenFalse)
+      return
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
+    ) {
+      const condition = conditionValue(node.left)
+      if (
+        condition !== unknownCondition &&
+        (condition === null || condition === undefined)
+      )
+        visit(node.right)
+      return
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      (node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+        node.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+    ) {
+      const condition = conditionValue(node.left)
+      if (
+        condition !== unknownCondition &&
+        (node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+          ? Boolean(condition)
+          : !condition)
+      )
+        visit(node.right)
+      return
+    }
+    if (ts.isSwitchStatement(node) || ts.isCatchClause(node)) return
+    if (
+      ts.isFunctionLike(node) ||
+      ts.isForStatement(node) ||
+      ts.isForOfStatement(node) ||
+      ts.isForInStatement(node) ||
+      ts.isWhileStatement(node) ||
+      ts.isDoStatement(node)
+    )
+      return
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
@@ -220,10 +365,8 @@ function enabledModuleEntries(
       if (ts.isArrayLiteralExpression(list)) {
         found = true
         for (const element of list.elements) {
-          {
-            const entry = entryModule(element)
-            if (entry) entries.push(entry)
-          }
+          const entry = entryModule(element)
+          if (entry) entries.push(entry)
         }
       }
     }
@@ -235,10 +378,8 @@ function enabledModuleEntries(
       node.expression.expression.text === 'enabledModules'
     )
       for (const argument of node.arguments) {
-        {
-          const entry = entryModule(argument)
-          if (entry) entries.push(entry)
-        }
+        const entry = entryModule(argument)
+        if (entry) entries.push(entry)
       }
     ts.forEachChild(node, visit)
   }
@@ -339,16 +480,12 @@ export function missingRequirements(
   packageName: string,
   moduleId?: string,
 ): string[] {
-  const packageDirectory = path.join(
-    appDirectory,
-    'node_modules',
-    ...packageName.split('/'),
-  )
+  const installedDirectory = packageDirectory(appDirectory, packageName)
   let id = moduleId
   if (!id) {
     try {
       const manifest: unknown = JSON.parse(
-        fs.readFileSync(path.join(packageDirectory, 'package.json'), 'utf8'),
+        fs.readFileSync(path.join(installedDirectory, 'package.json'), 'utf8'),
       )
       const marker =
         manifest && typeof manifest === 'object' && 'mercatoModule' in manifest
@@ -364,9 +501,7 @@ export function missingRequirements(
     } catch {}
   }
   if (!id || !moduleIdPattern.test(id)) return []
-  const requires = declaredRequirements(
-    path.join(packageDirectory, 'src/modules', id, 'index.ts'),
-  )
+  const requires = declaredRequirements(moduleIndex(installedDirectory, id))
   if (!requires.length) return []
   const enabled = enabledModuleIds(appDirectory)
   if (!enabled) return []

@@ -37,7 +37,7 @@ const registeredModules = `export const enabledModules: ModuleEntry[] = [
   { id: 'auth', from: '@open-mercato/core' },
   { id: 'customers', from: '@open-mercato/core' },
 ]
-if (process.env.WITH_SALES) enabledModules.push({ id: 'sales', from: '@open-mercato/core' })
+if (true) enabledModules.push({ id: 'sales', from: '@open-mercato/core' })
 `
 
 function executor(calls, options = {}) {
@@ -456,5 +456,75 @@ test('package metadata locator falls back only for dedicated packages and preser
     fs.writeFileSync(path.join(packageDirectory, 'src/modules/consents/index.ts'), `export const metadata = { locator: 'github:owner/consents' }`)
     const result = installFromInput(fixture, '@fixture/visits', { warn() {} }, executor([]))
     assert.deepEqual(result.missingRequirements, directory ? ['github:owner/consents', 'npm:@other/consents'] : ['npm:@other/consents'])
+  }
+})
+
+test('configured local locator overrides stale authored metadata origin', (context) => {
+  const fixture = appWithRequirements(context, ['github:owner/current', 'github:owner/stale'], `export const enabledModules = [{ id: 'consents', from: '@app', locator: 'github:owner/current' }]`)
+  const moduleDirectory = path.join(fixture.directory, 'src/modules/consents')
+  fs.mkdirSync(moduleDirectory, { recursive: true })
+  fs.writeFileSync(path.join(moduleDirectory, 'index.ts'), `export const metadata = { locator: 'github:owner/stale' }`)
+  const result = installFromInput(fixture, '@fixture/visits', { warn() {} }, executor([]))
+  assert.deepEqual(result.missingRequirements, ['github:owner/stale'])
+})
+
+test('compiled package metadata and requirements use dist module indexes', (context) => {
+  const fixture = appWithRequirements(context, ['github:owner/consents'], `export const enabledModules = [{ id: 'consents', from: '@owner/consents' }]`)
+  const requestedPackage = path.join(fixture.directory, 'node_modules/@fixture/visits')
+  fs.mkdirSync(path.join(requestedPackage, 'dist/modules/visits'), { recursive: true })
+  fs.renameSync(path.join(requestedPackage, 'src/modules/visits/index.ts'), path.join(requestedPackage, 'dist/modules/visits/index.js'))
+  fs.rmSync(path.join(requestedPackage, 'src'), { recursive: true })
+  const packageDirectory = path.join(fixture.directory, 'node_modules/@owner/consents')
+  fs.mkdirSync(path.join(packageDirectory, 'dist/modules/consents'), { recursive: true })
+  fs.writeFileSync(path.join(packageDirectory, 'package.json'), JSON.stringify({ name: '@owner/consents' }))
+  fs.writeFileSync(path.join(packageDirectory, 'dist/modules/consents/index.js'), `export const metadata = { locator: 'github:owner/consents' }`)
+  const result = installFromInput(fixture, '@fixture/visits', { warn() {} }, executor([]))
+  assert.equal(result.missingRequirements, undefined)
+})
+
+test('hoisted packages resolve requirements and origin despite package exports hiding the manifest', (context) => {
+  const fixture = appWithRequirements(context, ['github:owner/consents', 'catalog'], `export const enabledModules = [{ id: 'consents', from: '@owner/consents' }]`)
+  const appDirectory = path.join(fixture.directory, 'apps/store')
+  fs.mkdirSync(appDirectory, { recursive: true })
+  fs.renameSync(path.join(fixture.directory, 'src'), path.join(appDirectory, 'src'))
+  fs.writeFileSync(path.join(appDirectory, 'package.json'), '{}')
+  const packageDirectory = path.join(fixture.directory, 'node_modules/@owner/consents')
+  fs.mkdirSync(packageDirectory, { recursive: true })
+  fs.writeFileSync(path.join(packageDirectory, 'package.json'), JSON.stringify({ name: '@owner/consents', exports: { '.': './index.js' }, repository: 'https://github.com/owner/consents' }))
+  fs.writeFileSync(path.join(packageDirectory, 'index.js'), 'module.exports = {}')
+  const result = installFromInput({ ...fixture, directory: appDirectory }, '@fixture/visits', { warn() {} }, executor([]))
+  assert.deepEqual(result.missingRequirements, ['catalog'])
+})
+
+test('conditional registration observes literal and environment conditions and skips unsupported branches', (context) => {
+  const previous = process.env.MERCATO_TEST_CONSENTS
+  context.after(() => {
+    if (previous === undefined) delete process.env.MERCATO_TEST_CONSENTS
+    else process.env.MERCATO_TEST_CONSENTS = previous
+  })
+  const entry = `{ id: 'consents', from: '@owner/consents' }`
+  for (const [condition, enabled] of [
+    ['if (false)', false],
+    ['if (true)', true],
+    ["if (process.env.MERCATO_TEST_CONSENTS === 'enabled')", true],
+    ["if (process.env.MERCATO_TEST_CONSENTS !== 'enabled')", false],
+    ['if (!process.env.MERCATO_TEST_CONSENTS)', false],
+    ['if (unknownConfiguration())', false],
+  ]) {
+    process.env.MERCATO_TEST_CONSENTS = 'enabled'
+    const fixture = appWithRequirements(context, ['npm:@owner/consents'], `export const enabledModules = []; ${condition} enabledModules.push(${entry})`)
+    const result = installFromInput(fixture, '@fixture/visits', { warn() {} }, executor([]))
+    assert.deepEqual(result.missingRequirements, enabled ? undefined : ['npm:@owner/consents'], condition)
+  }
+  delete process.env.MERCATO_TEST_CONSENTS
+  for (const registration of [
+    `if (process.env.MERCATO_TEST_CONSENTS) enabledModules.push(${entry})`,
+    `false && enabledModules.push(${entry})`,
+    `unknownConfiguration() && enabledModules.push(${entry})`,
+    `function unused() { enabledModules.push(${entry}) }`,
+  ]) {
+    const fixture = appWithRequirements(context, ['npm:@owner/consents'], `export const enabledModules = []; ${registration}`)
+    const result = installFromInput(fixture, '@fixture/visits', { warn() {} }, executor([]))
+    assert.deepEqual(result.missingRequirements, ['npm:@owner/consents'], registration)
   }
 })

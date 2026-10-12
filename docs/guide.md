@@ -171,7 +171,9 @@ module is enabled; for an npm locator Open Mercato installs and enables in one
 step, so the warning follows that step or is attached to its error. Enable the
 listed modules in `src/modules.ts`, then run `install` again if it failed. The
 check is skipped when `src/modules.ts` does not define a plain `enabledModules`
-array.
+array. Conditional registrations are included only when literal or current
+process-environment conditions can be evaluated. Unsupported condition branches
+are conservatively excluded; the checker does not execute application code.
 
 Requirements accept legacy module IDs (`customers`), scoped npm packages
 (`@pkarw/marketing_consents@beta`), explicit npm locators
