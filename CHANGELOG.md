@@ -6,6 +6,7 @@
 
 - Link a module from a GitHub repository or npm package without looking up its module ID or npm name first; custom local checkout names are supported.
 - Install and enable a module from the same npm and GitHub locators, delegating registration, optional ejection, module selection, and generation to Open Mercato's CLI.
+- `install` reads the `requires` list from the installed module's metadata and warns when a required module is not enabled in `src/modules.ts`. A failed GitHub install now says that the package was added but not enabled.
 - Keep the legacy `link <module_id>` form for existing local modules and saved links. Ambiguous bare repository names must be written as `owner/repository`.
 - Store custom checkouts in development-link metadata format 2 while continuing to read the original fixed-path format 1.
 - Translate supported server-side host module-presence checks to the consuming app's runtime module registry.

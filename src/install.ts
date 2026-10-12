@@ -5,16 +5,19 @@ import {
   githubRepositoryFromInput,
   npmPackageLocator,
 } from './link.js'
+import { missingRequirements, requirementsWarning } from './requirements.js'
 
 export interface InstallOptions {
   eject?: boolean
   expectedPackage?: string
   moduleId?: string
   ref?: string
+  warn?: (message: string) => void
 }
 
 export interface InstalledModule {
   commit?: string
+  missingRequirements?: string[]
   packageName: string
   repository?: string
   specifier: string
@@ -95,6 +98,13 @@ function mercatoArguments(
   return args
 }
 
+// The underlying command already printed its own error; this adds what the
+// installer knows about the state it left and about unmet requirements.
+function withContext(error: unknown, ...context: string[]): Error {
+  const message = error instanceof Error ? error.message : String(error)
+  return new Error([message, ...context].join('\n\n'), { cause: error })
+}
+
 export function installFromInput(
   app: App,
   input: string,
@@ -102,6 +112,9 @@ export function installFromInput(
   execute: Executor = run,
 ): InstalledModule {
   if (options.moduleId) validateId(options.moduleId)
+  const warn = options.warn ?? ((message) => console.log(`\n${message}`))
+  const missing = (packageName: string) =>
+    missingRequirements(app.directory, packageName, options.moduleId)
   const expectedPackage = options.expectedPackage
     ? assertPackageName(options.expectedPackage)
     : undefined
@@ -115,12 +128,26 @@ export function installFromInput(
       throw new Error(
         `The requested npm package ${npm.packageName} does not match --package ${expectedPackage}. No files were changed.`,
       )
-    execute(
-      'yarn',
-      mercatoArguments('add', npm.specifier, options),
-      app.directory,
-    )
-    return { packageName: npm.packageName, specifier: npm.specifier }
+    // Open Mercato installs and enables in one step, so requirements can
+    // only be read once the package is on disk.
+    try {
+      execute(
+        'yarn',
+        mercatoArguments('add', npm.specifier, options),
+        app.directory,
+      )
+    } catch (error) {
+      const required = missing(npm.packageName)
+      if (!required.length) throw error
+      throw withContext(error, requirementsWarning(npm.packageName, required))
+    }
+    const required = missing(npm.packageName)
+    if (required.length) warn(requirementsWarning(npm.packageName, required))
+    return {
+      packageName: npm.packageName,
+      specifier: npm.specifier,
+      ...(required.length ? { missingRequirements: required } : {}),
+    }
   }
 
   const repository = githubRepositoryFromInput(app, input, execute)
@@ -144,10 +171,26 @@ export function installFromInput(
     )
   const specifier = `${packageName}@github:${repository}#${commit}`
   execute('yarn', ['add', specifier], app.directory)
-  execute(
-    'yarn',
-    mercatoArguments('enable', packageName, options),
-    app.directory,
-  )
-  return { commit, packageName, repository, specifier }
+  const required = missing(packageName)
+  if (required.length) warn(requirementsWarning(packageName, required))
+  try {
+    execute(
+      'yarn',
+      mercatoArguments('enable', packageName, options),
+      app.directory,
+    )
+  } catch (error) {
+    throw withContext(
+      error,
+      `${packageName} was added to package.json but is not enabled. Fix the error above, then run install again.`,
+      ...(required.length ? [requirementsWarning(packageName, required)] : []),
+    )
+  }
+  return {
+    commit,
+    packageName,
+    repository,
+    specifier,
+    ...(required.length ? { missingRequirements: required } : {}),
+  }
 }

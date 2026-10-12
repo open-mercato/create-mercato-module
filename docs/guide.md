@@ -162,6 +162,17 @@ GitHub user. Scoped names are npm locators; prefix an unscoped npm package with
 require `gh auth login`; npm authentication and registry settings remain under
 Yarn/Open Mercato control.
 
+A module can declare the modules it depends on as `requires` in the `metadata`
+export of its `index.ts`. `install` compares that list with the modules
+registered in `src/modules.ts` and warns about each one that is missing, because
+Open Mercato's generators stop while a required module is not enabled. For a
+GitHub locator the warning appears after the package is added and before the
+module is enabled; for an npm locator Open Mercato installs and enables in one
+step, so the warning follows that step or is attached to its error. Enable the
+listed modules in `src/modules.ts`, then run `install` again if it failed. The
+check is skipped when `src/modules.ts` does not define a plain `enabledModules`
+array.
+
 | Option | Behavior |
 |---|---|
 | `--package @your-name/mercato-visits` | Verify the discovered/requested package identity before installation |
