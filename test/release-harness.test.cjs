@@ -20,12 +20,19 @@ test('release harness redacts auth tokens and URL credentials from retained diag
 })
 
 test('release harness disables Yarn package-age gates for nested Git package builds', async () => {
-  const { releaseEnvironment } = await import('./release-e2e/run.mts')
+  const { gitPackageEnvironment } = await import('./release-e2e/run.mts')
   const original = { CI: '0', YARN_NPM_MINIMAL_AGE_GATE: '1d' }
-  const environment = releaseEnvironment(original)
-  assert.equal(environment.CI, '1')
+  const environment = gitPackageEnvironment(original)
+  assert.equal(environment.CI, '0')
   assert.equal(environment.YARN_NPM_MINIMAL_AGE_GATE, '0')
   assert.equal(original.YARN_NPM_MINIMAL_AGE_GATE, '1d')
+})
+
+test('release harness recognizes required modules in generated registrations', async () => {
+  const { hasEnabledModule } = await import('./release-e2e/run.mts')
+  assert.equal(hasEnabledModule("export const enabledModules = [{ id: 'auth', from: '@open-mercato/core' }]", 'auth'), true)
+  assert.equal(hasEnabledModule("export const enabledModules = [{ id: 'auth', from: '@open-mercato/core' }]", 'api_keys'), false)
+  assert.throws(() => hasEnabledModule('', '../api_keys'), /module id/)
 })
 
 test('release fixture writer creates portable module source and refuses to replace existing source', async (context) => {

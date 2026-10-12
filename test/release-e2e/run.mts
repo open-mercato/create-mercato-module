@@ -57,19 +57,18 @@ export function redact(text: string, secrets: string[]): string {
   return sanitized
 }
 
-export function releaseEnvironment(
+export function gitPackageEnvironment(
   source: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
   return {
     ...source,
-    CI: '1',
-    YARN_ENABLE_PROGRESS_BARS: '0',
-    YARN_ENABLE_IMMUTABLE_INSTALLS: 'false',
-    // Git dependencies are packed in a temporary project that cannot see the
-    // consumer app's npmPreapprovedPackages setting. Keep this release test
-    // deterministic when a pinned Open Mercato package was published recently.
     YARN_NPM_MINIMAL_AGE_GATE: '0',
   }
+}
+
+export function hasEnabledModule(source: string, id: string): boolean {
+  if (!/^[a-z][a-z0-9_]*$/.test(id)) throw new Error('Invalid module id.')
+  return new RegExp(`\\bid\\s*:\\s*['"]${id}['"]`).test(source)
 }
 
 function npmLoginToken(): string | undefined {
@@ -87,10 +86,7 @@ export async function main(args: string[]): Promise<void> {
   const token = options.registry ? process.env.RELEASE_E2E_LOCAL_TOKEN : npmLoginToken()
   if (options.lanes.includes('npm') && !token) throw new Error(options.registry ? 'Local registry checks need RELEASE_E2E_LOCAL_TOKEN from that registry.' : 'Private npm fixture checks need npm login, NPM_TOKEN, or NODE_AUTH_TOKEN before scaffolding apps.')
   const secrets = [token ?? '', process.env.GH_TOKEN ?? '', process.env.GITHUB_TOKEN ?? '']
-  const environment: NodeJS.ProcessEnv = {
-    ...releaseEnvironment(),
-    RELEASE_E2E_NPM_TOKEN: token ?? '',
-  }
+  const environment: NodeJS.ProcessEnv = { ...process.env, CI: '1', YARN_ENABLE_PROGRESS_BARS: '0', YARN_ENABLE_IMMUTABLE_INSTALLS: 'false', RELEASE_E2E_NPM_TOKEN: token ?? '' }
   delete environment.npm_config_package
   if (options.registry || options.gitUrl) for (const name of ['NPM_TOKEN', 'NODE_AUTH_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN']) delete environment[name]
   const scope = options.packageName.split('/')[0]
@@ -107,12 +103,12 @@ export async function main(args: string[]): Promise<void> {
   const toolManifest = JSON.parse(fs.readFileSync(path.join(toolRoot, 'package.json'), 'utf8')) as { bin: Record<string, string> }
   const toolBin = path.join(toolRoot, toolManifest.bin['create-mercato-module'])
   let githubCommit = options.ref
-  async function command(lane: string, stage: string, executable: string, commandArgs: string[], cwd: string): Promise<string> {
+  async function command(lane: string, stage: string, executable: string, commandArgs: string[], cwd: string, commandEnvironment = environment): Promise<string> {
     const started = Date.now()
     process.stdout.write(`\n🧪 ${lane}: ${stage}\n`)
     const logfile = path.join(options.results, `${lane}-${stage.replace(/[^a-z0-9-]/gi, '-')}.log`)
     return await new Promise((resolve, reject) => {
-      const child = spawn(executable, commandArgs, { cwd, env: environment, stdio: ['ignore', 'pipe', 'pipe'] })
+      const child = spawn(executable, commandArgs, { cwd, env: commandEnvironment, stdio: ['ignore', 'pipe', 'pipe'] })
       let output = ''
       const timeout = setTimeout(() => { child.kill('SIGTERM'); }, 15 * 60 * 1000)
       const collect = (chunk: Buffer) => { output += chunk.toString() }
@@ -218,6 +214,18 @@ export async function main(args: string[]): Promise<void> {
           await command(lane, 'configure-npm-auth', yarn, ['config', 'set', 'npmAlwaysAuth', 'true'], app)
         }
         await command(lane, 'install-clean-app', yarn, ['install'], app)
+        const appRequire = createRequire(path.join(app, 'package.json'))
+        let apiKeysAvailable = false
+        try {
+          appRequire.resolve('@open-mercato/core/modules/api_keys')
+          apiKeysAvailable = true
+        } catch (error) {
+          const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+          if (code !== 'MODULE_NOT_FOUND' && code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error
+        }
+        if (apiKeysAvailable && !hasEnabledModule(fs.readFileSync(path.join(app, 'src/modules.ts'), 'utf8'), 'api_keys')) {
+          await command(lane, 'enable-required-api-keys', yarn, ['mercato', 'module', 'enable', '@open-mercato/core', '--module', 'api_keys'], app)
+        }
         if (lane === 'github') {
           await command(lane, 'git-init-app', 'git', ['init', '--initial-branch=main'], app)
           await command(lane, 'git-config-name', 'git', ['config', 'user.name', 'Release harness'], app)
@@ -235,11 +243,10 @@ export async function main(args: string[]): Promise<void> {
         if (lane === 'npm') await command(lane, 'install-module-from-npm', yarn, ['mercato', 'module', 'add', `${options.packageName}@${options.version}`, '--allow-third-party'], app)
         else {
           if (options.gitUrl) await command(lane, 'approve-local-git', yarn, ['config', 'set', 'approvedGitRepositories', '--json', JSON.stringify([`${new URL(options.gitUrl).origin}/**`])], app)
-          await command(lane, 'install-module-from-github', yarn, ['add', options.gitUrl ? `${options.packageName}@${options.gitUrl}#commit=${githubCommit}` : `${options.packageName}@github:${options.repository}#${githubCommit}`], app)
+          await command(lane, 'install-module-from-github', yarn, ['add', options.gitUrl ? `${options.packageName}@${options.gitUrl}#commit=${githubCommit}` : `${options.packageName}@github:${options.repository}#${githubCommit}`], app, gitPackageEnvironment(environment))
           await command(lane, 'enable-github-module', yarn, ['mercato', 'module', 'enable', options.packageName, '--allow-third-party'], app)
         }
         await command(lane, 'regenerate-app', yarn, ['generate'], app)
-        const appRequire = createRequire(path.join(app, 'package.json'))
         const packageManifest = appRequire(`${options.packageName}/package.json`) as { version: string }
         assert.equal(packageManifest.version, options.version)
         const registration = fs.readFileSync(path.join(app, 'src/modules.ts'), 'utf8')
