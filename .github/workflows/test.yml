@@ -110,8 +110,11 @@ jobs:
           docker logs mercato-e2e-db
           exit 1
       - name: Local release checks
+        # A moving develop tag can briefly reference framework packages that have
+        # not reached npm yet. Update this exact, coherent set deliberately.
         run: >-
           npm run test:release:local --
+          --create-app create-mercato-app@0.8.1-develop.7452.1.5e211edd51
           --registry http://127.0.0.1:4874/
           --database-url postgres://postgres:postgres@127.0.0.1:54329/open-mercato
           --results "$RUNNER_TEMP/release-checks"

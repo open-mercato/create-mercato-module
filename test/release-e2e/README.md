@@ -28,6 +28,8 @@ docker rm -f mercato-e2e-registry mercato-e2e-db
 
 Use ports that are free on your machine, and a new results directory for every run. Stopping the containers deletes everything that was published and the database. Both addresses must be on this machine; the checks initialize the database from scratch, so never point them at one you use. Without `--database-url` the full-app step is skipped.
 
+CI passes an exact `create-mercato-app` version so a moving prerelease tag cannot expose a partially published framework set. Update that pin deliberately after confirming the scaffold and all of its exact Open Mercato dependencies are available together.
+
 What a run does:
 
 1. Scaffolds a real app, installs it, creates a module with `init`, and adds a page, API, entity, translations, and an asset to it.
