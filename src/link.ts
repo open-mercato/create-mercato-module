@@ -1,4 +1,6 @@
 import type { App, SavedSettings, Settings } from './types.js'
+import fs from 'node:fs'
+import path from 'node:path'
 import { run, validateId } from './common.js'
 import { loadConfig, saveDevelopment } from './config.js'
 import {
@@ -8,6 +10,20 @@ import {
 } from './development.js'
 import { createNpmRunner, resolveRegistry } from './npm-auth.js'
 import { validateSettings } from './package.js'
+
+export function isUnconfiguredLocalModule(app: App, input: string): boolean {
+  if (!/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(input)) return false
+  const saved = loadConfig(app).modules[input]
+  if (saved?.repository || saved?.development) return false
+  try {
+    fs.lstatSync(path.join(app.directory, 'src/modules', input))
+    return true
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      return false
+    throw error
+  }
+}
 
 // Normalize only repository roots. A tree/blob URL or another host is not a
 // dedicated repository locator, and must never silently select different code.
