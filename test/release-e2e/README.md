@@ -45,7 +45,7 @@ How it stays local:
 | GitHub API and `gh` | `gh-shim.mjs`, first on `PATH` | Answers from bare repositories in the results directory and refuses any other command. |
 | GitHub as a Git host | The same bare repositories, served on a loopback port | Yarn installs from `http://127.0.0.1:<port>/...` instead of `github:`. |
 
-`NPM_TOKEN`, `NODE_AUTH_TOKEN`, `GH_TOKEN`, and `GITHUB_TOKEN` are removed from every command the checks start. The CI job has no secrets and a read-only token, so even a defect could not publish.
+Real npm and GitHub credentials are removed before local fixture commands run. Publication commands receive only the ephemeral token issued by the throwaway Verdaccio instance. The CI job has no repository secrets and a read-only GitHub token, so even a defect could not publish remotely.
 
 The app in step 6 runs its development server; the scaffold's production build is not part of these checks. The module's entity is discovered and loaded but has no migration, so no table is created for it.
 

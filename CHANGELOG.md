@@ -1,10 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
-### Features
+### Linking and packaging
 
-- Add `install <repository-or-npm-package>` for npm and GitHub module locators, delegating dependency registration, optional ejection, module selection, and generation to Open Mercato's CLI.
+- Link a module from a GitHub repository or npm package without looking up its module ID or npm name first; custom local checkout names are supported.
+- Install and enable a module from the same npm and GitHub locators, delegating registration, optional ejection, module selection, and generation to Open Mercato's CLI.
+- Keep the legacy `link <module_id>` form for existing local modules and saved links. Ambiguous bare repository names must be written as `owner/repository`.
+- Store custom checkouts in development-link metadata format 2 while continuing to read the original fixed-path format 1.
+- Translate supported server-side host module-presence checks to the consuming app's runtime module registry.
+
+### Safety and verification
+
+- `link` checks GitHub before changing anything and prints the `publish` command when the module is not in its repository yet.
+- `MERCATO_NPM_REGISTRY` points publication at a test registry and accepts only addresses on this machine.
+- CI runs lint, typecheck, build, the full framework integration suite, and a secret-free local release rehearsal that creates, publishes, links, installs, and starts a module against throwaway services.
 
 ## 0.3.0
 
@@ -20,15 +30,8 @@
 - Warn before pushing a restricted package's source to a public GitHub repository.
 - Warn before an app export replaces repository commits it did not release, and stop when the repository changes after approval.
 - Warn before releasing a linked module from a non-default branch or with install lifecycle scripts; reject local/Git dependency locators in its `package.json`.
-- `link` checks GitHub before changing anything and prints the `publish` command when the module is not in its repository yet.
 - Restore the local module when `link` cannot save its metadata, and keep the shared `node_modules` symlink out of the module repository.
 - Keep npm commands on the npm registry for scoped packages.
 - Detect more credential formats and files; allow `.env.example`.
 - Generated workflow: actions pinned to commits, manual runs limited to the default branch, and without a lockfile only the pinned compiler is installed.
-- `MERCATO_NPM_REGISTRY` points publication at a test registry and accepts only addresses on this machine.
 - Captured commands have a timeout; stale exports under `.mercato/module-publish/` are removed.
-
-### Development
-
-- CI clones and builds Open Mercato and runs the framework integration tests that were skipped before.
-- CI runs lint, typecheck, and build, and a secret-free job that creates a module with `init`, publishes it to a throwaway registry and local Git repositories, installs it into fresh apps, and starts one with a database to use the module as a signed-in user. See `test/release-e2e/README.md`.

@@ -23,7 +23,7 @@ npx create-mercato-module link https://github.com/pkarw/visits-example.git
 npx create-mercato-module link @piotrkarwatka/visits
 ```
 
-`link` reads the npm package name and module ID from the repository. The npm form first looks up the package's `repository` metadata on npm; no npm publication or login is required for a public package. Scoped package names use npm discovery; use `npm:package-name` for an unscoped npm package. A bare repository name uses your authenticated GitHub account. HTTPS, SSH, `github:owner/repo`, trailing slashes, and `.git` URLs are accepted. Even an accidentally repeated `https://github.com/` prefix is normalized.
+`link` reads the npm package name and module ID from the repository. The npm form first looks up the package's `repository` metadata on npm; no npm publication or login is required for a public package. Scoped package names use npm discovery; use `npm:package-name` for an unscoped npm package. A bare repository name uses your authenticated GitHub account unless an unsaved local module has the same name; that legacy form asks for the module's dedicated repository instead. Use `owner/repository` to remove the ambiguity. HTTPS, SSH, `github:owner/repo`, trailing slashes, and `.git` URLs are accepted. Even an accidentally repeated `https://github.com/` prefix is normalized.
 
 To choose the checkout folder, add a local name:
 
@@ -37,7 +37,7 @@ A dedicated module repository must have a root `package.json` with `name` and `m
 
 The tool registers a new module automatically. A matching installed npm package registration switches to `@app`; conflicting or dynamic registrations require an explicit manual correction. Existing local module sources are backed up before linking; a fresh module needs no backup. The checkout shares the app's installed dependencies.
 
-Saved settings keep the original command working:
+Saved settings keep the original command working. For an unsaved local module, the same command prompts for its repository in a terminal; scripts pass `--repo owner/repository`:
 
 ```bash
 npx create-mercato-module link visits
@@ -312,4 +312,3 @@ For release verification against **fresh, fully installed `create-mercato-app` a
 The Next source-link test verifies HTTP rendering and edits in a running dev server. It does not claim a database-backed CRUD flow or browser-level Fast Refresh coverage. Trusted Publishing requires the real npm publisher configuration and an Actions runner; local OIDC simulation is not evidence of a successful registry publication.
 
 Contributions are welcome. Keep changes focused, add tests for changed behavior, and include validation results in your pull request.
-

@@ -57,6 +57,7 @@ test('development keeps @app, backs up local source, shares dependencies, and le
   const head = run('git', ['rev-parse', 'HEAD'], app.directory, { capture: true }).stdout
   const registration = fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8')
   const link = linkDevelopment(app, 'visits', settings, app.execute)
+  assert.equal(link.formatVersion, 2)
   const source = linkedModuleDirectory(app, 'visits', link)
   assert.equal(source, path.join(app.directory, '.mercato/module-repos/visits/src/modules/visits'))
   assert.equal(fs.lstatSync(path.join(app.directory, 'src/modules/visits')).isSymbolicLink(), true)
@@ -71,6 +72,8 @@ test('development keeps @app, backs up local source, shares dependencies, and le
   assert.equal(run('git', ['rev-parse', 'HEAD'], app.directory, { capture: true }).stdout, head)
   assert.equal(run('git', ['remote', 'get-url', 'origin'], app.directory, { capture: true }).stdout.trim(), 'https://example.com/whole-app.git')
   assert.doesNotMatch(run('git', ['status', '--short'], path.join(app.directory, link.checkoutPath), { capture: true }).stdout, /node_modules/, 'the shared dependency symlink must never be committed')
+  assert.equal(linkedModuleDirectory(app, 'visits', { ...link, formatVersion: 1 }), source, 'legacy v1 metadata must remain readable')
+  assert.throws(() => linkedModuleDirectory(app, 'visits', { ...link, formatVersion: 1, checkoutPath: '.mercato/module-repos/custom', sourcePath: '.mercato/module-repos/custom/src/modules/visits' }), /invalid/, 'v1 must retain its original fixed-path contract')
   assert.deepEqual(linkDevelopment(app, 'visits', { ...settings, linkedDevelopment: link }, app.execute), link)
   assert.equal(app.calls.filter((call) => call.command === 'gh' && call.args[0] === 'repo').length, 1)
 })

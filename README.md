@@ -115,7 +115,7 @@ npx create-mercato-module link https://github.com/pkarw/visits-example.git
 npx create-mercato-module link @piotrkarwatka/visits
 ```
 
-The npm form discovers the GitHub repository from the package's npm metadata. The package name and module ID come from the repository; no npm package name prompt or prior `init` is needed. A bare repository name uses your authenticated GitHub account. If the package has no dedicated module repository, the command explains how to fix it.
+The npm form discovers the GitHub repository from the package's npm metadata. The package name and module ID come from the repository; no npm package name prompt or prior `init` is needed. A bare repository name uses your authenticated GitHub account unless an unsaved local module has the same name; in that legacy case, the command asks for its dedicated repository. Use `owner/repository` to remove the ambiguity. If the package has no dedicated module repository, the command explains how to fix it.
 
 Optionally name the local checkout folder:
 

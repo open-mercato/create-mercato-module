@@ -36,7 +36,10 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 function developmentLink(value: unknown): DevelopmentLink {
-  if (!record(value) || value.formatVersion !== 1)
+  if (
+    !record(value) ||
+    (value.formatVersion !== 1 && value.formatVersion !== 2)
+  )
     throw new Error('Invalid saved module development link.')
   const keys = [
     'repository',
@@ -49,14 +52,16 @@ function developmentLink(value: unknown): DevelopmentLink {
     if (typeof value[key] !== 'string')
       throw new Error(`Invalid saved development ${key}.`)
   }
-  return {
-    formatVersion: 1,
+  const fields = {
     repository: String(value.repository),
     packageName: String(value.packageName),
     checkoutPath: String(value.checkoutPath),
     sourcePath: String(value.sourcePath),
     backupPath: String(value.backupPath),
   }
+  return value.formatVersion === 1
+    ? { formatVersion: 1, ...fields }
+    : { formatVersion: 2, ...fields }
 }
 
 function settingsFrom(value: unknown): SavedSettings {
