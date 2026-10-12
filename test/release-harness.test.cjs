@@ -35,6 +35,13 @@ test('release harness recognizes required modules in generated registrations', a
   assert.throws(() => hasEnabledModule('', '../api_keys'), /module id/)
 })
 
+test('release CI pins a coherent create-app version instead of a moving tag', () => {
+  const workflow = fs.readFileSync(path.join(process.cwd(), '.github/workflows/test.yml'), 'utf8')
+  const createApp = workflow.match(/--create-app (create-mercato-app@\S+)/)?.[1]
+  assert.ok(createApp, 'release CI must pass --create-app')
+  assert.doesNotMatch(createApp, /@(develop|latest)$/)
+})
+
 test('release fixture writer creates portable module source and refuses to replace existing source', async (context) => {
   const { writeFixture, fixtureContract } = await import('./release-e2e/fixture.mts')
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-fixture-'))
