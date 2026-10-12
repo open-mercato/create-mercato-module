@@ -317,3 +317,144 @@ test('npm installs warn about required modules once the package is on disk', (co
   assert.equal(warnings.length, 1)
   assert.match(warnings[0], /requires a module this app has not enabled: catalog\./)
 })
+
+test('canonical requirements distinguish package origins and include installation hints', (context) => {
+  const fixture = appWithRequirements(
+    context,
+    [
+      'marketing_consents',
+      '@pkarw/marketing_consents@beta',
+      'npm:@other/marketing_consents',
+      'github:Open-Mercato/consents#main',
+      'git@github.com:Other/consents.git',
+      'npm:unscoped@1.0.0',
+    ],
+    `export const enabledModules = [
+    { id: 'marketing_consents', from: '@pkarw/marketing_consents' },
+    { id: 'unscoped', from: 'unscoped' },
+  ]`,
+  )
+  fs.writeFileSync(
+    path.join(fixture.directory, 'package.json'),
+    JSON.stringify({
+      dependencies: {
+        '@pkarw/marketing_consents': 'github:open-mercato/consents#012345',
+      },
+    }),
+  )
+  const warnings = []
+  const result = installFromInput(
+    fixture,
+    '@fixture/visits',
+    { warn: (message) => warnings.push(message) },
+    executor([]),
+  )
+  assert.deepEqual(result.missingRequirements, [
+    'git@github.com:Other/consents.git',
+    'npm:@other/marketing_consents',
+  ])
+  assert.match(
+    warnings[0],
+    /npx create-mercato-module install 'npm:@other\/marketing_consents'/,
+  )
+})
+
+test('local locator preserves canonical requirements without matching another publisher', (context) => {
+  const fixture = appWithRequirements(
+    context,
+    ['github:owner/consents', 'npm:@pkarw/marketing_consents', 'npm:@other/marketing_consents'],
+    `export const enabledModules = [{ id: 'marketing_consents', from: '@app', locator: 'https://github.com/Owner/consents.git', packageName: '@pkarw/marketing_consents' }]`,
+  )
+  const result = installFromInput(
+    fixture,
+    '@fixture/visits',
+    { warn() {} },
+    executor([]),
+  )
+  assert.deepEqual(result.missingRequirements, [
+    'npm:@other/marketing_consents',
+  ])
+})
+
+test('GitHub collision fails before yarn changes package dependencies', (context) => {
+  for (const registration of [
+    `{ id: 'visits', from: '@another/visits' }`,
+    `{ id: 'visits', from: '@app' }`,
+    `{ id: 'visits', from: '@fixture/visits', locator: 'github:another/visits' }`,
+  ]) {
+    const fixture = appWithRequirements(
+      context,
+      [],
+      `export const enabledModules = [${registration}]`,
+    )
+    const calls = []
+    assert.throws(
+      () =>
+        installFromInput(
+          fixture,
+          'fixture-owner/visits-example',
+          {},
+          executor(calls),
+        ),
+      /same module ID.*No files were changed/,
+    )
+    assert.equal(
+      calls.some((call) => call.command === 'yarn'),
+      false,
+    )
+  }
+})
+
+test('GitHub locator refs install the same pinned source recommended by requirement hints', () => {
+  const calls = []
+  installFromInput(app, 'github:fixture-owner/visits-example#release-2', {}, executor(calls))
+  assert.ok(calls.some(call => call.command === 'gh' && call.args[1]?.endsWith('/commits/release-2')))
+  assert.throws(() => installFromInput(app, 'github:fixture-owner/visits-example#release-2', { ref: 'other' }, executor([])), /does not match --ref/)
+})
+
+test('repository metadata distinguishes dedicated packages from monorepo roots', (context) => {
+  for (const directory of [undefined, 'packages/consents']) {
+    const fixture = appWithRequirements(context, ['github:owner/consents'], `export const enabledModules = [{ id: 'marketing_consents', from: '@owner/consents' }]`)
+    fs.writeFileSync(path.join(fixture.directory, 'package.json'), JSON.stringify({ dependencies: { '@owner/consents': '1.2.3' } }))
+    const packageDirectory = path.join(fixture.directory, 'node_modules/@owner/consents')
+    fs.mkdirSync(packageDirectory, { recursive: true })
+    fs.writeFileSync(path.join(packageDirectory, 'package.json'), JSON.stringify({ name: '@owner/consents', repository: { url: 'git+https://github.com/Owner/consents.git', ...(directory ? { directory } : {}) } }))
+    const result = installFromInput(fixture, '@fixture/visits', { warn() {} }, executor([]))
+    assert.deepEqual(result.missingRequirements, directory ? ['github:owner/consents'] : undefined)
+  }
+})
+
+test('GitHub installation refuses unregistered local module directories', (context) => {
+  const fixture = appWithRequirements(context, [], 'export const enabledModules = []')
+  fs.mkdirSync(path.join(fixture.directory, 'src/modules/visits'), { recursive: true })
+  const calls = []
+  assert.throws(() => installFromInput(fixture, 'fixture-owner/visits-example', {}, executor(calls)), /collide with this local module/)
+  assert.equal(calls.some(call => call.command === 'yarn'), false)
+})
+
+test('all canonical GitHub installation forms resolve the same repository and selected ref', () => {
+  for (const input of [
+    'git+ssh://git@github.com/fixture-owner/visits-example.git#release-2',
+    'http://github.com/fixture-owner/visits-example.git@release-2',
+    'github.com/fixture-owner/visits-example#release-2',
+  ]) {
+    const calls = []
+    const result = installFromInput(app, input, {}, executor(calls))
+    assert.equal(result.repository, 'fixture-owner/visits-example')
+    assert.ok(calls.some(call => call.args[1] === 'repos/fixture-owner/visits-example/commits/release-2'))
+  }
+  const result = installFromInput(app, 'github:visits-example', {}, executor([]))
+  assert.equal(result.repository, 'fixture-owner/visits-example')
+})
+
+test('package metadata locator falls back only for dedicated packages and preserves npm publisher', (context) => {
+  for (const directory of [undefined, 'packages/consents']) {
+    const fixture = appWithRequirements(context, ['github:owner/consents', 'npm:@other/consents'], `export const enabledModules = [{ id: 'consents', from: '@owner/consents' }]`)
+    const packageDirectory = path.join(fixture.directory, 'node_modules/@owner/consents')
+    fs.mkdirSync(path.join(packageDirectory, 'src/modules/consents'), { recursive: true })
+    fs.writeFileSync(path.join(packageDirectory, 'package.json'), JSON.stringify({ name: '@owner/consents', ...(directory ? { repository: { url: 'https://github.com/owner/monorepo', directory } } : {}) }))
+    fs.writeFileSync(path.join(packageDirectory, 'src/modules/consents/index.ts'), `export const metadata = { locator: 'github:owner/consents' }`)
+    const result = installFromInput(fixture, '@fixture/visits', { warn() {} }, executor([]))
+    assert.deepEqual(result.missingRequirements, directory ? ['github:owner/consents', 'npm:@other/consents'] : ['npm:@other/consents'])
+  }
+})

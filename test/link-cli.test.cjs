@@ -94,6 +94,8 @@ for (const input of inputs) {
     assert.equal(path.isAbsolute(fs.readlinkSync(source)), false)
     const registration = fs.readFileSync(path.join(app.directory, 'generated.txt'), 'utf8')
     assert.match(registration, /id: 'visits', from: '@app'/)
+    assert.match(registration, /locator: 'github:release-checks\/visits-example'/)
+    assert.ok(registration.includes(`packageName: '${settings.packageName}'`))
     assert.match(registration, /id: 'auth', from: '@open-mercato\/core'/)
     fs.writeFileSync(path.join(source, 'edit.ts'), 'export const edit = 42\n')
     const repeated = cli(['link', input, '--no-generate'])

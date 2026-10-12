@@ -186,8 +186,33 @@ function assertAppRegistration(
       `Cannot verify ${id} in src/modules.ts. Use a literal enabledModules array with { id: '${id}', from: '@app' } before linking development. No files were changed.`,
     )
   }
+  function registrationProvenance(
+    candidate: ts.ObjectLiteralExpression,
+  ): string {
+    const keys = new Set(
+      candidate.properties.flatMap((property) =>
+        ts.isPropertyAssignment(property) &&
+        (ts.isIdentifier(property.name) ||
+          ts.isStringLiteralLike(property.name))
+          ? [property.name.text]
+          : [],
+      ),
+    )
+    const fields = [
+      ...(!keys.has('locator')
+        ? [`locator: 'github:${options.repository.toLowerCase()}'`]
+        : []),
+      ...(!keys.has('packageName')
+        ? [`packageName: '${options.packageName}'`]
+        : []),
+    ]
+    return fields.length
+      ? `${candidate.properties.hasTrailingComma ? '' : ','} ${fields.join(', ')}`
+      : ''
+  }
   const matching: (string | undefined)[] = []
   let packageRegistration: ts.ObjectLiteralExpression | undefined
+  let localRegistration: ts.ObjectLiteralExpression | undefined
   for (const element of initializer.elements) {
     const candidate = unwrapExpression(element)
     if (
@@ -239,6 +264,7 @@ function assertAppRegistration(
     if (moduleId === id) {
       matching.push(from)
       if (from === options.packageName) packageRegistration = candidate
+      if (from === '@app') localRegistration = candidate
     }
   }
   if (
@@ -257,19 +283,29 @@ function assertAppRegistration(
           name.text === 'from'
         )
       }) as ts.PropertyAssignment
-      return `${text.slice(0, from.initializer.getStart(parsed))}'@app'${text.slice(from.initializer.end)}`
+      const locator = registrationProvenance(packageRegistration)
+      const updated = `${text.slice(0, from.initializer.getStart(parsed))}'@app'${text.slice(from.initializer.end, packageRegistration.end - 1)}${locator}${text.slice(packageRegistration.end - 1)}`
+      return updated
     }
     const offset = initializer.end - 1
     const comma =
       initializer.elements.length && !initializer.elements.hasTrailingComma
         ? ','
         : ''
-    return `${text.slice(0, offset)}${comma}\n  { id: '${id}', from: '@app' },\n${text.slice(offset)}`
+    return `${text.slice(0, offset)}${comma}\n  { id: '${id}', from: '@app', locator: 'github:${options.repository.toLowerCase()}', packageName: '${options.packageName}' },\n${text.slice(offset)}`
   }
   if (matching.length !== 1 || matching[0] !== '@app') {
     throw new Error(
       `Module ${id} must be enabled once as a local @app module in src/modules.ts before linking development. Add or change its entry to { id: '${id}', from: '@app' }, then run yarn generate and retry. Linking keeps this registration and does not switch package registrations automatically. No files were changed.`,
     )
+  }
+  if (options.registerMissing && localRegistration) {
+    const provenance = registrationProvenance(localRegistration)
+    if (provenance) {
+      const text = parsed.text
+      const offset = localRegistration.end - 1
+      return `${text.slice(0, offset)}${provenance}${text.slice(offset)}`
+    }
   }
 }
 

@@ -1,11 +1,13 @@
 import type { App, Executor } from './types.js'
 import { run, validateId } from './common.js'
 import { inspectDevelopmentRepository } from './development.js'
+import { githubRepositoryFromInput, npmPackageLocator } from './link.js'
+import { parseModuleLocator } from './module-locators.js'
 import {
-  githubRepositoryFromInput,
-  npmPackageLocator,
-} from './link.js'
-import { missingRequirements, requirementsWarning } from './requirements.js'
+  assertNoModuleCollision,
+  missingRequirements,
+  requirementsWarning,
+} from './requirements.js'
 
 export interface InstallOptions {
   eject?: boolean
@@ -24,9 +26,7 @@ export interface InstalledModule {
 }
 
 function validGitRef(value: string): boolean {
-  return (
-    value.length <= 255 && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value)
-  )
+  return value.length <= 255 && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value)
 }
 
 function repositoryCommit(
@@ -150,12 +150,26 @@ export function installFromInput(
     }
   }
 
-  const repository = githubRepositoryFromInput(app, input, execute)
+  const parsed = parseModuleLocator(input)
+  const hashIndex = input.indexOf('#')
+  const atIndex = input.lastIndexOf('@')
+  const refIndex =
+    hashIndex >= 0 ? hashIndex : atIndex > input.indexOf('/') ? atIndex : -1
+  const locatorRef = refIndex >= 0 ? input.slice(refIndex + 1) : undefined
+  if (hashIndex !== input.lastIndexOf('#') || locatorRef === '')
+    throw new Error('Use one non-empty Git ref after #. No files were changed.')
+  if (locatorRef && options.ref && locatorRef !== options.ref)
+    throw new Error(
+      'The locator ref does not match --ref. No files were changed.',
+    )
+  const repositoryInput =
+    parsed?.kind === 'github' ? parsed.identity.slice('github:'.length) : input
+  const repository = githubRepositoryFromInput(app, repositoryInput, execute)
   const commit = repositoryCommit(
     app,
     repository,
     execute,
-    options.ref,
+    options.ref ?? locatorRef,
   )
   const manifest = inspectDevelopmentRepository(
     app.directory,
@@ -169,6 +183,12 @@ export function installFromInput(
     throw new Error(
       `🐙 ${repository} holds ${packageName}, not ${expectedPackage}. Choose the package's dedicated module repository. No files were changed.`,
     )
+  assertNoModuleCollision(
+    app.directory,
+    validateId(options.moduleId ?? manifest.mercatoModule.id),
+    packageName,
+    repository,
+  )
   const specifier = `${packageName}@github:${repository}#${commit}`
   execute('yarn', ['add', specifier], app.directory)
   const required = missing(packageName)
