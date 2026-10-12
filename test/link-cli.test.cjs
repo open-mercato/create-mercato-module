@@ -87,6 +87,7 @@ for (const input of inputs) {
     assert.equal(saved.packageName, settings.packageName)
     assert.equal(saved.repository, settings.repository)
     assert.equal(saved.version, '0.1.0')
+    assert.equal(saved.development.formatVersion, 2)
     assert.equal(saved.development.backupPath, '')
     const source = path.join(app.directory, 'src/modules/visits')
     assert.equal(fs.realpathSync(source), path.join(app.directory, saved.development.sourcePath))
@@ -189,6 +190,33 @@ test('CLI preserves the legacy module/--repo form with no npm package argument',
   const result = cli(['link', 'visits', '--repo', 'https://github.com/release-checks/visits-example', '--no-generate'])
   assert.equal(result.status, 0, result.output)
   assert.equal(loadConfig(app).modules.visits.packageName, '@fixture/visits')
+})
+
+test('CLI does not reinterpret an unsaved local module id as a bare repository name', context => {
+  const { root, app, cli } = fixture(context, { localSource: true, registration: "export const enabledModules = [{ id: 'visits', from: '@app' }]\n" })
+  const before = fs.readFileSync(path.join(app.directory, 'src/modules/visits/index.ts'), 'utf8')
+  const result = cli(['link', 'visits', '--no-generate'])
+  assert.equal(result.status, 1, result.output)
+  assert.match(result.output, /local module visits[\s\S]*--repo owner\/repository/)
+  assert.equal(fs.readFileSync(path.join(app.directory, 'src/modules/visits/index.ts'), 'utf8'), before)
+  assert.equal(fs.existsSync(path.join(app.directory, '.mercato')), false)
+
+  const preload = path.join(root, 'legacy-link-prompt.cjs')
+  fs.writeFileSync(preload, "Object.defineProperty(process.stdin,'isTTY',{value:true});require('node:readline/promises').createInterface=()=>({question:async(label)=>{console.log('PROMPT:'+label);return 'release-checks/visits-example'},close(){}})\n")
+  const interactive = cli(['link', 'visits', '--no-generate'], { NODE_OPTIONS: `--require=${preload}` })
+  assert.equal(interactive.status, 0, interactive.output)
+  assert.match(interactive.output, /PROMPT:.*Dedicated GitHub repo for local module visits/)
+  assert.equal(loadConfig(app).modules.visits.repository, 'release-checks/visits-example')
+})
+
+test('linked prerelease manifests advance to a new patch version by default', context => {
+  const manifest = { name: '@fixture/visits', version: '0.2.0-beta.1', publishConfig: { access: 'public' }, mercatoModule: { id: 'visits', formatVersion: 1 } }
+  const { cli } = fixture(context, { remoteManifest: manifest })
+  const linked = cli(['link', 'release-checks/visits-example', '--no-generate'])
+  assert.equal(linked.status, 0, linked.output)
+  const dryRun = cli(['publish', 'visits', '--dry-run'])
+  assert.equal(dryRun.status, 0, dryRun.output)
+  assert.match(dryRun.output, /@fixture\/visits@0\.2\.1/)
 })
 
 test('repository normalization and argument parsing accept simple inputs and reject unsafe paths', () => {

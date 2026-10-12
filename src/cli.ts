@@ -11,7 +11,7 @@ import {
   publicationRisks,
 } from './publish.js'
 import { loadConfig, saveConfig } from './config.js'
-import { linkFromInput } from './link.js'
+import { isUnconfiguredLocalModule, linkFromInput } from './link.js'
 import { validateCheckoutName } from './development.js'
 import { checkAuthentication, resolveRegistry } from './npm-auth.js'
 
@@ -45,6 +45,7 @@ Link options:
   Repository URL, owner/repo, or repo name (your GitHub account).
   npm packages discover their GitHub repository automatically.
   Package name and module ID are read from the repository.
+  Existing unsaved local module IDs prompt for --repo to preserve the legacy form.
   local-name optionally names the checkout folder; the module ID stays the same.
   --package @your-name/visits  optional package identity check
   --repo your-name/visits     repository override for link <module_id>
@@ -147,10 +148,13 @@ function publicationSettings(
   const releasedVersion =
     previous.lastPublishedVersion ||
     (previous.development ? previous.version : undefined)
-  const nextVersion =
-    releasedVersion && /^\d+\.\d+\.\d+$/.test(releasedVersion)
-      ? releasedVersion.replace(/\d+$/, (patch) => String(Number(patch) + 1))
-      : previous.version || '0.1.0'
+  const releasedParts =
+    /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.exec(
+      releasedVersion || '',
+    )
+  const nextVersion = releasedParts
+    ? `${releasedParts[1]}.${releasedParts[2]}.${Number(releasedParts[3]) + 1}`
+    : previous.version || '0.1.0'
   const version = String(flags.version || '') || nextVersion
   return {
     packageName: String(flags.package || '') || previous.packageName || '',
@@ -180,35 +184,55 @@ async function main(argv = process.argv.slice(2)) {
   }
   if (args.command === 'link') {
     let input = args.id
-    if (!input && process.stdin.isTTY) {
-      const prompt = createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      })
-      try {
-        input = (
-          await prompt.question('🐙 GitHub repository or npm package: ')
-        ).trim()
-      } finally {
-        prompt.close()
-      }
+    let prompt: ReturnType<typeof createInterface> | undefined
+    const linkPrompt = () => {
+      prompt ??= createInterface({ input: process.stdin, output: process.stdout })
+      return prompt
     }
-    if (!input)
-      throw new Error(
-        'Provide a GitHub repository or npm package: npx create-mercato-module link pkarw/visits-example',
+    if (!input && process.stdin.isTTY) {
+      input = (
+        await linkPrompt().question('🐙 GitHub repository or npm package: ')
+      ).trim()
+    }
+    try {
+      if (!input)
+        throw new Error(
+          'Provide a GitHub repository or npm package: npx create-mercato-module link pkarw/visits-example',
+        )
+      if (
+        !args.flags.repo &&
+        isUnconfiguredLocalModule(app, input)
+      ) {
+        if (!process.stdin.isTTY)
+          throw new Error(
+            `The local module ${input} has no saved repository. Preserve the legacy module form with --repo owner/repository, or pass an explicit owner/repository to link a bare repository name. No files were changed.`,
+          )
+        const repository = (
+          await linkPrompt().question(
+            `🐙 Dedicated GitHub repo for local module ${input} (owner/repository): `,
+          )
+        ).trim()
+        if (!repository)
+          throw new Error(
+            `The local module ${input} needs --repo owner/repository before it can be linked. No files were changed.`,
+          )
+        args.flags.repo = repository
+      }
+      const { id, development } = linkFromInput(
+        app,
+        input,
+        args.localName,
+        args.flags,
       )
-    const { id, development } = linkFromInput(
-      app,
-      input,
-      args.localName,
-      args.flags,
-    )
-    console.log(
-      `\n🔗 src/modules/${id} now points to ${development.sourcePath}.\n📦 Package: ${development.packageName}\n🐙 Edit your module in this app; changes belong to ${development.repository}.${development.backupPath ? `\n📁 Previous local source: ${development.backupPath}` : ''}\n🧩 Registered as @app.`,
-    )
-    if (!args.flags['no-generate']) run('yarn', ['generate'], app.directory)
-    console.log(`\nNext release: npx create-mercato-module publish ${id}`)
-    return
+      console.log(
+        `\n🔗 src/modules/${id} now points to ${development.sourcePath}.\n📦 Package: ${development.packageName}\n🐙 Edit your module in this app; changes belong to ${development.repository}.${development.backupPath ? `\n📁 Previous local source: ${development.backupPath}` : ''}\n🧩 Registered as @app.`,
+      )
+      if (!args.flags['no-generate']) run('yarn', ['generate'], app.directory)
+      console.log(`\nNext release: npx create-mercato-module publish ${id}`)
+      return
+    } finally {
+      prompt?.close()
+    }
   }
   const previous: Partial<SavedSettings> =
     loadConfig(app).modules[args.id] || {}

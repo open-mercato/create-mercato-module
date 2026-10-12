@@ -7,14 +7,23 @@ export interface DevelopmentApp {
   directory: string
 }
 
-export interface DevelopmentLink {
-  formatVersion: 1
+interface DevelopmentLinkFields {
   repository: string
   packageName: string
   checkoutPath: string
   sourcePath: string
   backupPath: string
 }
+
+export interface LegacyDevelopmentLink extends DevelopmentLinkFields {
+  formatVersion: 1
+}
+
+export interface DevelopmentLinkV2 extends DevelopmentLinkFields {
+  formatVersion: 2
+}
+
+export type DevelopmentLink = LegacyDevelopmentLink | DevelopmentLinkV2
 
 export interface DevelopmentOptions {
   repository: string
@@ -461,17 +470,19 @@ export function linkedModuleDirectory(
   validateIdentity(id, metadata)
   const checkoutPath = metadata.checkoutPath
   const sourcePath = `${checkoutPath}/src/modules/${id}`
-  if (
-    metadata.formatVersion !== 1 ||
-    !/^\.mercato\/module-repos\/[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(
-      checkoutPath,
-    ) ||
-    metadata.sourcePath !== sourcePath ||
-    (metadata.backupPath !== '' &&
-      !new RegExp(`^\\.mercato/module-backups/${id}-[a-zA-Z0-9-]+$`).test(
-        metadata.backupPath,
-      ))
+  const backupPath = new RegExp(
+    `^\\.mercato/module-backups/${id}-[a-zA-Z0-9-]+$`,
   )
+  const validPaths =
+    metadata.formatVersion === 1
+      ? checkoutPath === `.mercato/module-repos/${id}` &&
+        backupPath.test(metadata.backupPath)
+      : metadata.formatVersion === 2 &&
+        /^\.mercato\/module-repos\/[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(
+          checkoutPath,
+        ) &&
+        (metadata.backupPath === '' || backupPath.test(metadata.backupPath))
+  if (!validPaths || metadata.sourcePath !== sourcePath)
     throw new Error(
       'The saved development link is invalid. Refusing to follow an unowned module symlink.',
     )
@@ -624,7 +635,7 @@ export function linkDevelopment(
     fs.symlinkSync(path.relative(modules, source), moduleDirectory, 'dir')
     installedLink = true
     const link: DevelopmentLink = {
-      formatVersion: 1,
+      formatVersion: 2,
       repository: options.repository,
       packageName: options.packageName,
       checkoutPath: path.relative(root, checkout).split(path.sep).join('/'),

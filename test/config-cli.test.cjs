@@ -66,6 +66,17 @@ test('development metadata and published version survive later preference update
   assert.equal(loadConfig(app).modules.visits.lastPublishedVersion, '0.1.1')
 })
 
+test('development metadata preserves legacy v1 links and new v2 custom checkouts', (context) => {
+  const { app } = fixture(context)
+  const legacy = { formatVersion: 1, repository: 'fixture/visits', packageName: settings.packageName, checkoutPath: '.mercato/module-repos/visits', sourcePath: '.mercato/module-repos/visits/src/modules/visits', backupPath: '.mercato/module-backups/visits-123' }
+  saveDevelopment(app, 'visits', legacy, settings)
+  assert.deepEqual(loadConfig(app).modules.visits.development, legacy)
+
+  const current = { ...legacy, formatVersion: 2, checkoutPath: '.mercato/module-repos/my-visits', sourcePath: '.mercato/module-repos/my-visits/src/modules/visits', backupPath: '' }
+  saveDevelopment(app, 'visits', current, settings)
+  assert.deepEqual(loadConfig(app).modules.visits.development, current)
+})
+
 test('metadata refuses symlinked folders and files, including dangling links', (context) => {
   const { root, app } = fixture(context)
   const outside = path.join(root, 'outside')
