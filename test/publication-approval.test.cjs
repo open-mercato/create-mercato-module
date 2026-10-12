@@ -1,7 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { inspectRepository, publicationRisks } = require('../dist/publish.js')
-const { createNpmRunner } = require('../dist/npm-auth.js')
+const { createNpmRunner, resolveRegistry } = require('../dist/npm-auth.js')
 const { createPublishWorkflow } = require('../dist/workflow.js')
 
 const settings = { packageName: '@fixture/visits', version: '0.1.0', access: 'restricted', repository: 'fixture/visits', auth: 'login' }
@@ -62,4 +62,17 @@ test('generated workflow pins actions to commits and limits manual runs to the d
   assert.doesNotMatch(workflow, /npm install --ignore-scripts/, 'an unlocked install of every dependency must not precede publication')
   assert.match(workflow, /typescript@\$\(node -p/)
   assert.match(workflow, /if: github\.ref_type == 'tag' \|\| github\.ref_name == github\.event\.repository\.default_branch/)
+})
+
+test('a test registry is accepted only on this machine and receives its own token line', () => {
+  assert.equal(resolveRegistry({}), 'https://registry.npmjs.org/')
+  assert.equal(resolveRegistry({ MERCATO_NPM_REGISTRY: 'http://127.0.0.1:4874' }), 'http://127.0.0.1:4874/')
+  for (const value of ['https://registry.example.com/', 'http://127.0.0.1.example.com/', 'http://user:pass@127.0.0.1:4874/', 'http://localhost:4874/?x=1', 'file:///tmp/registry', 'not a url'])
+    assert.throws(() => resolveRegistry({ MERCATO_NPM_REGISTRY: value }), /only for a local test registry/, value)
+  const calls = []
+  const runner = createNpmRunner('token', (command, args, cwd, options) => { calls.push({ args, config: require('node:fs').readFileSync(options.env.npm_config_userconfig, 'utf8'), env: options.env }); return { status: 0, stdout: '', stderr: '' } }, { NPM_TOKEN: 'fixture-token', MERCATO_NPM_REGISTRY: 'http://127.0.0.1:4874/' }, '@fixture/visits')
+  try { runner.execute('npm', ['publish'], '/tmp') } finally { runner.close() }
+  assert.equal(calls[0].config, '//127.0.0.1:4874/:_authToken=${MERCATO_NPM_AUTH_TOKEN}\n')
+  assert.equal(calls[0].env.npm_config_registry, 'http://127.0.0.1:4874/')
+  assert.deepEqual(calls[0].args, ['publish', '--@fixture:registry=http://127.0.0.1:4874/'])
 })

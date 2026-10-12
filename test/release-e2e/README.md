@@ -1,3 +1,58 @@
+# Release checks
+
+Two sets of checks install a published module into fresh `create-mercato-app` apps:
+
+- **Local release checks** publish and install with a throwaway registry and local Git repositories. They need no account, leave nothing on npmjs.com or github.com, and run in CI on every pull request.
+- **Real release installation checks** install a fixture you already published to npm and GitHub. Run them by hand before a release.
+
+## Local release checks
+
+```bash
+docker run -d --rm --name mercato-e2e-registry -p 127.0.0.1:4874:4873 \
+  -v "$PWD/test/release-e2e/verdaccio.yaml:/verdaccio/conf/config.yaml:ro" \
+  verdaccio/verdaccio:6
+
+docker run -d --rm --name mercato-e2e-db -p 127.0.0.1:54329:5432 \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=open-mercato \
+  -v "$PWD/test/release-e2e/postgres-init.sql:/docker-entrypoint-initdb.d/00-extensions.sql:ro" \
+  pgvector/pgvector:pg17-trixie
+
+npm run build
+npm run test:release:local -- \
+  --registry http://127.0.0.1:4874/ \
+  --database-url postgres://postgres:postgres@127.0.0.1:54329/open-mercato \
+  --results /tmp/mercato-module-local-checks
+
+docker rm -f mercato-e2e-registry mercato-e2e-db
+```
+
+Use ports that are free on your machine, and a new results directory for every run. Stopping the containers deletes everything that was published and the database. Both addresses must be on this machine; the checks initialize the database from scratch, so never point them at one you use. Without `--database-url` the full-app step is skipped.
+
+CI passes an exact `create-mercato-app` version so a moving prerelease tag cannot expose a partially published framework set. Update that pin deliberately after confirming the scaffold and all of its exact Open Mercato dependencies are available together.
+
+What a run does:
+
+1. Scaffolds a real app, installs it, creates a module with `init`, and adds a page, API, entity, translations, and an asset to it.
+2. Publishes that module twice with this tool (`publish --repo ... --yes`): the first run creates the repository, the second updates it. Each run really executes `npm publish`, `git commit`, and `git push`.
+3. Confirms that a run without approval publishes nothing.
+4. Links by npm package name alone with a custom checkout folder, edits source through the app, and publishes a third version from the linked repository, preserving its documentation.
+5. Scaffolds two more fresh apps and installs the published module into one from the registry and into the other from the Git repository, then runs every check in the table below.
+6. Initializes the first of those apps against the database, starts it, and uses the module as a signed-in user: the module API refuses anonymous requests and answers the seeded admin, and `/backend/release_checks` renders the module page.
+
+How it stays local:
+
+| Real service | Stand-in | Why nothing can leak |
+| --- | --- | --- |
+| npmjs.com | [Verdaccio](https://verdaccio.org/) in a container, configured by `verdaccio.yaml` | No uplink, accepts only the `@mercato-e2e` scope. The tool is pointed at it with `MERCATO_NPM_REGISTRY`, which accepts only addresses on this machine. |
+| GitHub API and `gh` | `gh-shim.mjs`, first on `PATH` | Answers from bare repositories in the results directory and refuses any other command. |
+| GitHub as a Git host | The same bare repositories, served on a loopback port | Yarn installs from `http://127.0.0.1:<port>/...` instead of `github:`. |
+
+Real npm and GitHub credentials are removed before local fixture commands run. Publication commands receive only the ephemeral token issued by the throwaway Verdaccio instance. The CI job has no repository secrets and a read-only GitHub token, so even a defect could not publish remotely.
+
+The app in step 6 runs its development server; the scaffold's production build is not part of these checks. The module's entity is discovered and loaded but has no migration, so no table is created for it.
+
+Not covered locally, because there is no faithful stand-in: npm Trusted Publishing (OIDC) and real GitHub permissions and branch protection. CLI integration tests and the local release harness cover linking and linked releases against local repositories; verify Trusted Publishing on a real repository.
+
 # Real release installation checks
 
 These checks install actual registry and GitHub packages into two **fresh `create-mercato-app` apps**. They do not replace Yarn, framework packages, or the generated module with stubs. They never publish packages, create GitHub repositories, initialize a database, or modify a working application.
@@ -59,7 +114,7 @@ For a different Node or Yarn executable, set `RELEASE_E2E_NODE`, `RELEASE_E2E_YA
 | Source, compiled code, migration snapshot present | Yes | Yes |
 | Local source remains; app remote unchanged | Yes | Yes |
 
-Newly published fixture packages are allowlisted by exact package name against the scaffold's npm package age gate. This does not disable the age gate for other packages.
+Fresh app installs preserve the scaffold's package-age gate and preapprove only the fixture package plus Open Mercato packages. Yarn packs a Git dependency in an isolated temporary project that cannot read the consumer app's allowlist, so only that nested Git-package build disables the age gate; its dependency versions come from the committed module manifest.
 
 These tests run generators, execute the installed module's runtime entry points, and start the consumer app's actual Next.js in an isolated smoke directory that imports the installed page and API. They check HTML and JSON over HTTP. They do **not** authenticate a browser, start the full host app's protected routes, or apply database migrations. A green result verifies package installation/discovery/runtime portability and Next bundling, not a database-backed CRUD flow or browser HMR.
 

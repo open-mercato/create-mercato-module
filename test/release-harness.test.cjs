@@ -19,6 +19,29 @@ test('release harness redacts auth tokens and URL credentials from retained diag
   assert.equal(redact(`npm_abcdefghijklmnopqrstuvwxyz ${secret} https://name:password@example.com/path`, [secret]), '[REDACTED] [REDACTED] https://[REDACTED]@example.com/path')
 })
 
+test('release harness disables Yarn package-age gates for nested Git package builds', async () => {
+  const { gitPackageEnvironment } = await import('./release-e2e/run.mts')
+  const original = { CI: '0', YARN_NPM_MINIMAL_AGE_GATE: '1d' }
+  const environment = gitPackageEnvironment(original)
+  assert.equal(environment.CI, '0')
+  assert.equal(environment.YARN_NPM_MINIMAL_AGE_GATE, '0')
+  assert.equal(original.YARN_NPM_MINIMAL_AGE_GATE, '1d')
+})
+
+test('release harness recognizes required modules in generated registrations', async () => {
+  const { hasEnabledModule } = await import('./release-e2e/run.mts')
+  assert.equal(hasEnabledModule("export const enabledModules = [{ id: 'auth', from: '@open-mercato/core' }]", 'auth'), true)
+  assert.equal(hasEnabledModule("export const enabledModules = [{ id: 'auth', from: '@open-mercato/core' }]", 'api_keys'), false)
+  assert.throws(() => hasEnabledModule('', '../api_keys'), /module id/)
+})
+
+test('release CI pins a coherent create-app version instead of a moving tag', () => {
+  const workflow = fs.readFileSync(path.join(process.cwd(), '.github/workflows/test.yml'), 'utf8')
+  const createApp = workflow.match(/--create-app (create-mercato-app@\S+)/)?.[1]
+  assert.ok(createApp, 'release CI must pass --create-app')
+  assert.doesNotMatch(createApp, /@(develop|latest)$/)
+})
+
 test('release fixture writer creates portable module source and refuses to replace existing source', async (context) => {
   const { writeFixture, fixtureContract } = await import('./release-e2e/fixture.mts')
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-fixture-'))

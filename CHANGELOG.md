@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0
+
+### Linking and packaging
+
+- Link a module from a GitHub repository or npm package without looking up its module ID or npm name first; custom local checkout names are supported.
+- Keep the legacy `link <module_id>` form for existing local modules and saved links. Ambiguous bare repository names must be written as `owner/repository`.
+- Store custom checkouts in development-link metadata format 2 while continuing to read the original fixed-path format 1.
+- Translate supported server-side host module-presence checks to the consuming app's runtime module registry.
+
+### Safety and verification
+
+- `link` checks GitHub before changing anything and prints the `publish` command when the module is not in its repository yet.
+- `MERCATO_NPM_REGISTRY` points publication at a test registry and accepts only addresses on this machine.
+- CI runs lint, typecheck, build, the full framework integration suite, and a secret-free local release rehearsal that creates, publishes, links, installs, and starts a module against throwaway services.
+
 ## 0.3.0
 
 ### Breaking

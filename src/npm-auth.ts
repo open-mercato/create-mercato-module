@@ -4,7 +4,31 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { run } from './common.js'
 
-const registry = 'https://registry.npmjs.org/'
+const npmRegistry = 'https://registry.npmjs.org/'
+
+// Release checks publish to a throwaway registry on this machine. Only loopback
+// addresses are accepted, so the override can never redirect a real publication.
+function resolveRegistry(environment: NodeJS.ProcessEnv = process.env): string {
+  const override = environment.MERCATO_NPM_REGISTRY
+  if (!override) return npmRegistry
+  let url: URL | undefined
+  try {
+    url = new URL(override)
+  } catch {}
+  if (
+    !url ||
+    !['http:', 'https:'].includes(url.protocol) ||
+    !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  )
+    throw new Error(
+      'MERCATO_NPM_REGISTRY is only for a local test registry such as http://127.0.0.1:4873/. Unset it to publish to npm.',
+    )
+  return url.href.endsWith('/') ? url.href : `${url.href}/`
+}
 
 function resolveAuth(
   requested = 'auto',
@@ -43,6 +67,7 @@ function createNpmRunner(
   packageName = '',
 ) {
   const auth = resolveAuth(requested, environment)
+  const registry = resolveRegistry(environment)
   const childEnvironment: NodeJS.ProcessEnv = { ...environment }
   for (const key of Object.keys(childEnvironment)) {
     if (/^npm_config_registry$/i.test(key)) delete childEnvironment[key]
@@ -58,7 +83,7 @@ function createNpmRunner(
     fs.writeFileSync(
       config,
       auth.mode === 'token'
-        ? '//registry.npmjs.org/:_authToken=${MERCATO_NPM_AUTH_TOKEN}\n'
+        ? `${registry.replace(/^https?:/, '')}:_authToken=\${MERCATO_NPM_AUTH_TOKEN}\n`
         : '',
       { mode: 0o600 },
     )
@@ -145,4 +170,4 @@ function checkAuthentication(
   }
 }
 
-export { resolveAuth, createNpmRunner, checkAuthentication }
+export { resolveAuth, resolveRegistry, createNpmRunner, checkAuthentication }

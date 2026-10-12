@@ -138,6 +138,7 @@ function safeCommandOutput(
   environment?: NodeJS.ProcessEnv,
 ): string {
   let sanitized = output
+    // eslint-disable-next-line no-control-regex -- strips terminal color codes
     .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
     .replace(
       /([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+(?::[^\s/@]*)?@/gi,

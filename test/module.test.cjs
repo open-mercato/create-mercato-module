@@ -124,6 +124,47 @@ test('rewrites own aliases, index imports and dynamic imports and records extern
   assert.equal(prepared.manifest.dependencies['fixture-library'], '1.2.3')
 })
 
+test('packages host module presence checks without freezing the publishing app configuration', async (context) => {
+  const { app, directory, destination } = fixture(context)
+  const source = "import { enabledModules as active } from '@/modules'\nexport const available = () => active.some((module) => module.id === 'customers')\nexport const shadow = (active: { id: string }[]) => active.some(module => module.id === 'customers')\n"
+  const original = addFile(directory, 'lib/available.ts', source)
+  const prepared = preparePackage(app, 'visits', settings, destination)
+  assert.equal(fs.readFileSync(original, 'utf8'), source)
+  assert.equal(prepared.manifest.peerDependencies['@open-mercato/shared'], '0.9.0')
+  const shared = path.join(destination, 'node_modules/@open-mercato/shared')
+  writeJson(path.join(shared, 'package.json'), { name: '@open-mercato/shared', type: 'module', exports: { './lib/modules/registry': './registry.js' } })
+  fs.writeFileSync(path.join(shared, 'registry.js'), 'let modules = []; export const getModules = () => modules; export const registerModules = (next) => { modules = next }\n')
+  const registry = await import(pathToFileURL(path.join(shared, 'registry.js')).href)
+  const output = path.join(destination, 'dist/modules/visits/lib/available.js')
+  assert.doesNotMatch(fs.readFileSync(output, 'utf8'), /@\/modules/)
+  const loaded = await import(pathToFileURL(output).href)
+  assert.equal(loaded.available(), false)
+  registry.registerModules([{ id: 'customers' }])
+  assert.equal(loaded.available(), true)
+  registry.registerModules([{ id: 'auth' }])
+  assert.equal(loaded.available(), false)
+  assert.equal(loaded.shadow([{ id: 'customers' }]), true)
+  fs.symlinkSync(path.resolve(__dirname, '../node_modules/typescript'), path.join(destination, 'node_modules/typescript'))
+  run(process.execPath, ['build.cjs'], destination, { capture: true })
+  assert.doesNotMatch(fs.readFileSync(output, 'utf8'), /@\/modules/)
+})
+
+test('does not silently translate app configuration, mutations or client module imports', (context) => {
+  const { app, directory, destination } = fixture(context)
+  const source = addFile(directory, 'lib/available.ts', '')
+  for (const content of [
+    "import { enabledModules } from '@/modules'; export const config = enabledModules",
+    "import { enabledModules } from '@/modules'; export const config = enabledModules.some(m => m.from === '@app')",
+    "import { enabledModules } from '@/modules'; enabledModules.push({ id: 'other' })",
+    "import * as config from '@/modules'; export const modules = config.enabledModules",
+    "'use client'; import { enabledModules } from '@/modules'; export const available = () => enabledModules.some(m => m.id === 'customers')",
+  ]) {
+    fs.writeFileSync(source, content)
+    assert.throws(() => preparePackage(app, 'visits', settings, destination), /Cannot package/)
+    assert.ok(!fs.existsSync(destination))
+  }
+})
+
 test('preserves client directives and emits React automatic runtime and decorator metadata', async (context) => {
   const { app, directory, destination } = fixture(context)
   addFile(directory, 'components/Client.tsx', "'use client'\nexport const Client = () => <button>Example</button>\n")

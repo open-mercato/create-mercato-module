@@ -5,7 +5,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import net from 'node:net'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { fixtureContract } from './fixture.mts'
 
 type Options = {
@@ -17,11 +17,21 @@ type Options = {
   results: string
   lanes: string[]
   reuseApp?: string
+  // Local release checks: a throwaway registry and Git server on this machine.
+  registry?: string
+  gitUrl?: string
+}
+
+function loopbackUrl(value: string, option: string): string {
+  let url: URL | undefined
+  try { url = new URL(value) } catch {}
+  if (!url || !['http:', 'https:'].includes(url.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.username || url.password || url.search || url.hash) throw new Error(`${option} must be a URL on this machine, for example http://127.0.0.1:4874/. It never accepts a remote host.`)
+  return url.href
 }
 
 export function parseOptions(args: string[]): Options {
   const values: Record<string, string> = {}
-  const accepted = new Set(['package', 'version', 'repo', 'ref', 'create-app', 'results', 'lanes', 'reuse-app'])
+  const accepted = new Set(['package', 'version', 'repo', 'ref', 'create-app', 'results', 'lanes', 'reuse-app', 'registry', 'git-url'])
   for (let index = 0; index < args.length; index += 2) {
     const option = args[index]?.replace(/^--/, '')
     const value = args[index + 1]
@@ -38,13 +48,27 @@ export function parseOptions(args: string[]): Options {
   if (lanes.some((lane) => !['npm', 'github'].includes(lane)) || new Set(lanes).size !== lanes.length) throw new Error('--lanes must be npm, github, or npm,github.')
   const ref = values.ref ?? version
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref)) throw new Error('--ref must be a Git tag, branch, or commit SHA.')
-  return { packageName, version, repository, ref, createApp: values['create-app'] ?? 'create-mercato-app@develop', results: path.resolve(values.results ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-e2e-'))), lanes, reuseApp: values['reuse-app'] ? path.resolve(values['reuse-app']) : undefined }
+  return { packageName, version, repository, ref, createApp: values['create-app'] ?? 'create-mercato-app@develop', results: path.resolve(values.results ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-e2e-'))), lanes, reuseApp: values['reuse-app'] ? path.resolve(values['reuse-app']) : undefined, registry: values.registry ? loopbackUrl(values.registry, '--registry') : undefined, gitUrl: values['git-url'] ? loopbackUrl(values['git-url'], '--git-url') : undefined }
 }
 
 export function redact(text: string, secrets: string[]): string {
   let sanitized = text.replace(/(https?:\/\/)[^\s/@]+(?::[^\s/@]*)?@/g, '$1[REDACTED]@').replace(/(?:npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, '[REDACTED]')
   for (const secret of secrets) if (secret.length >= 6) sanitized = sanitized.split(secret).join('[REDACTED]')
   return sanitized
+}
+
+export function gitPackageEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return {
+    ...source,
+    YARN_NPM_MINIMAL_AGE_GATE: '0',
+  }
+}
+
+export function hasEnabledModule(source: string, id: string): boolean {
+  if (!/^[a-z][a-z0-9_]*$/.test(id)) throw new Error('Invalid module id.')
+  return new RegExp(`\\bid\\s*:\\s*['"]${id}['"]`).test(source)
 }
 
 function npmLoginToken(): string | undefined {
@@ -58,14 +82,17 @@ function npmLoginToken(): string | undefined {
 export async function main(args: string[]): Promise<void> {
   const options = parseOptions(args)
   fs.mkdirSync(options.results, { recursive: true })
-  const token = npmLoginToken()
-  if (options.lanes.includes('npm') && !token) throw new Error('Private npm fixture checks need npm login, NPM_TOKEN, or NODE_AUTH_TOKEN before scaffolding apps.')
+  // A local registry gets only its own token; a real npm token is never sent to it.
+  const token = options.registry ? process.env.RELEASE_E2E_LOCAL_TOKEN : npmLoginToken()
+  if (options.lanes.includes('npm') && !token) throw new Error(options.registry ? 'Local registry checks need RELEASE_E2E_LOCAL_TOKEN from that registry.' : 'Private npm fixture checks need npm login, NPM_TOKEN, or NODE_AUTH_TOKEN before scaffolding apps.')
   const secrets = [token ?? '', process.env.GH_TOKEN ?? '', process.env.GITHUB_TOKEN ?? '']
   const environment: NodeJS.ProcessEnv = { ...process.env, CI: '1', YARN_ENABLE_PROGRESS_BARS: '0', YARN_ENABLE_IMMUTABLE_INSTALLS: 'false', RELEASE_E2E_NPM_TOKEN: token ?? '' }
   delete environment.npm_config_package
+  if (options.registry || options.gitUrl) for (const name of ['NPM_TOKEN', 'NODE_AUTH_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN']) delete environment[name]
+  const scope = options.packageName.split('/')[0]
   const npmAuthFile = path.join(options.results, '.npm-auth.npmrc')
   if (token) {
-    fs.writeFileSync(npmAuthFile, 'registry=https://registry.npmjs.org/\n//registry.npmjs.org/:_authToken=${RELEASE_E2E_NPM_TOKEN}\n', { mode: 0o600 })
+    fs.writeFileSync(npmAuthFile, options.registry ? `${scope}:registry=${options.registry}\n${options.registry.replace(/^https?:/, '')}:_authToken=\${RELEASE_E2E_NPM_TOKEN}\n` : 'registry=https://registry.npmjs.org/\n//registry.npmjs.org/:_authToken=${RELEASE_E2E_NPM_TOKEN}\n', { mode: 0o600 })
     environment.NPM_CONFIG_USERCONFIG = npmAuthFile
   }
   const stages: { lane: string; stage: string; status: string; durationMs: number }[] = []
@@ -76,12 +103,12 @@ export async function main(args: string[]): Promise<void> {
   const toolManifest = JSON.parse(fs.readFileSync(path.join(toolRoot, 'package.json'), 'utf8')) as { bin: Record<string, string> }
   const toolBin = path.join(toolRoot, toolManifest.bin['create-mercato-module'])
   let githubCommit = options.ref
-  async function command(lane: string, stage: string, executable: string, commandArgs: string[], cwd: string): Promise<string> {
+  async function command(lane: string, stage: string, executable: string, commandArgs: string[], cwd: string, commandEnvironment = environment): Promise<string> {
     const started = Date.now()
     process.stdout.write(`\n🧪 ${lane}: ${stage}\n`)
     const logfile = path.join(options.results, `${lane}-${stage.replace(/[^a-z0-9-]/gi, '-')}.log`)
     return await new Promise((resolve, reject) => {
-      const child = spawn(executable, commandArgs, { cwd, env: environment, stdio: ['ignore', 'pipe', 'pipe'] })
+      const child = spawn(executable, commandArgs, { cwd, env: commandEnvironment, stdio: ['ignore', 'pipe', 'pipe'] })
       let output = ''
       const timeout = setTimeout(() => { child.kill('SIGTERM'); }, 15 * 60 * 1000)
       const collect = (chunk: Buffer) => { output += chunk.toString() }
@@ -157,11 +184,14 @@ export async function main(args: string[]): Promise<void> {
     await command('preflight', 'node-version', node, ['--version'], toolRoot)
     await command('preflight', 'yarn-version', yarn, ['--version'], toolRoot)
     if (options.lanes.includes('npm') && token) {
-      await command('preflight', 'npm-auth', 'npm', ['whoami'], toolRoot)
+      await command('preflight', 'npm-auth', 'npm', ['whoami', ...(options.registry ? ['--registry', options.registry] : [])], toolRoot)
       const registryVersion = await command('preflight', 'npm-fixture-available', 'npm', ['view', `${options.packageName}@${options.version}`, 'version', '--json'], toolRoot)
       assert.equal(JSON.parse(registryVersion.trim()), options.version, 'Wait until the registry exposes the exact fixture version before running release checks')
     }
-    if (options.lanes.includes('github')) {
+    if (options.lanes.includes('github') && options.gitUrl) {
+      githubCommit = (await command('preflight', 'git-fixture-available', 'git', ['ls-remote', options.gitUrl, options.ref], toolRoot)).trim().split(/\s+/)[0] ?? ''
+      assert.match(githubCommit, /^[0-9a-f]{40}$/, 'Local Git fixture ref must resolve to one immutable full commit SHA')
+    } else if (options.lanes.includes('github')) {
       await command('preflight', 'github-auth', 'gh', ['auth', 'status'], toolRoot)
       githubCommit = (await command('preflight', 'github-fixture-available', 'gh', ['api', `repos/${options.repository}/commits/${encodeURIComponent(options.ref)}`, '--jq', '.sha'], toolRoot)).trim()
       assert.match(githubCommit, /^[0-9a-f]{40}$/, 'GitHub fixture ref must resolve to one immutable full commit SHA')
@@ -176,11 +206,26 @@ export async function main(args: string[]): Promise<void> {
       const originalConfig = fs.readFileSync(yarnConfig, 'utf8')
       try {
         await command(lane, 'approve-fixture-age', yarn, ['config', 'set', 'npmPreapprovedPackages', '--json', JSON.stringify(['@open-mercato/*', options.packageName])], app)
-        if (token) {
+        if (options.registry) {
+          await command(lane, 'allow-local-registry', yarn, ['config', 'set', 'unsafeHttpWhitelist', '--json', JSON.stringify([new URL(options.registry).hostname])], app)
+          await command(lane, 'use-local-registry', yarn, ['config', 'set', 'npmScopes', '--json', JSON.stringify({ [scope.slice(1)]: { npmRegistryServer: options.registry.replace(/\/$/, '') } })], app)
+        } else if (token) {
           await command(lane, 'configure-npm-token', yarn, ['config', 'set', 'npmAuthToken', '${RELEASE_E2E_NPM_TOKEN}'], app)
           await command(lane, 'configure-npm-auth', yarn, ['config', 'set', 'npmAlwaysAuth', 'true'], app)
         }
         await command(lane, 'install-clean-app', yarn, ['install'], app)
+        const appRequire = createRequire(path.join(app, 'package.json'))
+        let apiKeysAvailable = false
+        try {
+          appRequire.resolve('@open-mercato/core/modules/api_keys')
+          apiKeysAvailable = true
+        } catch (error) {
+          const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+          if (code !== 'MODULE_NOT_FOUND' && code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error
+        }
+        if (apiKeysAvailable && !hasEnabledModule(fs.readFileSync(path.join(app, 'src/modules.ts'), 'utf8'), 'api_keys')) {
+          await command(lane, 'enable-required-api-keys', yarn, ['mercato', 'module', 'enable', '@open-mercato/core', '--module', 'api_keys'], app)
+        }
         if (lane === 'github') {
           await command(lane, 'git-init-app', 'git', ['init', '--initial-branch=main'], app)
           await command(lane, 'git-config-name', 'git', ['config', 'user.name', 'Release harness'], app)
@@ -197,11 +242,11 @@ export async function main(args: string[]): Promise<void> {
         assert.match(registrationsBeforeInstall, /local_release_checks/)
         if (lane === 'npm') await command(lane, 'install-module-from-npm', yarn, ['mercato', 'module', 'add', `${options.packageName}@${options.version}`, '--allow-third-party'], app)
         else {
-          await command(lane, 'install-module-from-github', yarn, ['add', `${options.packageName}@github:${options.repository}#${githubCommit}`], app)
+          if (options.gitUrl) await command(lane, 'approve-local-git', yarn, ['config', 'set', 'approvedGitRepositories', '--json', JSON.stringify([`${new URL(options.gitUrl).origin}/**`])], app)
+          await command(lane, 'install-module-from-github', yarn, ['add', options.gitUrl ? `${options.packageName}@${options.gitUrl}#commit=${githubCommit}` : `${options.packageName}@github:${options.repository}#${githubCommit}`], app, gitPackageEnvironment(environment))
           await command(lane, 'enable-github-module', yarn, ['mercato', 'module', 'enable', options.packageName, '--allow-third-party'], app)
         }
         await command(lane, 'regenerate-app', yarn, ['generate'], app)
-        const appRequire = createRequire(path.join(app, 'package.json'))
         const packageManifest = appRequire(`${options.packageName}/package.json`) as { version: string }
         assert.equal(packageManifest.version, options.version)
         const registration = fs.readFileSync(path.join(app, 'src/modules.ts'), 'utf8')

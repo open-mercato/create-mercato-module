@@ -1,0 +1,16 @@
+# Throwaway registry for the local release checks. It has no uplink, so nothing
+# is fetched from or sent to npmjs.com, and it accepts only the fixture scope.
+storage: /verdaccio/storage/data
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    max_users: 10
+packages:
+  '@mercato-e2e/*':
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+log:
+  type: stdout
+  format: pretty
+  level: warn
