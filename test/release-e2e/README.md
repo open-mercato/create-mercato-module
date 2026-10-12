@@ -112,7 +112,7 @@ For a different Node or Yarn executable, set `RELEASE_E2E_NODE`, `RELEASE_E2E_YA
 | Source, compiled code, migration snapshot present | Yes | Yes |
 | Local source remains; app remote unchanged | Yes | Yes |
 
-Newly published fixture packages are allowlisted by exact package name against the scaffold's npm package age gate. This does not disable the age gate for other packages.
+Fresh app installs preserve the scaffold's package-age gate and preapprove only the fixture package plus Open Mercato packages. Yarn packs a Git dependency in an isolated temporary project that cannot read the consumer app's allowlist, so only that nested Git-package build disables the age gate; its dependency versions come from the committed module manifest.
 
 These tests run generators, execute the installed module's runtime entry points, and start the consumer app's actual Next.js in an isolated smoke directory that imports the installed page and API. They check HTML and JSON over HTTP. They do **not** authenticate a browser, start the full host app's protected routes, or apply database migrations. A green result verifies package installation/discovery/runtime portability and Next bundling, not a database-backed CRUD flow or browser HMR.
 
