@@ -57,6 +57,21 @@ export function redact(text: string, secrets: string[]): string {
   return sanitized
 }
 
+export function releaseEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return {
+    ...source,
+    CI: '1',
+    YARN_ENABLE_PROGRESS_BARS: '0',
+    YARN_ENABLE_IMMUTABLE_INSTALLS: 'false',
+    // Git dependencies are packed in a temporary project that cannot see the
+    // consumer app's npmPreapprovedPackages setting. Keep this release test
+    // deterministic when a pinned Open Mercato package was published recently.
+    YARN_NPM_MINIMAL_AGE_GATE: '0',
+  }
+}
+
 function npmLoginToken(): string | undefined {
   if (process.env.NPM_TOKEN || process.env.NODE_AUTH_TOKEN) return process.env.NPM_TOKEN ?? process.env.NODE_AUTH_TOKEN
   const filename = process.env.NPM_CONFIG_USERCONFIG ?? path.join(os.homedir(), '.npmrc')
@@ -72,7 +87,10 @@ export async function main(args: string[]): Promise<void> {
   const token = options.registry ? process.env.RELEASE_E2E_LOCAL_TOKEN : npmLoginToken()
   if (options.lanes.includes('npm') && !token) throw new Error(options.registry ? 'Local registry checks need RELEASE_E2E_LOCAL_TOKEN from that registry.' : 'Private npm fixture checks need npm login, NPM_TOKEN, or NODE_AUTH_TOKEN before scaffolding apps.')
   const secrets = [token ?? '', process.env.GH_TOKEN ?? '', process.env.GITHUB_TOKEN ?? '']
-  const environment: NodeJS.ProcessEnv = { ...process.env, CI: '1', YARN_ENABLE_PROGRESS_BARS: '0', YARN_ENABLE_IMMUTABLE_INSTALLS: 'false', RELEASE_E2E_NPM_TOKEN: token ?? '' }
+  const environment: NodeJS.ProcessEnv = {
+    ...releaseEnvironment(),
+    RELEASE_E2E_NPM_TOKEN: token ?? '',
+  }
   delete environment.npm_config_package
   if (options.registry || options.gitUrl) for (const name of ['NPM_TOKEN', 'NODE_AUTH_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN']) delete environment[name]
   const scope = options.packageName.split('/')[0]
