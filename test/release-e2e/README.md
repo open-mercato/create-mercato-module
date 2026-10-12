@@ -60,7 +60,7 @@ Run these checks before releasing the tool. Ordinary unit tests are fast and rem
 ## Prerequisites
 
 - Node 24 or newer; Yarn 4 matching the scaffolded app; npm; Git; authenticated GitHub CLI for a private fixture repository.
-- A published fixture package and corresponding Git commit/tag. Use the fixture source below so assertions cover real behavior. Private npm fixture publication requires an account or organization plan that permits private packages; otherwise npm rejects publication with `E402`.
+- A published fixture package and corresponding Git commit/tag. For a GitHub lane, that ref must resolve to the repository's current default-branch head because `install` resolves and pins that head. Use the fixture source below so assertions cover real behavior. Private npm fixture publication requires an account or organization plan that permits private packages; otherwise npm rejects publication with `E402`.
 - For private npm packages, set `NPM_TOKEN` or `NODE_AUTH_TOKEN`, or log in with `npm login`. The harness reads the registry token from the active npm user config in memory when no token environment variable exists. It never prints or writes the token. Generated app Yarn config contains an environment placeholder and is restored afterward.
 - Available disk space for two complete apps and the Yarn package cache (approximately 8 GB). Dependencies are installed independently into each app.
 
@@ -89,7 +89,7 @@ node test/release-e2e/run.mts \
   --lanes npm
 ```
 
-`--lanes npm,github` is the default. `--lanes github` tests GitHub alone. Real GitHub installation resolves and pins the repository's current default-branch commit through the CLI. The local Git stand-in resolves `--ref` to a full immutable commit SHA before Yarn installation; Yarn does not accept abbreviated commit hashes directly. `--reuse-app /absolute/path` accepts an already scaffolded, clean app for one lane; its module directories must not contain harness modules. This is useful for investigating a failed scaffold or install without changing framework dependencies. The harness does not delete or overwrite existing application directories.
+`--lanes npm,github` is the default. `--lanes github` tests GitHub alone. Real GitHub installation resolves and pins the repository's current default-branch commit through the CLI; preflight rejects a `--ref` that resolves anywhere else so the selected fixture and installed code cannot diverge. The local Git stand-in resolves `--ref` to a full immutable commit SHA before Yarn installation; Yarn does not accept abbreviated commit hashes directly. `--reuse-app /absolute/path` accepts an already scaffolded, clean app for one lane; its module directories must not contain harness modules. This is useful for investigating a failed scaffold or install without changing framework dependencies. The harness does not delete or overwrite existing application directories.
 
 For a different Node or Yarn executable, set `RELEASE_E2E_NODE`, `RELEASE_E2E_YARN`, or `RELEASE_E2E_NPX` to an executable path. To run all spawned commands on Node 24, start the harness with Node 24 and put the same Node installation first on `PATH`.
 

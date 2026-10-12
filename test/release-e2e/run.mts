@@ -181,6 +181,10 @@ export async function main(args: string[]): Promise<void> {
       await command('preflight', 'github-auth', 'gh', ['auth', 'status'], toolRoot)
       githubCommit = (await command('preflight', 'github-fixture-available', 'gh', ['api', `repos/${options.repository}/commits/${encodeURIComponent(options.ref)}`, '--jq', '.sha'], toolRoot)).trim()
       assert.match(githubCommit, /^[0-9a-f]{40}$/, 'GitHub fixture ref must resolve to one immutable full commit SHA')
+      const defaultBranch = (await command('preflight', 'github-default-branch', 'gh', ['api', `repos/${options.repository}`, '--jq', '.default_branch'], toolRoot)).trim()
+      assert.match(defaultBranch, /^[A-Za-z0-9][A-Za-z0-9._/-]*$/, 'GitHub fixture repository must have a valid default branch')
+      const defaultCommit = (await command('preflight', 'github-default-commit', 'gh', ['api', `repos/${options.repository}/commits/${encodeURIComponent(defaultBranch)}`, '--jq', '.sha'], toolRoot)).trim()
+      assert.equal(githubCommit, defaultCommit, `GitHub fixture --ref ${options.ref} must resolve to the current default-branch head because create-mercato-module install pins that head`)
     }
     for (const lane of options.lanes) {
       const app = options.reuseApp && options.lanes.length === 1 ? options.reuseApp : path.join(options.results, `${lane}-app`)
