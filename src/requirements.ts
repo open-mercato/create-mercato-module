@@ -108,6 +108,26 @@ function moduleIndex(directory: string, moduleId: string): string {
   )
 }
 
+function installedPackageName(appDirectory: string, from: string): string {
+  try {
+    const manifest: unknown = JSON.parse(
+      fs.readFileSync(
+        path.join(packageDirectory(appDirectory, from), 'package.json'),
+        'utf8',
+      ),
+    )
+    if (
+      manifest &&
+      typeof manifest === 'object' &&
+      'name' in manifest &&
+      typeof manifest.name === 'string' &&
+      manifest.name
+    )
+      return manifest.name
+  } catch {}
+  return from
+}
+
 function installedRepository(
   appDirectory: string,
   packageName: string,
@@ -215,8 +235,13 @@ function enabledModuleIds(appDirectory: string): ModuleIdentity[] | undefined {
       }
     }
     if (from && from !== '@app') {
-      const identity = canonicalRequirement(`npm:${from}`)
+      const observedPackageName = installedPackageName(appDirectory, from)
+      const identity = canonicalRequirement(`npm:${observedPackageName}`)
       if (identity) ids.add(identity)
+      if (observedPackageName !== from) {
+        modules.push({ id: entry.id, locators: [...ids] })
+        return
+      }
       const dependency = dependencies[from]
       const declaredOrigin =
         typeof dependency === 'string'

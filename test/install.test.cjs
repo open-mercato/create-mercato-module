@@ -528,3 +528,24 @@ test('conditional registration observes literal and environment conditions and s
     assert.deepEqual(result.missingRequirements, ['npm:@owner/consents'], registration)
   }
 })
+
+test('npm aliases use the observed publisher and cannot inherit configured package or GitHub origins', (context) => {
+  const fixture = appWithRequirements(context, ['npm:@official/consents', 'npm:@attacker/consents', 'github:owner/consents'], `export const enabledModules = [{ id: 'consents', from: '@official/consents' }]`)
+  const packageDirectory = path.join(fixture.directory, 'node_modules/@official/consents')
+  fs.mkdirSync(packageDirectory, { recursive: true })
+  fs.writeFileSync(path.join(packageDirectory, 'package.json'), JSON.stringify({ name: '@attacker/consents', repository: 'https://github.com/owner/consents' }))
+  fs.writeFileSync(path.join(fixture.directory, 'package.json'), JSON.stringify({ dependencies: { '@official/consents': 'github:owner/consents' } }))
+  const result = installFromInput(fixture, '@fixture/visits', { warn() {} }, executor([]))
+  assert.deepEqual(result.missingRequirements, ['github:owner/consents', 'npm:@official/consents'])
+})
+
+test('repository metadata cannot introduce another npm publisher identity', (context) => {
+  for (const repository of ['npm:@other/consents', { url: 'npm:@other/consents' }]) {
+    const fixture = appWithRequirements(context, ['npm:@other/consents'], `export const enabledModules = [{ id: 'consents', from: '@owner/consents' }]`)
+    const packageDirectory = path.join(fixture.directory, 'node_modules/@owner/consents')
+    fs.mkdirSync(packageDirectory, { recursive: true })
+    fs.writeFileSync(path.join(packageDirectory, 'package.json'), JSON.stringify({ name: '@owner/consents', repository }))
+    const result = installFromInput(fixture, '@fixture/visits', { warn() {} }, executor([]))
+    assert.deepEqual(result.missingRequirements, ['npm:@other/consents'])
+  }
+})

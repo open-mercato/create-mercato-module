@@ -185,7 +185,8 @@ Packages from different publishers do not satisfy each other's requirements
 even when their module IDs are identical. Missing package requirements include
 an `install` command preserving the requested version or ref.
 
-The checker derives npm identity from the enabled entry's `from` package, and
+The checker derives npm identity from the installed package's manifest name,
+falling back to the enabled entry's `from` when the name is unavailable, and
 GitHub identity from its app dependency specifier or dedicated package
 `repository` metadata (monorepo subdirectories are excluded). An optional
 `locator` on an enabled entry or module `metadata` preserves identity for local,
