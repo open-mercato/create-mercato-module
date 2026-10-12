@@ -15,21 +15,37 @@
 ## Develop in the dedicated repository without leaving your app
 
 
-After publishing to a dedicated repository, run this **inside the same app**:
+Run inside an Open Mercato app, including a fresh app without the module:
+
+```bash
+npx create-mercato-module link pkarw/visits-example
+npx create-mercato-module link https://github.com/pkarw/visits-example.git
+npx create-mercato-module link @piotrkarwatka/visits
+```
+
+`link` reads the npm package name and module ID from the repository. The npm form first looks up the package's `repository` metadata on npm; no npm publication or login is required for a public package. Scoped package names use npm discovery; use `npm:package-name` for an unscoped npm package. A bare repository name uses your authenticated GitHub account. HTTPS, SSH, `github:owner/repo`, trailing slashes, and `.git` URLs are accepted. Even an accidentally repeated `https://github.com/` prefix is normalized.
+
+To choose the checkout folder, add a local name:
+
+```bash
+npx create-mercato-module link pkarw/visits-example my-visits
+```
+
+This uses `.mercato/module-repos/my-visits` while keeping the repository's module ID (`visits`) and its routes and imports. Names may contain letters, numbers, hyphens and underscores.
+
+A dedicated module repository must have a root `package.json` with `name` and `mercatoModule: { id, formatVersion: 1 }`, plus `src/modules/<id>/index.ts`. npm packages without a dedicated GitHub repository, monorepo packages, empty repositories, and unrelated projects produce actionable errors before app files change. GitHub authentication uses `gh auth login`.
+
+The tool registers a new module automatically. A matching installed npm package registration switches to `@app`; conflicting or dynamic registrations require an explicit manual correction. Existing local module sources are backed up before linking; a fresh module needs no backup. The checkout shares the app's installed dependencies.
+
+Saved settings keep the original command working:
 
 ```bash
 npx create-mercato-module link visits
+# Or choose a repository explicitly, without supplying an npm name:
+npx create-mercato-module link visits --repo owner/mercato-visits
 ```
 
-No saved settings yet? Specify the module's existing package and repository:
-
-```bash
-npx create-mercato-module link visits \
-  --package @your-name/mercato-visits \
-  --repo your-name/mercato-visits
-```
-
-The tool clones that repository, verifies its package/module ownership, backs up the original module, and creates a relative source link:
+For a local module that has no dedicated repository yet, run `publish visits --repo owner/mercato-visits` first. With the default checkout name, the resulting layout is:
 
 ```text
 my-app/
@@ -84,6 +100,8 @@ Creates a translated starter page, registers the module, and runs generation. Mo
 |---|---|
 | `--no-generate` | Create and register the module; run generation yourself |
 
+The starter is one page. After `yarn setup` has the app running, you will probably want to open the app in your coding agent and have it build the module further; the app's `AGENTS.md` gives the agent the framework conventions.
+
 ### `publish <module_id>`
 
 Packages one local module and publishes it after confirmation.
@@ -120,15 +138,19 @@ npx create-mercato-module publish visits \
 
 Without `--yes`, a noninteractive invocation builds the archive, publishes nothing, and exits with an error. Each warning in the summary additionally needs its own option, named next to the warning; `--yes` alone never approves a warning. Private npm packages require the corresponding npm permissions. Repository visibility flags apply when creating a new repository; existing repository visibility is preserved.
 
-### `link <module_id>`
+### `link <repository-or-npm-package> [local-name]`
 
-Connects the current app's local module source to its dedicated repository, with an original-source backup. Requires GitHub authentication and an existing matching repository created by this tool. Repeating the command with matching saved ownership metadata is safe; arbitrary module symlinks and existing checkout directories are rejected.
+Connects repository source to the current app and remembers its identity for `publish <module_id>`. Accepts GitHub `owner/repo`, repository URLs, bare repository names for the signed-in GitHub user, scoped npm package names, and `npm:package-name`. With no argument, a terminal prompt asks for the repository or npm package. The optional local name only changes the checkout folder.
+
+Repeating a link with matching saved ownership metadata preserves edits and reuses the checkout. Arbitrary module symlinks, conflicting registrations, and occupied checkout directories are rejected. Linking rolls back source and registration changes if setup or metadata saving fails. `yarn generate` runs after the link is saved; if generation fails, fix its reported error and rerun generation or the same link command.
 
 | Option | Behavior |
 |---|---|
-| `--package @your-name/mercato-visits` | Package identity if it is not already saved |
-| `--repo owner/repository` | Dedicated repository if it is not already saved |
+| `--package @your-name/mercato-visits` | Optional package identity check; normally inferred from the repository |
+| `--repo owner/repository` | Repository override for the legacy `link <module_id>` form; accepts URLs too |
 | `--no-generate` | Link the source without running `yarn generate` |
+
+Linked publication reads the owned checkout, including custom local checkout names, and preserves author source, tests, README and workflow customizations. The first release after linking suggests the repository version's next patch; later releases increment the last published version. Use `--version` to choose another version. A dry run packages the linked source without writing to GitHub or npm.
 
 ## Authentication
 
@@ -192,6 +214,8 @@ The initial module license follows the app's `package.json` `license` field, or 
 
 Imports within the selected module, including `@/modules/visits/...`, become portable relative imports. Publication stops with an actionable error for app-only aliases, imports of another local module, local/Git dependency locators, CommonJS `require()` / `import = require`, symlinks, and recognizable embedded credentials.
 
+Server-side module-presence checks such as `import { enabledModules } from '@/modules'` followed by `enabledModules.some(module => module.id === 'customers')` are translated to the consuming app's runtime `getModules()` registry. Renamed imports work too. The publishing app's configuration is never copied, and your original source stays unchanged. Other uses of `@/modules` (configuration fields, mutations, namespace imports, or client components) remain unsupported and report an actionable error.
+
 Move shared application code into the module or publish it as a separate dependency. Run your app's typecheck and feature tests before publishing: the package build checks transpilation, not semantic types or business behavior.
 
 ### An error mentions `.mercato/generated`
@@ -250,6 +274,8 @@ With a built Open Mercato checkout, also verify archive installation, standalone
 ```bash
 OPEN_MERCATO_ROOT=/path/to/open-mercato npm test
 ```
+
+To rehearse a whole publication without touching npmjs.com or GitHub, run the local release checks: they point the tool at a throwaway registry with `MERCATO_NPM_REGISTRY` (addresses on your machine only) and at local Git repositories.
 
 For release verification against **fresh, fully installed `create-mercato-app` applications**, use the repeatable [release end-to-end scripts](https://github.com/open-mercato/create-mercato-module/blob/main/test/release-e2e/README.md). They install a real module from both npm and GitHub, verify discovery and runtime behavior, and save sanitized results. Fixture publication is a separate explicit step; the harness does not create remote repositories or publish packages. Private fixture packages/repositories are supported.
 

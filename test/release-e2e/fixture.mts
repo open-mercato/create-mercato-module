@@ -13,9 +13,12 @@ export const fixtureContract = {
   asset: 'assets/fixture.txt',
 }
 
-export function writeFixture(appDirectory: string): void {
+// With `extend`, the files are added to a module that `init` already created: its
+// index.ts and registration stay, so the published module is one the tool scaffolded.
+export function writeFixture(appDirectory: string, options: { extend?: boolean } = {}): void {
   const directory = path.join(appDirectory, 'src/modules', fixtureContract.moduleId)
-  if (fs.existsSync(directory)) throw new Error(`Fixture module already exists: ${directory}`)
+  if (options.extend && !fs.existsSync(path.join(directory, 'index.ts'))) throw new Error(`Run init ${fixtureContract.moduleId} before extending the module: ${directory}`)
+  if (!options.extend && fs.existsSync(directory)) throw new Error(`Fixture module already exists: ${directory}`)
   const files: Record<string, string> = {
     'index.ts': `export const metadata = { name: 'release_checks', title: 'Release checks', version: '0.1.0', ejectable: true }\n`,
     'backend/release_checks/page.tsx': `'use client'\nimport { useState } from 'react'\nexport default function ReleaseChecks() { const [label] = useState('Mercato release fixture'); return <h1>{label}</h1> }\n`,
@@ -29,6 +32,7 @@ export function writeFixture(appDirectory: string): void {
     'migrations/.snapshot-open-mercato.json': '{}\n',
   }
   for (const [filename, contents] of Object.entries(files)) {
+    if (options.extend && filename === 'index.ts') continue
     const target = path.join(directory, filename)
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.writeFileSync(target, contents)

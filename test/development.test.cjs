@@ -34,6 +34,14 @@ function fixture(context, options = {}) {
   const execute = (command, args, cwd, runOptions = {}) => {
     calls.push({ command, args, cwd })
     if (command === 'gh' && args[0] === 'auth') return { status: options.loggedOut ? 1 : 0, stdout: '', stderr: '' }
+    if (command === 'gh' && args[0] === 'api') {
+      const missing = { status: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' }
+      if (options.github === 'missing') return missing
+      if (options.github === 'offline') return { status: 1, stdout: '', stderr: 'connection refused' }
+      if (!args[1].endsWith('/contents/package.json')) return { status: 0, stdout: '{}', stderr: '' }
+      if (options.github === 'changes-before-clone') return { status: 0, stdout: JSON.stringify({ name: settings.packageName, mercatoModule: { id: 'visits', formatVersion: 1 } }), stderr: '' }
+      return options.github === 'empty' ? missing : { status: 0, stdout: fs.readFileSync(path.join(remote, 'package.json'), 'utf8'), stderr: '' }
+    }
     if (command === 'gh' && args[0] === 'repo' && args[1] === 'clone') return run('git', ['clone', remote, args[3]], cwd, { capture: true })
     return run(command, args, cwd, { ...runOptions, capture: true })
   }
@@ -74,6 +82,19 @@ test('development restores the local module when its link cannot be saved', (con
   assert.match(fs.readFileSync(path.join(app.directory, 'src/modules/visits/index.ts'), 'utf8'), /Original local visits/)
   assert.equal(fs.existsSync(path.join(app.directory, '.mercato/module-repos/visits')), false)
   assert.ok(linkDevelopment(app, 'visits', settings, app.execute), 'a failed link must leave the app ready for a retry')
+})
+
+test('link explains how to publish first when the module is not in its GitHub repository', (context) => {
+  for (const [github, expected] of [['missing', /does not exist on GitHub yet[\s\S]*publish visits --package @fixture\/visits --repo fixture\/mercato-visits/], ['empty', /has not been published to it yet[\s\S]*publish visits --package/], ['offline', /Cannot inspect the GitHub repository/]]) {
+    const app = fixture(context, { github })
+    assert.throws(() => linkDevelopment(app, 'visits', settings, app.execute), expected, github)
+    assert.equal(fs.existsSync(path.join(app.directory, '.mercato')), false, 'nothing may be cloned or created')
+    assert.equal(fs.lstatSync(path.join(app.directory, 'src/modules/visits')).isSymbolicLink(), false)
+    assert.equal(app.calls.some((call) => call.args[0] === 'repo'), false)
+  }
+  const other = fixture(context, { packageName: '@fixture/other' })
+  assert.throws(() => linkDevelopment(other, 'visits', settings, other.execute), /holds @fixture\/other, not @fixture\/visits \/ visits[\s\S]*--repo/)
+  assert.equal(fs.existsSync(path.join(other.directory, '.mercato')), false)
 })
 
 test('development also links apps without Git and authenticates before making files', (context) => {
@@ -128,7 +149,7 @@ test('development refuses symlink registration files and nonliteral configuratio
 })
 
 test('unowned repository clone is removed and original source is preserved', (context) => {
-  const app = fixture(context, { packageName: '@other/visits' })
+  const app = fixture(context, { packageName: '@other/visits', github: 'changes-before-clone' })
   assert.throws(() => linkDevelopment(app, 'visits', settings, app.execute), /does not belong/)
   assert.match(fs.readFileSync(path.join(app.directory, 'src/modules/visits/index.ts'), 'utf8'), /Original local visits/)
   assert.deepEqual(fs.readdirSync(path.join(app.directory, '.mercato/module-repos')), [])
@@ -261,3 +282,20 @@ test('Next development server renders linked repository source and sees edits ma
   await waitForLabel('Linked repository edit without rebuilding')
   assert.match(fs.readFileSync(path.join(app.directory, metadata.sourcePath, 'backend/visits/page.tsx'), 'utf8'), /edit without rebuilding/)
 })
+
+for (const localSource of [true, false]) {
+  test(`automatic registration and source are restored when link metadata cannot be saved (local source: ${localSource})`, context => {
+    const app = fixture(context)
+    fs.writeFileSync(path.join(app.directory, 'src/modules.ts'), 'export const enabledModules = []\n')
+    if (!localSource) fs.rmSync(path.join(app.directory, 'src/modules'), { recursive: true })
+    assert.throws(() => linkDevelopment(app, 'visits', { ...settings, registerMissing: true, checkoutName: 'my-visits' }, app.execute, () => { throw new Error('metadata write refused') }), /metadata write refused/)
+    assert.equal(fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8'), 'export const enabledModules = []\n')
+    assert.equal(fs.existsSync(path.join(app.directory, 'src/modules')), localSource)
+    if (localSource) assert.match(fs.readFileSync(path.join(app.directory, 'src/modules/visits/index.ts'), 'utf8'), /Original local visits/)
+    assert.deepEqual(fs.readdirSync(path.join(app.directory, '.mercato/module-repos')), [])
+    assert.deepEqual(fs.readdirSync(path.join(app.directory, '.mercato/module-backups')), [])
+    const linked = linkDevelopment(app, 'visits', { ...settings, registerMissing: true }, app.execute)
+    assert.equal(Boolean(linked.backupPath), localSource)
+    assert.match(fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8'), /id: 'visits', from: '@app'/)
+  })
+}

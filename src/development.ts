@@ -20,6 +20,8 @@ export interface DevelopmentOptions {
   repository: string
   packageName: string
   linkedDevelopment?: DevelopmentLink
+  checkoutName?: string
+  registerMissing?: boolean
 }
 
 export interface DevelopmentRunOptions {
@@ -137,7 +139,11 @@ function unwrapExpression(expression: ts.Expression): ts.Expression {
   return expression
 }
 
-function assertAppRegistration(root: string, id: string): void {
+function assertAppRegistration(
+  root: string,
+  id: string,
+  options: DevelopmentOptions,
+): string | undefined {
   const source = realDirectories(root, 'src')
   const modulesFile = path.join(source, 'modules.ts')
   if (
@@ -172,6 +178,7 @@ function assertAppRegistration(root: string, id: string): void {
     )
   }
   const matching: (string | undefined)[] = []
+  let packageRegistration: ts.ObjectLiteralExpression | undefined
   for (const element of initializer.elements) {
     const candidate = unwrapExpression(element)
     if (
@@ -184,10 +191,16 @@ function assertAppRegistration(root: string, id: string): void {
               unwrapExpression(property.name.expression),
             )),
       )
-    )
+    ) {
+      if (options.registerMissing)
+        throw new Error(
+          'Cannot safely update dynamic module registration in src/modules.ts. Register the module as @app manually, then retry. No files were changed.',
+        )
       continue
+    }
     let moduleId: string | undefined
     let from: string | undefined
+    const seen = new Set<string>()
     for (const property of candidate.properties) {
       if (!ts.isPropertyAssignment(property)) continue
       const name = ts.isComputedPropertyName(property.name)
@@ -198,12 +211,51 @@ function assertAppRegistration(root: string, id: string): void {
           ? name.text
           : undefined
       const value = unwrapExpression(property.initializer)
+      if (options.registerMissing && key && ['id', 'from'].includes(key)) {
+        if (seen.has(key) || !ts.isStringLiteralLike(value))
+          throw new Error(
+            'Cannot safely update ambiguous module registration in src/modules.ts. Use one literal id and from per module. No files were changed.',
+          )
+        seen.add(key)
+      }
       if (key === 'id')
         moduleId = ts.isStringLiteralLike(value) ? value.text : undefined
       if (key === 'from')
         from = ts.isStringLiteralLike(value) ? value.text : undefined
     }
-    if (moduleId === id) matching.push(from)
+    if (options.registerMissing && !moduleId)
+      throw new Error(
+        'Cannot safely update a module registration without a literal id in src/modules.ts. No files were changed.',
+      )
+    if (moduleId === id) {
+      matching.push(from)
+      if (from === options.packageName) packageRegistration = candidate
+    }
+  }
+  if (
+    options.registerMissing &&
+    (matching.length === 0 || (matching.length === 1 && packageRegistration))
+  ) {
+    const text = parsed.text
+    if (packageRegistration) {
+      const from = packageRegistration.properties.find((property) => {
+        if (!ts.isPropertyAssignment(property)) return false
+        const name = ts.isComputedPropertyName(property.name)
+          ? unwrapExpression(property.name.expression)
+          : property.name
+        return (
+          (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) &&
+          name.text === 'from'
+        )
+      }) as ts.PropertyAssignment
+      return `${text.slice(0, from.initializer.getStart(parsed))}'@app'${text.slice(from.initializer.end)}`
+    }
+    const offset = initializer.end - 1
+    const comma =
+      initializer.elements.length && !initializer.elements.hasTrailingComma
+        ? ','
+        : ''
+    return `${text.slice(0, offset)}${comma}\n  { id: '${id}', from: '@app' },\n${text.slice(offset)}`
   }
   if (matching.length !== 1 || matching[0] !== '@app') {
     throw new Error(
@@ -318,21 +370,107 @@ function excludeDependencies(checkout: string): void {
   )
 }
 
+// Linking needs the module to be released to its GitHub repository already.
+// Checked before anything is cloned or moved, with the command that fixes it.
+export function inspectDevelopmentRepository(
+  root: string,
+  repository: string,
+  execute: DevelopmentRunner,
+  expected?: { id: string; packageName: string },
+): {
+  name: string
+  version?: string
+  publishConfig?: { access?: string }
+  mercatoModule: { id: string; formatVersion: 1 }
+} {
+  const publish = expected
+    ? `  npx create-mercato-module publish ${expected.id} --package ${expected.packageName} --repo ${repository}`
+    : `  npx create-mercato-module publish <module_id> --package <package-name> --repo ${repository}`
+  const details = execute('gh', ['api', `repos/${repository}`], root, {
+    capture: true,
+    allowFailure: true,
+  })
+  if (details.status !== 0) {
+    if (/HTTP 404/.test(details.stderr))
+      throw new Error(
+        `🐙 ${repository} does not exist on GitHub yet, or your account cannot see it. Linking needs the module in its dedicated repository first. Publish it there:\n\n${publish}\n\nThen run link again. If the repository exists, check the owner/name and gh auth status. No files were changed.`,
+      )
+    throw new Error(
+      '🐙 Cannot inspect the GitHub repository. Check gh auth login and network access, then retry. No files were changed.',
+    )
+  }
+  const file = execute(
+    'gh',
+    [
+      'api',
+      `repos/${repository}/contents/package.json`,
+      '-H',
+      'Accept: application/vnd.github.raw',
+    ],
+    root,
+    { capture: true, allowFailure: true },
+  )
+  if (file.status !== 0) {
+    if (/HTTP 404/.test(file.stderr))
+      throw new Error(
+        `🐙 ${repository} exists, but this module has not been published to it yet. Publish it first:\n\n${publish}\n\nThen run link again. No files were changed.`,
+      )
+    throw new Error(
+      '🐙 Cannot read the GitHub repository. Check gh auth login and network access, then retry. No files were changed.',
+    )
+  }
+  let manifest: unknown
+  try {
+    manifest = JSON.parse(file.stdout)
+  } catch {}
+  if (
+    !manifest ||
+    typeof manifest !== 'object' ||
+    !('name' in manifest) ||
+    typeof manifest.name !== 'string' ||
+    !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(manifest.name) ||
+    manifest.name.length > 214 ||
+    !('mercatoModule' in manifest) ||
+    !manifest.mercatoModule ||
+    typeof manifest.mercatoModule !== 'object' ||
+    !('id' in manifest.mercatoModule) ||
+    typeof manifest.mercatoModule.id !== 'string' ||
+    !/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(manifest.mercatoModule.id) ||
+    !('formatVersion' in manifest.mercatoModule) ||
+    manifest.mercatoModule.formatVersion !== 1
+  )
+    throw new Error(
+      `🐙 ${repository} is not a dedicated Open Mercato module repository. Its package.json must declare a package name and mercatoModule with id and formatVersion: 1. Publish your module to its own repository first:\n\n${publish}\n\nNo files were changed.`,
+    )
+  if (
+    expected &&
+    (manifest.name !== expected.packageName ||
+      manifest.mercatoModule.id !== expected.id)
+  )
+    throw new Error(
+      `🐙 ${repository} holds ${manifest.name}, not ${expected.packageName} / ${expected.id}. Pass the repository this module was published to with --repo, or publish the module to a new dedicated repository:\n\n  npx create-mercato-module publish ${expected.id} --package ${expected.packageName} --repo <owner>/<new-repository>\n\nNo files were changed.`,
+    )
+  return manifest as ReturnType<typeof inspectDevelopmentRepository>
+}
+
 export function linkedModuleDirectory(
   app: DevelopmentApp,
   id: string,
   metadata: DevelopmentLink,
 ): string {
   validateIdentity(id, metadata)
-  const checkoutPath = `.mercato/module-repos/${id}`
+  const checkoutPath = metadata.checkoutPath
   const sourcePath = `${checkoutPath}/src/modules/${id}`
   if (
     metadata.formatVersion !== 1 ||
-    metadata.checkoutPath !== checkoutPath ||
+    !/^\.mercato\/module-repos\/[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(
+      checkoutPath,
+    ) ||
     metadata.sourcePath !== sourcePath ||
-    !new RegExp(`^\\.mercato/module-backups/${id}-[a-zA-Z0-9-]+$`).test(
-      metadata.backupPath,
-    )
+    (metadata.backupPath !== '' &&
+      !new RegExp(`^\\.mercato/module-backups/${id}-[a-zA-Z0-9-]+$`).test(
+        metadata.backupPath,
+      ))
   )
     throw new Error(
       'The saved development link is invalid. Refusing to follow an unowned module symlink.',
@@ -361,6 +499,11 @@ export function linkDevelopment(
   commit: (link: DevelopmentLink) => void = () => {},
 ): DevelopmentLink {
   validateIdentity(id, options)
+  const checkoutName =
+    options.checkoutName ||
+    options.linkedDevelopment?.checkoutPath.split('/').at(-1) ||
+    id
+  validateCheckoutName(checkoutName)
   const root = fs.realpathSync(app.directory)
   if (
     execute('gh', ['auth', 'status'], root, {
@@ -371,8 +514,10 @@ export function linkDevelopment(
     throw new Error(
       '🔐 Sign in to GitHub with gh auth login, then retry. No files were changed.',
     )
-  assertAppRegistration(root, id)
-  const modules = realDirectories(root, 'src/modules')
+  const updatedRegistration = assertAppRegistration(root, id, options)
+  const modules = path.join(root, 'src/modules')
+  if (exists(modules) || !options.registerMissing)
+    realDirectories(root, 'src/modules')
   const moduleDirectory = path.join(modules, id)
   if (
     exists(moduleDirectory) &&
@@ -381,7 +526,9 @@ export function linkDevelopment(
     if (
       !options.linkedDevelopment ||
       options.linkedDevelopment.repository !== options.repository ||
-      options.linkedDevelopment.packageName !== options.packageName
+      options.linkedDevelopment.packageName !== options.packageName ||
+      options.linkedDevelopment.checkoutPath !==
+        `.mercato/module-repos/${checkoutName}`
     )
       throw new Error(
         `src/modules/${id} is already a symlink without matching saved development settings. Refusing to replace it.`,
@@ -391,30 +538,49 @@ export function linkDevelopment(
       root,
       path.join(root, options.linkedDevelopment.checkoutPath),
     )
-    commit(options.linkedDevelopment)
+    const file = path.join(root, 'src/modules.ts')
+    const original = fs.readFileSync(file, 'utf8')
+    try {
+      if (updatedRegistration !== undefined)
+        fs.writeFileSync(file, updatedRegistration)
+      commit(options.linkedDevelopment)
+    } catch (error) {
+      if (updatedRegistration !== undefined) fs.writeFileSync(file, original)
+      throw error
+    }
     return options.linkedDevelopment
   }
+  const hadLocalSource = exists(moduleDirectory)
   if (
-    !exists(moduleDirectory) ||
-    !fs.lstatSync(moduleDirectory).isDirectory() ||
-    !exists(path.join(moduleDirectory, 'index.ts')) ||
-    fs.lstatSync(path.join(moduleDirectory, 'index.ts')).isSymbolicLink()
+    (hadLocalSource || !options.registerMissing) &&
+    (!hadLocalSource ||
+      !fs.lstatSync(moduleDirectory).isDirectory() ||
+      !exists(path.join(moduleDirectory, 'index.ts')) ||
+      fs.lstatSync(path.join(moduleDirectory, 'index.ts')).isSymbolicLink())
   )
     throw new Error(
       `No local module found at src/modules/${id}/index.ts. Publish or create the local module before linking development.`,
     )
+  inspectDevelopmentRepository(root, options.repository, execute, {
+    id,
+    packageName: options.packageName,
+  })
   const repoRoot = realDirectories(root, '.mercato/module-repos', true)
   const backupRoot = realDirectories(root, '.mercato/module-backups', true)
-  const checkout = path.join(repoRoot, id)
+  const checkout = path.join(repoRoot, checkoutName)
   if (exists(checkout))
     throw new Error(
-      `.mercato/module-repos/${id} already exists. Refusing to overwrite a checkout; inspect and move it before retrying.`,
+      `.mercato/module-repos/${checkoutName} already exists. Refusing to overwrite a checkout; inspect and move it before retrying.`,
     )
   const staging = fs.mkdtempSync(path.join(repoRoot, `.${id}-`))
   const stagingCheckout = path.join(staging, 'repository')
   let installedCheckout = false
   let movedSource = false
   let installedLink = false
+  let changedRegistration = false
+  let createdModules = false
+  const modulesFile = path.join(root, 'src/modules.ts')
+  const originalRegistration = fs.readFileSync(modulesFile, 'utf8')
   let backup = ''
   try {
     execute('gh', ['repo', 'clone', options.repository, stagingCheckout], root)
@@ -446,9 +612,15 @@ export function linkDevelopment(
     )
     fs.rmdirSync(backupContainer)
     backup = backupContainer
-    fs.renameSync(moduleDirectory, backup)
-    movedSource = true
+    if (hadLocalSource) {
+      fs.renameSync(moduleDirectory, backup)
+      movedSource = true
+    } else backup = ''
     const source = path.join(checkout, 'src/modules', id)
+    if (!exists(modules)) {
+      fs.mkdirSync(modules)
+      createdModules = true
+    }
     fs.symlinkSync(path.relative(modules, source), moduleDirectory, 'dir')
     installedLink = true
     const link: DevelopmentLink = {
@@ -457,17 +629,32 @@ export function linkDevelopment(
       packageName: options.packageName,
       checkoutPath: path.relative(root, checkout).split(path.sep).join('/'),
       sourcePath: path.relative(root, source).split(path.sep).join('/'),
-      backupPath: path.relative(root, backup).split(path.sep).join('/'),
+      backupPath: backup
+        ? path.relative(root, backup).split(path.sep).join('/')
+        : '',
+    }
+    if (updatedRegistration !== undefined) {
+      fs.writeFileSync(modulesFile, updatedRegistration)
+      changedRegistration = true
     }
     // Saved inside the rollback scope: a link without metadata cannot be reused.
     commit(link)
     return link
   } catch (error) {
+    if (changedRegistration) fs.writeFileSync(modulesFile, originalRegistration)
     if (installedLink) fs.unlinkSync(moduleDirectory)
+    if (createdModules) fs.rmdirSync(modules)
     if (movedSource) fs.renameSync(backup, moduleDirectory)
     if (installedCheckout) fs.rmSync(checkout, { recursive: true, force: true })
     throw error
   } finally {
     fs.rmSync(staging, { recursive: true, force: true })
   }
+}
+
+export function validateCheckoutName(name: string): void {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name))
+    throw new Error(
+      'Use a local checkout name containing letters, numbers, hyphens or underscores, for example my-visits.',
+    )
 }
