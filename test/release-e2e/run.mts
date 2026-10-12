@@ -215,9 +215,10 @@ export async function main(args: string[]): Promise<void> {
         const registrationsBeforeInstall = fs.readFileSync(path.join(app, 'src/modules.ts'), 'utf8')
         assert.match(registrationsBeforeInstall, /local_release_checks/)
         if (lane === 'npm') await command(lane, 'install-module-from-npm', node, [toolBin, 'install', `${options.packageName}@${options.version}`], app)
+        else if (!options.gitUrl) await command(lane, 'install-module-from-github', node, [toolBin, 'install', `https://github.com/${options.repository}.git`], app)
         else {
-          if (options.gitUrl) await command(lane, 'approve-local-git', yarn, ['config', 'set', 'approvedGitRepositories', '--json', JSON.stringify([`${new URL(options.gitUrl).origin}/**`])], app)
-          await command(lane, 'install-module-from-github', yarn, ['add', options.gitUrl ? `${options.packageName}@${options.gitUrl}#commit=${githubCommit}` : `${options.packageName}@github:${options.repository}#${githubCommit}`], app)
+          await command(lane, 'approve-local-git', yarn, ['config', 'set', 'approvedGitRepositories', '--json', JSON.stringify([`${new URL(options.gitUrl).origin}/**`])], app)
+          await command(lane, 'install-module-from-github', yarn, ['add', `${options.packageName}@${options.gitUrl}#commit=${githubCommit}`], app)
           await command(lane, 'enable-github-module', yarn, ['mercato', 'module', 'enable', options.packageName, '--allow-third-party'], app)
         }
         await command(lane, 'regenerate-app', yarn, ['generate'], app)

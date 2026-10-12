@@ -89,7 +89,7 @@ node test/release-e2e/run.mts \
   --lanes npm
 ```
 
-`--lanes npm,github` is the default. `--lanes github` tests GitHub alone. GitHub refs are resolved to a full immutable commit SHA before Yarn installation; Yarn does not accept abbreviated commit hashes directly. `--reuse-app /absolute/path` accepts an already scaffolded, clean app for one lane; its module directories must not contain harness modules. This is useful for investigating a failed scaffold or install without changing framework dependencies. The harness does not delete or overwrite existing application directories.
+`--lanes npm,github` is the default. `--lanes github` tests GitHub alone. Real GitHub installation resolves and pins the repository's current default-branch commit through the CLI. The local Git stand-in resolves `--ref` to a full immutable commit SHA before Yarn installation; Yarn does not accept abbreviated commit hashes directly. `--reuse-app /absolute/path` accepts an already scaffolded, clean app for one lane; its module directories must not contain harness modules. This is useful for investigating a failed scaffold or install without changing framework dependencies. The harness does not delete or overwrite existing application directories.
 
 For a different Node or Yarn executable, set `RELEASE_E2E_NODE`, `RELEASE_E2E_YARN`, or `RELEASE_E2E_NPX` to an executable path. To run all spawned commands on Node 24, start the harness with Node 24 and put the same Node installation first on `PATH`.
 
@@ -102,7 +102,7 @@ For a different Node or Yarn executable, set `RELEASE_E2E_NODE`, `RELEASE_E2E_YA
 | App starts without/with its own Git | Without Git | Own local Git |
 | New local module initialized and generated | Yes | Yes |
 | Existing local module packed with `--dry-run` | Yes | Yes |
-| Remote module installation | `create-mercato-module install name@version` (delegates to `mercato module add`) | `yarn add name@github:owner/repo#ref`, then `mercato module enable name --allow-third-party` |
+| Remote module installation | `create-mercato-module install name@version` (delegates to `mercato module add`) | `create-mercato-module install owner/repo`; the loopback-only local stand-in uses the equivalent direct Yarn/enable fallback |
 | Page/API/entity auto-discovery and generation | Yes | Yes |
 | Compiled React page renders using app React | Yes | Yes |
 | Compiled API handler executes | Yes | Yes |
