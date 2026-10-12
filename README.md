@@ -90,7 +90,9 @@ npx create-mercato-module install https://github.com/your-name/mercato-visits.gi
 Scoped npm packages, `npm:unscoped-package`, GitHub URLs, `owner/repository`,
 and a bare repository name for your authenticated GitHub account are supported.
 Use `--eject` for packages that allow source ejection, or `--module <module_id>`
-to choose one module from a multi-module package.
+to choose one module from a multi-module package. GitHub installs use the
+current default-branch head unless `--ref <tag-or-commit>` selects another ref;
+the resolved full commit is pinned in either case.
 
 ## Publish an existing module
 

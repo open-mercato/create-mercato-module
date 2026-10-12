@@ -10,8 +10,14 @@ function executor(calls, options = {}) {
       return { status: options.loggedOut ? 1 : 0, stdout: '', stderr: '' }
     if (command === 'gh' && args[1] === 'user')
       return { status: 0, stdout: JSON.stringify({ login: 'fixture-owner' }), stderr: '' }
-    if (command === 'gh' && args[1]?.includes('/commits/'))
-      return { status: 0, stdout: `${commit}\n`, stderr: '' }
+    if (command === 'gh' && args[1]?.includes('/commits/')) {
+      const ref = decodeURIComponent(args[1].split('/commits/')[1])
+      return {
+        status: 0,
+        stdout: `${options.commits?.[ref] || commit}\n`,
+        stderr: '',
+      }
+    }
     if (command === 'gh' && args[1]?.match(/^repos\/.+\/contents\/package\.json\?ref=/))
       return {
         status: 0,
@@ -103,6 +109,45 @@ test('GitHub locators discover identity, install the repository and enable throu
   }
 })
 
+test('GitHub --ref resolves once and pins a commit independent of the default head', () => {
+  const calls = []
+  const selectedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const defaultCommit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+  assert.deepEqual(
+    installFromInput(
+      app,
+      'fixture-owner/visits-example',
+      { ref: 'release/1.2.3' },
+      executor(calls, {
+        commits: { 'release/1.2.3': selectedCommit, main: defaultCommit },
+      }),
+    ),
+    {
+      commit: selectedCommit,
+      packageName: '@fixture/visits',
+      repository: 'fixture-owner/visits-example',
+      specifier: `@fixture/visits@github:fixture-owner/visits-example#${selectedCommit}`,
+    },
+  )
+  assert.ok(
+    calls.some(
+      ({ command, args }) =>
+        command === 'gh' &&
+        args[1] ===
+          'repos/fixture-owner/visits-example/commits/release%2F1.2.3',
+    ),
+  )
+  assert.equal(
+    calls.some(({ args }) => args[1]?.includes('/commits/main')),
+    false,
+  )
+  assert.ok(
+    calls.some(({ args }) =>
+      args[1]?.endsWith(`contents/package.json?ref=${selectedCommit}`),
+    ),
+  )
+})
+
 test('installation validates identities and command values before invoking Yarn', () => {
   const calls = []
   assert.throws(
@@ -124,6 +169,26 @@ test('installation validates identities and command values before invoking Yarn'
         executor(calls),
       ),
     /snake_case/,
+  )
+  assert.throws(
+    () =>
+      installFromInput(
+        app,
+        '@fixture/visits',
+        { ref: 'v1.2.3' },
+        executor(calls),
+      ),
+    /only available for GitHub/,
+  )
+  assert.throws(
+    () =>
+      installFromInput(
+        app,
+        'fixture-owner/visits-example',
+        { ref: '../unsafe ref' },
+        executor(calls),
+      ),
+    /valid Git tag/,
   )
   assert.equal(calls.some((call) => call.command === 'yarn'), false)
 })

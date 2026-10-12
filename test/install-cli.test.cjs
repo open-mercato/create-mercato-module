@@ -91,9 +91,17 @@ test('install CLI accepts npm and GitHub locators end to end', (context) => {
     ],
   })
 
-  const github = cli(['install', 'visits-example'])
+  const github = cli(['install', 'visits-example', '--ref', 'v1.2.3'])
   assert.equal(github.status, 0, github.output)
   assert.match(github.output, /Source: fixture-owner\/visits-example/)
+  assert.ok(
+    readCalls().some(
+      ({ command, args }) =>
+        command === 'gh' &&
+        args[1] ===
+          'repos/fixture-owner/visits-example/commits/v1.2.3',
+    ),
+  )
   assert.deepEqual(readCalls().slice(-2), [
     {
       command: 'yarn',
@@ -121,6 +129,8 @@ test('install CLI parsing validates options and locator arity', () => {
       '@fixture/visits',
       '--module',
       'visits',
+      '--ref',
+      'v1.2.3',
       '--eject',
     ]),
     {
@@ -129,6 +139,7 @@ test('install CLI parsing validates options and locator arity', () => {
       flags: {
         package: '@fixture/visits',
         module: 'visits',
+        ref: 'v1.2.3',
         eject: true,
       },
     },

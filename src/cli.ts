@@ -61,6 +61,7 @@ Install options:
   Package name and module ID are discovered automatically.
   --package @your-name/visits  optional package identity check
   --module module_id         choose one module from a multi-module package
+  --ref tag|branch|commit    pin a GitHub install to this ref's resolved commit
   --eject                    copy ejectable module source into src/modules
 
 Init options:
@@ -115,7 +116,7 @@ function parse(argv: string[]): ParsedArguments {
       : command === 'link'
         ? ['package', 'repo']
         : command === 'install'
-          ? ['package', 'module']
+          ? ['package', 'module', 'ref']
           : []
   for (let index = 0; index < rest.length; index += 1) {
     if (!rest[index].startsWith('-')) {
@@ -279,6 +280,7 @@ async function main(argv = process.argv.slice(2)) {
         ? String(args.flags.package)
         : undefined,
       moduleId: args.flags.module ? String(args.flags.module) : undefined,
+      ref: args.flags.ref ? String(args.flags.ref) : undefined,
     })
     console.log(
       `\n✅ Installed ${installed.packageName} and enabled its Open Mercato module.${installed.repository ? `\n🐙 Source: ${installed.repository}` : `\n📦 Source: ${installed.specifier}`}${args.flags.eject ? '\n📁 Module source was ejected into this app.' : ''}`,

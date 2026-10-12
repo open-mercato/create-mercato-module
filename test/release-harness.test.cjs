@@ -28,6 +28,18 @@ test('release harness disables Yarn package-age gates for nested Git package bui
   assert.equal(original.YARN_NPM_MINIMAL_AGE_GATE, '1d')
 })
 
+test('real GitHub release checks pass the preflight commit through install', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, 'release-e2e/run.mts'),
+    'utf8',
+  )
+  assert.match(
+    source,
+    /\[toolBin, 'install', `https:\/\/github\.com\/\$\{options\.repository\}\.git`, '--ref', githubCommit\]/,
+  )
+  assert.doesNotMatch(source, /github-default-commit/)
+})
+
 test('release harness recognizes required modules in generated registrations', async () => {
   const { hasEnabledModule } = await import('./release-e2e/run.mts')
   assert.equal(hasEnabledModule("export const enabledModules = [{ id: 'auth', from: '@open-mercato/core' }]", 'auth'), true)

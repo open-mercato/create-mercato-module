@@ -144,9 +144,9 @@ Installs and enables a published module in the current Open Mercato app. npm
 locators delegate to `yarn mercato module add`, so Open Mercato updates the app
 dependency, edits `src/modules.ts` through its supported implementation, and
 runs all generators. GitHub locators first discover the package identity from
-the dedicated repository, pin its current default-branch commit for a
-repeatable Yarn install, and then delegate activation to `yarn mercato module
-enable`.
+the dedicated repository, resolve the selected ref (or the current default
+branch) once to a full commit SHA for a repeatable Yarn install, and then
+delegate activation to `yarn mercato module enable`.
 
 ```bash
 npx create-mercato-module install @your-name/mercato-visits@beta
@@ -166,6 +166,7 @@ Yarn/Open Mercato control.
 |---|---|
 | `--package @your-name/mercato-visits` | Verify the discovered/requested package identity before installation |
 | `--module module_id` | Choose one module from a package that contains multiple modules |
+| `--ref tag-or-branch-or-commit` | Resolve and pin this GitHub ref instead of the current default-branch head; rejected for npm locators |
 | `--eject` | Ask Open Mercato to copy ejectable source into `src/modules` and register it as `@app` |
 
 ### `link <repository-or-npm-package> [local-name]`

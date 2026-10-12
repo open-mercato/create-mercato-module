@@ -10,6 +10,7 @@ export interface InstallOptions {
   eject?: boolean
   expectedPackage?: string
   moduleId?: string
+  ref?: string
 }
 
 export interface InstalledModule {
@@ -19,26 +20,45 @@ export interface InstalledModule {
   specifier: string
 }
 
-function repositoryHead(app: App, repository: string, execute: Executor): string {
-  const details = execute('gh', ['api', `repos/${repository}`], app.directory, {
-    capture: true,
-  })
-  let branch: unknown
-  try {
-    branch = JSON.parse(details.stdout).default_branch
-  } catch {}
-  if (
-    typeof branch !== 'string' ||
-    !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(branch)
+function validGitRef(value: string): boolean {
+  return (
+    value.length <= 255 && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value)
   )
+}
+
+function repositoryCommit(
+  app: App,
+  repository: string,
+  execute: Executor,
+  requestedRef?: string,
+): string {
+  let ref = requestedRef
+  if (ref && !validGitRef(ref))
     throw new Error(
-      `🐙 Cannot determine ${repository}'s default branch. No files were changed.`,
+      'Use a valid Git tag, branch, or commit SHA for --ref. No files were changed.',
     )
+  if (!ref) {
+    const details = execute(
+      'gh',
+      ['api', `repos/${repository}`],
+      app.directory,
+      { capture: true },
+    )
+    let branch: unknown
+    try {
+      branch = JSON.parse(details.stdout).default_branch
+    } catch {}
+    if (typeof branch !== 'string' || !validGitRef(branch))
+      throw new Error(
+        `🐙 Cannot determine ${repository}'s default branch. No files were changed.`,
+      )
+    ref = branch
+  }
   const result = execute(
     'gh',
     [
       'api',
-      `repos/${repository}/commits/${encodeURIComponent(branch)}`,
+      `repos/${repository}/commits/${encodeURIComponent(ref)}`,
       '--jq',
       '.sha',
     ],
@@ -48,7 +68,7 @@ function repositoryHead(app: App, repository: string, execute: Executor): string
   const commit = result.stdout.trim()
   if (!/^[0-9a-f]{40}$/.test(commit))
     throw new Error(
-      `🐙 Cannot resolve ${repository}'s default branch to a commit. No files were changed.`,
+      `🐙 Cannot resolve ${repository}'s ${requestedRef ? `ref ${requestedRef}` : 'default branch'} to a commit. No files were changed.`,
     )
   return commit
 }
@@ -87,6 +107,10 @@ export function installFromInput(
     : undefined
   const npm = npmPackageLocator(input)
   if (npm) {
+    if (options.ref)
+      throw new Error(
+        '--ref is only available for GitHub repository locators. No files were changed.',
+      )
     if (expectedPackage && expectedPackage !== npm.packageName)
       throw new Error(
         `The requested npm package ${npm.packageName} does not match --package ${expectedPackage}. No files were changed.`,
@@ -100,7 +124,12 @@ export function installFromInput(
   }
 
   const repository = githubRepositoryFromInput(app, input, execute)
-  const commit = repositoryHead(app, repository, execute)
+  const commit = repositoryCommit(
+    app,
+    repository,
+    execute,
+    options.ref,
+  )
   const manifest = inspectDevelopmentRepository(
     app.directory,
     repository,
