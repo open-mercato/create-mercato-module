@@ -221,16 +221,19 @@ function rewriteSource(
   root: string,
   id: string,
   onDependency: (name: string) => void = () => {},
+  importMode: 'runtime' | 'source' = 'runtime',
 ): string {
   const parsed = ts.createSourceFile(file, rewriteHostModuleChecks(source, file), ts.ScriptTarget.Latest, true)
   function specifier(value: string) {
     const target = localTarget(file, value, root, id)
     if (target) {
-      const relative = path
+      let relative = path
         .relative(path.dirname(file), target)
         .split(path.sep)
         .join('/')
-        .replace(/\.(?:tsx?|jsx)$/, '.js')
+      // Linked source is compiled by the host app. Only runtime output needs
+      // .js specifiers; Next.js cannot resolve them against TypeScript files.
+      relative = relative.replace(/\.(?:tsx?|jsx)$/, importMode === 'source' ? '' : '.js')
       return relative.startsWith('.') ? relative : `./${relative}`
     }
     if (isBuiltin(value)) return value

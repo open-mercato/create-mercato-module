@@ -110,6 +110,40 @@ test('package contains only the selected module, both source/dist, assets and mi
   assert.ok(fs.existsSync(path.join(destination, 'dist/modules/visits/assets/mark.svg')))
 })
 
+test('published source can be linked into a host while compiled imports remain valid ESM', async (context) => {
+  const { app, directory, destination } = fixture(context)
+  addFile(directory, 'data/validators.ts', 'export const value = 42\n')
+  addFile(directory, 'lib/helpers/index.ts', 'export const helper = 7\n')
+  addFile(directory, 'lib/native.js', 'export const native = 3\n')
+  addFile(directory, 'commands/record.ts', [
+    "import { value } from '../data/validators.js'",
+    "export { helper } from '@/modules/visits/lib/helpers'",
+    "export { native } from '../lib/native.js'",
+    "export const load = () => import('../data/validators')",
+    'export { value }',
+  ].join('\n'))
+  preparePackage(app, 'visits', settings, destination)
+  const source = fs.readFileSync(path.join(destination, 'src/modules/visits/commands/record.ts'), 'utf8')
+  assert.match(source, /from "\.\.\/data\/validators"/)
+  assert.match(source, /from "\.\.\/lib\/helpers\/index"/)
+  assert.match(source, /import\("\.\.\/data\/validators"\)/)
+  assert.match(source, /from "\.\.\/lib\/native\.js"/)
+  const output = path.join(destination, 'dist/modules/visits/commands/record.js')
+  const compiled = fs.readFileSync(output, 'utf8')
+  assert.match(compiled, /from "\.\.\/data\/validators\.js"/)
+  assert.match(compiled, /from "\.\.\/lib\/helpers\/index\.js"/)
+  const module = await import(pathToFileURL(output).href)
+  assert.equal(module.value, 42)
+  assert.equal(module.helper, 7)
+  assert.equal(module.native, 3)
+  assert.equal((await module.load()).value, 42)
+  // The build.cjs shipped to module repositories must preserve this split too.
+  fs.symlinkSync(path.resolve(__dirname, '../node_modules'), path.join(destination, 'node_modules'))
+  run(process.execPath, ['build.cjs'], destination, { capture: true })
+  assert.match(fs.readFileSync(output, 'utf8'), /from "\.\.\/data\/validators\.js"/)
+  assert.equal(fs.readFileSync(path.join(destination, 'src/modules/visits/commands/record.ts'), 'utf8'), source)
+})
+
 test('rewrites own aliases, index imports and dynamic imports and records external dependencies', async (context) => {
   const { app, directory, destination } = fixture(context)
   addFile(directory, 'lib/value/index.ts', 'export const value = 42\n')
@@ -184,7 +218,7 @@ test('rewrites import types and root self aliases; rejects CommonJS constructs b
   const { app, directory, destination } = fixture(context)
   const source = addFile(directory, 'types.ts', "export type Info = typeof import('@/modules/visits').metadata\n")
   preparePackage(app, 'visits', settings, destination)
-  assert.match(fs.readFileSync(path.join(destination, 'src/modules/visits/types.ts'), 'utf8'), /import\("\.\/index\.js"\)/)
+  assert.match(fs.readFileSync(path.join(destination, 'src/modules/visits/types.ts'), 'utf8'), /import\("\.\/index"\)/)
   fs.rmSync(destination, { recursive: true })
   for (const content of ["type X = import('@/lib/private').X", "import Foo = require('fixture-library'); export const value = Foo.value", "export const value = require('fixture-library')"]) {
     fs.writeFileSync(source, content)
