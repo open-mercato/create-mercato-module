@@ -174,6 +174,8 @@ set`; it never adds a wildcard or approves another blocked dependency. Without
 a terminal, use `--approve-git-repository` to explicitly approve this step.
 If the retry fails, the approved URL remains in the app configuration for the
 next attempt; inspect the `.yarnrc.yml` diff before committing it.
+After approval, Yarn shows live installation progress. The installer waits for
+that installation to finish, then enables the module in the same invocation.
 
 Use `owner/repo@version-or-ref` for the same suffix syntax as npm's
 `package@version`. A numeric version such as `@1.2.3` first resolves the exact

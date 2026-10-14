@@ -107,6 +107,36 @@ test('blocked GitHub installation needs explicit approval and preserves existing
   }
 })
 
+test('approved retries run as a long installation and enable only after success', () => {
+  for (const retryFails of [false, true]) {
+    const calls = []
+    const base = executor(calls)
+    let attempts = 0
+    const execute = (command, args, cwd, options) => {
+      const result = base(command, args, cwd, options)
+      if (command === 'yarn' && args[0] === 'add') {
+        if (++attempts === 1)
+          throw new Error('YN0080 approvedGitRepositories https://github.com/fixture-owner/visits-example.git')
+        // Model a slow install that exceeds the captured-command deadline.
+        if (options?.capture)
+          throw new Error('yarn add did not finish in time')
+        if (retryFails) throw new Error('Yarn installation failed')
+      }
+      if (command === 'yarn' && args[0] === 'config' && args[1] === 'get')
+        return { status: 0, stdout: '[]', stderr: '' }
+      return result
+    }
+    const install = () => installFromInput(app, 'fixture-owner/visits-example', {
+      approveGitRepository: true, warn() {},
+    }, execute)
+    if (retryFails) assert.throws(install, /Yarn installation failed/)
+    else assert.equal(install().commit, commit)
+    assert.equal(attempts, 2)
+    assert.equal(calls.filter(call => call.args.includes('enable')).length, retryFails ? 0 : 1)
+    if (!retryFails) assert.equal(calls.at(-1).args[2], 'enable')
+  }
+})
+
 test('approval never handles another repository, unrelated failures or unreadable Yarn configuration', () => {
   for (const message of ['network failed', "YN0080 approvedGitRepositories https://github.com/other/private.git", "YN0080 approvedGitRepositories https://github.com/fixture-owner/visits-example.git"]) {
     const calls = []
