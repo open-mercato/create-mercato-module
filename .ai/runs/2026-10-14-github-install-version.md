@@ -18,7 +18,8 @@ or the default-branch selection behavior are planned.
 ### Phase 1: Implementation and regression tests
 
 1. Preserve exact-ref precedence. For a numeric version supplied after `@`,
-   retry `v<version>` only when GitHub reports the exact ref missing (HTTP 404).
+   retry `v<version>` only when GitHub reports the exact ref missing (HTTP 404
+   or the commit-not-found HTTP 422 response).
    Explicit `--ref` and `#ref` keep exact-ref semantics. Fail before Yarn on
    missing refs, authentication/network errors, or conflicting selectors.
 2. Cover version tags, prereleases, exact-ref precedence, failure paths,
@@ -37,18 +38,23 @@ or the default-branch selection behavior are planned.
 
 - Both `1.2.3` and `v1.2.3` can exist; exact-ref precedence preserves the
   existing selection. A typo or unavailable release must never install main.
-- Only a confirmed HTTP 404 permits the alternate tag lookup. Other GitHub
+- Only a confirmed missing ref permits the alternate tag lookup. Other GitHub
   failures stop installation.
+- A read-only GitHub API probe confirmed that `/commits/<missing-ref>` returns
+  HTTP 422 with `No commit found for SHA:`. Tests cover this actual response
+  separately from generic HTTP 422 validation failures.
 - A GitHub version selector resolves Git refs, not npm dist-tags or ranges.
 
 ## Progress
+
+PR: #8
 
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
 ### Phase 1: Implementation and regression tests
 
-- [ ] 1.1 Implement npm-style GitHub version resolution and regression tests
-- [ ] 1.2 Document GitHub version suffixes and compatibility
+- [x] 1.1 Implement npm-style GitHub version resolution and regression tests — adea7ca
+- [x] 1.2 Document GitHub version suffixes and compatibility — f27741d
 
 ### Phase 2: Verification and PR delivery
 
