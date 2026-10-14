@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- When GitHub installation is blocked by Yarn's `approvedGitRepositories` (YN0080), explain the required change and ask for confirmation interactively. Only after approval, append the exact requested GitHub URL to the existing app-level allowlist and retry. Noninteractive callers must pass `--approve-git-repository`; unrelated blocked dependencies are never automatically approved.
+
 ## 0.4.0
 
 ### Linking and packaging

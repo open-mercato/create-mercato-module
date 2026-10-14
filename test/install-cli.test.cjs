@@ -3,12 +3,13 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawnSync, spawn } = require('node:child_process')
+const { clearTimeout } = require('node:timers')
 const { writeJson } = require('../dist/common.js')
 const { parse } = require('../dist/cli.js')
 const commit = '0123456789abcdef0123456789abcdef01234567'
 
-function fixture(context) {
+function fixture(context, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-install-cli-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const app = path.join(root, 'app')
@@ -33,7 +34,7 @@ function fixture(context) {
   )
   fs.writeFileSync(
     path.join(binary, 'yarn'),
-    `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(calls)}, JSON.stringify({command:'yarn',args:process.argv.slice(2)})+'\\n')\n`,
+    `#!${process.execPath}\nconst fs=require('node:fs');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({command:'yarn',args})+'\\n');\n` + (options.blocked ? `const approvedFile=${JSON.stringify(path.join(root, 'approved.json'))};if(args[0]==='add'&&!fs.existsSync(approvedFile)){console.error("YN0080: Request to 'https://github.com/fixture-owner/visits-example.git' blocked by approvedGitRepositories");process.exit(1)}if(args[0]==='config'&&args[1]==='get')console.log(JSON.stringify(['https://github.com/open-mercato/*']));if(args[0]==='config'&&args[1]==='set')fs.writeFileSync(approvedFile,args.at(-1));\n` : ''),
     { mode: 0o755 },
   )
   fs.writeFileSync(
@@ -63,7 +64,27 @@ function fixture(context) {
       .split('\n')
       .filter(Boolean)
       .map(JSON.parse)
-  return { cli, readCalls }
+  const interactive = (answer) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', `Object.defineProperty(process.stdin, 'isTTY', {value:true});require(${JSON.stringify(path.resolve(__dirname, '../dist/cli.js'))}).main(['install','fixture-owner/visits-example']).catch(error=>{console.error(error.message);process.exitCode=1})`], {
+      cwd: app,
+      env: { ...process.env, PATH: `${binary}${path.delimiter}${process.env.PATH}` },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let output = ''
+    let answered = false
+    const timer = setTimeout(() => { child.kill(); reject(new Error('Interactive approval timed out')) }, 15000)
+    child.stdout.on('data', data => {
+      output += data
+      if (!answered && output.includes('[y/N]')) {
+        answered = true
+        child.stdin.write(`${answer}\n`)
+      }
+    })
+    child.stderr.on('data', data => { output += data })
+    child.on('error', error => { clearTimeout(timer); reject(error) })
+    child.on('close', status => { clearTimeout(timer); resolve({status, output}) })
+  })
+  return { cli, readCalls, interactive }
 }
 
 test('install CLI accepts npm and GitHub locators end to end', (context) => {
@@ -121,6 +142,7 @@ test('install CLI accepts npm and GitHub locators end to end', (context) => {
 })
 
 test('install CLI parsing validates options and locator arity', () => {
+  assert.equal(parse(['install', 'owner/repository', '--approve-git-repository']).flags['approve-git-repository'], true)
   assert.deepEqual(
     parse([
       'install',
@@ -152,4 +174,37 @@ test('install CLI parsing validates options and locator arity', () => {
     () => parse(['install', 'owner/repository', '--module', '../escape']),
     /snake_case/,
   )
+})
+
+test('install CLI explains Yarn approval and requires its own flag without a terminal', (context) => {
+  const { cli, readCalls } = fixture(context, { blocked: true })
+  const denied = cli(['install', 'fixture-owner/visits-example'])
+  assert.equal(denied.status, 1, denied.output)
+  assert.match(denied.output, /🔒 Yarn blocked/)
+  assert.match(denied.output, /https:\/\/github.com\/fixture-owner\/visits-example.git/)
+  assert.match(denied.output, /--approve-git-repository/)
+  assert.ok(!readCalls().some(call => call.args[0] === 'config'))
+  const approved = cli(['install', 'fixture-owner/visits-example', '--approve-git-repository'])
+  assert.equal(approved.status, 0, approved.output)
+  const set = readCalls().find(call => call.args[0] === 'config' && call.args[1] === 'set')
+  assert.deepEqual(JSON.parse(set.args.at(-1)), ['https://github.com/open-mercato/*', 'https://github.com/fixture-owner/visits-example.git'])
+  assert.match(approved.output, /Installed @fixture\/visits/)
+})
+
+test('interactive installer writes Yarn approval only after an affirmative answer', async (context) => {
+  for (const answer of ['yes', 'no', '']) {
+    const { interactive, readCalls } = fixture(context, { blocked: true })
+    const result = await interactive(answer)
+    assert.match(result.output, /Add this repository to Yarn approvals and retry\? \[y\/N\]/)
+    const sets = readCalls().filter(call => call.args[0] === 'config' && call.args[1] === 'set')
+    if (answer === 'yes') {
+      assert.equal(result.status, 0, result.output)
+      assert.equal(sets.length, 1)
+      assert.match(result.output, /Installed @fixture\/visits/)
+    } else {
+      assert.equal(result.status, 1, result.output)
+      assert.equal(sets.length, 0)
+      assert.match(result.output, /Yarn approvals were not changed/)
+    }
+  }
 })

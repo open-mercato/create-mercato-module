@@ -14,7 +14,7 @@ import { loadConfig, saveConfig } from './config.js'
 import { isUnconfiguredLocalModule, linkFromInput } from './link.js'
 import { validateCheckoutName } from './development.js'
 import { checkAuthentication, resolveRegistry } from './npm-auth.js'
-import { installFromInput } from './install.js'
+import { installFromInput, GitRepositoryApprovalRequired } from './install.js'
 
 const help = `Create and publish one module from an existing Open Mercato app.
 
@@ -63,6 +63,7 @@ Install options:
   --module module_id         choose one module from a multi-module package
   --ref tag|branch|commit    pin a GitHub install to this ref's resolved commit
   --eject                    copy ejectable module source into src/modules
+  --approve-git-repository    approve adding the requested GitHub URL to Yarn's allowlist if blocked
 
 Init options:
   --no-generate              create/register the module without running yarn generate
@@ -108,7 +109,7 @@ function parse(argv: string[]): ParsedArguments {
           'allow-install-scripts',
         ]
       : command === 'install'
-        ? ['eject']
+        ? ['eject', 'approve-git-repository']
         : ['no-generate']
   const values =
     command === 'publish'
@@ -274,14 +275,32 @@ async function main(argv = process.argv.slice(2)) {
       throw new Error(
         'Provide a GitHub repository or npm package: npx create-mercato-module install pkarw/visits-example',
       )
-    const installed = installFromInput(app, input, {
+    const options = {
       eject: Boolean(args.flags.eject),
       expectedPackage: args.flags.package
         ? String(args.flags.package)
         : undefined,
       moduleId: args.flags.module ? String(args.flags.module) : undefined,
       ref: args.flags.ref ? String(args.flags.ref) : undefined,
-    })
+      approveGitRepository: Boolean(args.flags['approve-git-repository']),
+    }
+    let installed
+    try {
+      installed = installFromInput(app, input, options)
+    } catch (error) {
+      if (!(error instanceof GitRepositoryApprovalRequired) || !process.stdin.isTTY) throw error
+      console.log(`\n${error.message}`)
+      const prompt = createInterface({ input: process.stdin, output: process.stdout })
+      let answer: string
+      try {
+        answer = (await prompt.question('\n👉 Add this repository to Yarn approvals and retry? [y/N] ')).trim().toLowerCase()
+      } finally {
+        prompt.close()
+      }
+      if (!['y', 'yes'].includes(answer))
+        throw new Error('Installation cancelled. Yarn approvals were not changed.', { cause: error })
+      installed = installFromInput(app, input, { ...options, approveGitRepository: true })
+    }
     console.log(
       `\n✅ Installed ${installed.packageName} and enabled its Open Mercato module.${installed.repository ? `\n🐙 Source: ${installed.repository}` : `\n📦 Source: ${installed.specifier}`}${args.flags.eject ? '\n📁 Module source was ejected into this app.' : ''}`,
     )

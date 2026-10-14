@@ -1,6 +1,6 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { installFromInput } = require('../dist/install.js')
+const { installFromInput, GitRepositoryApprovalRequired } = require('../dist/install.js')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -72,6 +72,54 @@ function executor(calls, options = {}) {
 }
 
 const app = { directory: '/fixture/app', manifest: {} }
+
+test('blocked GitHub installation needs explicit approval and preserves existing Yarn approvals', () => {
+  const url = 'https://github.com/fixture-owner/visits-example.git'
+  const blocked = new Error(`YN0080: Request to '${url}' blocked by approvedGitRepositories`)
+  for (const approve of [false, true]) {
+    const calls = []
+    const base = executor(calls)
+    let attempts = 0
+    const execute = (command, args, cwd, options) => {
+      if (command === 'yarn' && args[0] === 'add') {
+        base(command, args, cwd)
+        if (++attempts === 1) throw blocked
+        return { status: 0, stdout: '', stderr: '' }
+      }
+      if (command === 'yarn' && args[0] === 'config' && args[1] === 'get') {
+        base(command, args, cwd)
+        return { status: 0, stdout: JSON.stringify(['https://github.com/open-mercato/*']), stderr: '' }
+      }
+      return base(command, args, cwd, options)
+    }
+    if (!approve) {
+      assert.throws(() => installFromInput(app, 'fixture-owner/visits-example', {}, execute), GitRepositoryApprovalRequired)
+      assert.ok(!calls.some(call => call.args[0] === 'config'))
+      assert.ok(!calls.some(call => call.args.includes('enable')))
+    } else {
+      installFromInput(app, 'fixture-owner/visits-example', { approveGitRepository: true, warn: () => {} }, execute)
+      assert.equal(attempts, 2)
+      const set = calls.find(call => call.args[0] === 'config' && call.args[1] === 'set')
+      assert.deepEqual(set.args, ['config', 'set', 'approvedGitRepositories', '--json', JSON.stringify(['https://github.com/open-mercato/*', url])])
+      assert.ok(calls.some(call => call.args.includes('enable')))
+    }
+  }
+})
+
+test('approval never handles another repository, unrelated failures or unreadable Yarn configuration', () => {
+  for (const message of ['network failed', "YN0080 approvedGitRepositories https://github.com/other/private.git", "YN0080 approvedGitRepositories https://github.com/fixture-owner/visits-example.git"]) {
+    const calls = []
+    const base = executor(calls)
+    const execute = (command, args, cwd) => {
+      base(command, args, cwd)
+      if (command === 'yarn' && args[0] === 'add') throw new Error(message)
+      if (command === 'yarn' && args[0] === 'config') return { status: 0, stdout: '{"unexpected":true}', stderr: '' }
+      return { status: 0, stdout: '', stderr: '' }
+    }
+    assert.throws(() => installFromInput(app, 'fixture-owner/visits-example', { approveGitRepository: true }, execute))
+    assert.ok(!calls.some(call => call.args[0] === 'config' && call.args[1] === 'set'))
+  }
+})
 
 test('npm locators delegate installation, registration and generation to Open Mercato', () => {
   for (const [input, specifier, packageName] of [

@@ -162,6 +162,15 @@ GitHub user. Scoped names are npm locators; prefix an unscoped npm package with
 require `gh auth login`; npm authentication and registry settings remain under
 Yarn/Open Mercato control.
 
+If Yarn blocks the requested GitHub URL with `YN0080`, the interactive installer
+shows the exact repository and asks `Add this repository to Yarn approvals and
+retry? [y/N]`. Only `y` or `yes` changes the configuration. Approval appends that
+URL to the existing project-level `approvedGitRepositories` via `yarn config
+set`; it never adds a wildcard or approves another blocked dependency. Without
+a terminal, use `--approve-git-repository` to explicitly approve this step.
+If the retry fails, the approved URL remains in the app configuration for the
+next attempt; inspect the `.yarnrc.yml` diff before committing it.
+
 A module can declare the modules it depends on as `requires` in the `metadata`
 export of its `index.ts`. `install` compares that list with the modules
 registered in `src/modules.ts` and warns about each one that is missing, because
@@ -200,6 +209,7 @@ running `yarn add`.
 | Option | Behavior |
 |---|---|
 | `--package @your-name/mercato-visits` | Verify the discovered/requested package identity before installation |
+| `--approve-git-repository` | Approve adding only the requested GitHub repository URL to the app's Yarn `approvedGitRepositories` if installation is blocked |
 | `--module module_id` | Choose one module from a package that contains multiple modules |
 | `--ref tag-or-branch-or-commit` | Resolve and pin this GitHub ref instead of the current default-branch head; rejected for npm locators |
 | `--eject` | Ask Open Mercato to copy ejectable source into `src/modules` and register it as `@app` |
