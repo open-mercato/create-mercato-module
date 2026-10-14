@@ -49,6 +49,7 @@ function executor(calls, options = {}) {
       return { status: 0, stdout: JSON.stringify({ login: 'fixture-owner' }), stderr: '' }
     if (command === 'gh' && args[1]?.includes('/commits/')) {
       const ref = decodeURIComponent(args[1].split('/commits/')[1])
+      if (options.refResults?.[ref]) return options.refResults[ref]
       return {
         status: 0,
         stdout: `${options.commits?.[ref] || commit}\n`,
@@ -77,6 +78,7 @@ test('npm locators delegate installation, registration and generation to Open Me
   for (const [input, specifier, packageName] of [
     ['@fixture/visits', '@fixture/visits', '@fixture/visits'],
     ['@fixture/visits@beta', '@fixture/visits@beta', '@fixture/visits'],
+    ['@fixture/visits@1.2.3', '@fixture/visits@1.2.3', '@fixture/visits'],
     ['npm:visits', 'visits', 'visits'],
     ['npm:visits@1.2.3', 'visits@1.2.3', 'visits'],
   ]) {
@@ -183,6 +185,121 @@ test('GitHub --ref resolves once and pins a commit independent of the default he
       args[1]?.endsWith(`contents/package.json?ref=${selectedCommit}`),
     ),
   )
+})
+
+test('numeric GitHub @versions fall back to v-prefixed release tags and pin their commit', () => {
+  const selectedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  for (const version of ['1.2.3', '1.2.3-beta.1']) {
+    for (const repository of [
+      'fixture-owner/visits-example',
+      'github:fixture-owner/visits-example',
+      'https://github.com/fixture-owner/visits-example.git',
+      'git@github.com:fixture-owner/visits-example.git',
+      'ssh://git@github.com/fixture-owner/visits-example.git',
+    ]) {
+      const calls = []
+      const result = installFromInput(app, `${repository}@${version}`, {}, executor(calls, {
+        refResults: { [version]: { status: 1, stdout: '', stderr: 'gh: No commit found (HTTP 404)' } },
+        commits: { [`v${version}`]: selectedCommit },
+      }))
+      assert.equal(result.commit, selectedCommit)
+      assert.equal(result.repository, 'fixture-owner/visits-example')
+      assert.equal(result.specifier, `@fixture/visits@github:fixture-owner/visits-example#${selectedCommit}`)
+      assert.deepEqual(
+        calls.filter(call => call.args[1]?.includes('/commits/')).map(call => call.args[1]),
+        [`repos/fixture-owner/visits-example/commits/${version}`, `repos/fixture-owner/visits-example/commits/v${version}`],
+      )
+      assert.ok(calls.some(call => call.args[1]?.endsWith(`contents/package.json?ref=${selectedCommit}`)))
+      assert.deepEqual(calls.filter(call => call.command === 'yarn').map(call => call.args), [
+        ['add', result.specifier],
+        ['mercato', 'module', 'enable', '@fixture/visits', '--allow-third-party'],
+      ])
+    }
+  }
+})
+
+test('GitHub @version preserves an existing exact ref ahead of its v-prefixed tag', () => {
+  const calls = []
+  const exactCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const result = installFromInput(app, 'fixture-owner/visits-example@1.2.3', {}, executor(calls, {
+    commits: { '1.2.3': exactCommit, 'v1.2.3': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+  }))
+  assert.equal(result.commit, exactCommit)
+  assert.equal(calls.filter(call => call.args[1]?.includes('/commits/')).length, 1)
+})
+
+test('numeric @versions recognize GitHub commit-not-found HTTP 422 responses', () => {
+  const calls = []
+  const selectedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const result = installFromInput(app, 'fixture-owner/visits-example@1.2.3', {}, executor(calls, {
+    refResults: { '1.2.3': { status: 1, stdout: '', stderr: 'gh: No commit found for SHA: 1.2.3 (HTTP 422)' } },
+    commits: { 'v1.2.3': selectedCommit },
+  }))
+  assert.equal(result.commit, selectedCommit)
+  assert.equal(calls.filter(call => call.args[1]?.includes('/commits/')).length, 2)
+})
+
+test('explicit Git refs and named channels retain exact-ref semantics', () => {
+  for (const [input, options, ref] of [
+    ['fixture-owner/visits-example#1.2.3', {}, '1.2.3'],
+    ['fixture-owner/visits-example', { ref: '1.2.3' }, '1.2.3'],
+    ['fixture-owner/visits-example@1.2.3', { ref: '1.2.3' }, '1.2.3'],
+    ['fixture-owner/visits-example@v1.2.3', {}, 'v1.2.3'],
+    ['fixture-owner/visits-example@beta', {}, 'beta'],
+    ['fixture-owner/visits-example@release/1.2.3', {}, 'release/1.2.3'],
+    [`fixture-owner/visits-example@${commit}`, {}, commit],
+  ]) {
+    const calls = []
+    assert.throws(() => installFromInput(app, input, options, executor(calls, {
+      refResults: { [ref]: { status: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' } },
+    })), /Cannot resolve.*No files were changed/)
+    assert.equal(calls.filter(call => call.args[1]?.includes('/commits/')).length, 1)
+    assert.equal(calls.some(call => call.command === 'yarn'), false)
+  }
+})
+
+test('version lookup never falls back for auth, rate-limit, server, or malformed responses', () => {
+  for (const failure of [
+    { status: 1, stdout: '', stderr: 'gh: Unauthorized (HTTP 401)' },
+    { status: 1, stdout: '', stderr: 'gh: Forbidden (HTTP 403)' },
+    { status: 1, stdout: '', stderr: 'gh: Too Many Requests (HTTP 429)' },
+    { status: 1, stdout: '', stderr: 'gh: Server Error (HTTP 500)' },
+    { status: 1, stdout: '', stderr: 'gh: Validation Failed (HTTP 422)' },
+    { status: 1, stdout: '', stderr: 'Could not resolve host' },
+    { status: 0, stdout: '', stderr: '' },
+    { status: 0, stdout: 'not-a-commit', stderr: '' },
+    { status: 1, stdout: commit, stderr: 'gh: Server Error (HTTP 500)' },
+  ]) {
+    const calls = []
+    assert.throws(() => installFromInput(app, 'fixture-owner/visits-example@1.2.3', {}, executor(calls, {
+      refResults: { '1.2.3': failure },
+    })), /Cannot resolve.*gh auth status.*No files were changed/)
+    assert.equal(calls.filter(call => call.args[1]?.includes('/commits/')).length, 1)
+    assert.equal(calls.some(call => call.command === 'yarn'), false)
+  }
+})
+
+test('missing version and v-prefixed tag fail before reading a manifest or invoking Yarn', () => {
+  const calls = []
+  const missing = { status: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' }
+  assert.throws(() => installFromInput(app, 'fixture-owner/visits-example@1.2.3', {}, executor(calls, {
+    refResults: { '1.2.3': missing, 'v1.2.3': missing },
+  })), /ref 1\.2\.3 or tag v1\.2\.3.*No files were changed/)
+  assert.equal(calls.filter(call => call.args[1]?.includes('/commits/')).length, 2)
+  assert.equal(calls.some(call => call.args[1]?.includes('/contents/') || call.command === 'yarn'), false)
+})
+
+test('conflicting and malformed version selectors fail without invoking external commands', () => {
+  for (const [input, options] of [
+    ['fixture-owner/visits-example@1.2.3', { ref: 'v2.0.0' }],
+    ['fixture-owner/visits-example@', {}],
+    ['fixture-owner/visits-example#', {}],
+    ['fixture-owner/visits-example#main#other', {}],
+  ]) {
+    const calls = []
+    assert.throws(() => installFromInput(app, input, options, executor(calls)), /No files were changed/)
+    assert.deepEqual(calls, [])
+  }
 })
 
 test('installation validates identities and command values before invoking Yarn', () => {
