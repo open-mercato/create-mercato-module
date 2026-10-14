@@ -216,6 +216,33 @@ test('install CLI explains Yarn approval and requires its own flag without a ter
   assert.match(approved.output, /Installed @fixture\/visits/)
 })
 
+test('version-tag fallback and repository approval keep the same pinned dependency', (context) => {
+  const selectedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const { cli, readCalls } = fixture(context, {
+    blocked: true,
+    commits: { '1.2.3': null, 'v1.2.3': selectedCommit },
+  })
+  const input = 'fixture-owner/visits-example@1.2.3'
+  const denied = cli(['install', input])
+  assert.equal(denied.status, 1, denied.output)
+  assert.ok(!readCalls().some(call => call.args[0] === 'config'))
+
+  const approved = cli(['install', input, '--approve-git-repository'])
+  assert.equal(approved.status, 0, approved.output)
+  const calls = readCalls()
+  const adds = calls.filter(call => call.command === 'yarn' && call.args[0] === 'add')
+  assert.equal(adds.length, 3)
+  for (const call of adds)
+    assert.deepEqual(call.args, ['add', `@fixture/visits@github:fixture-owner/visits-example#${selectedCommit}`])
+  const sets = calls.filter(call => call.args[0] === 'config' && call.args[1] === 'set')
+  assert.equal(sets.length, 1)
+  assert.deepEqual(JSON.parse(sets[0].args.at(-1)), [
+    'https://github.com/open-mercato/*',
+    'https://github.com/fixture-owner/visits-example.git',
+  ])
+  assert.ok(calls.some(call => call.args[1]?.endsWith(`contents/package.json?ref=${selectedCommit}`)))
+})
+
 test('interactive installer writes Yarn approval only after an affirmative answer', async (context) => {
   for (const answer of ['yes', 'no', '']) {
     const { interactive, readCalls } = fixture(context, { blocked: true })
