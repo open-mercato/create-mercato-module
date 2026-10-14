@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
+- Match module requirements by canonical npm package and GitHub repository identities, preserve requested versions in installation hints, and reject module ID collisions before changing app dependencies. Packages from different publishers do not satisfy each other's requirements.
 - When GitHub installation is blocked by Yarn's `approvedGitRepositories` (YN0080), explain the required change and ask for confirmation interactively. Only after approval, append the exact requested GitHub URL to the existing app-level allowlist and retry. Noninteractive callers must pass `--approve-git-repository`; unrelated blocked dependencies are never automatically approved.
 - GitHub installs accept npm-style version selectors such as `owner/repo@1.2.3` and `owner/repo@1.2.3-beta.1`. An existing exact ref wins; when it is missing, installation tries the conventional `v`-prefixed release tag and pins the resolved commit. Explicit `#ref` and `--ref` selectors keep exact-ref behavior.
 - Keep published TypeScript source imports compatible with linked Next.js development while retaining `.js` imports in compiled ESM and types. Previously, publishing rewrote `src/` imports to `.js` and linking them back into an app could fail with `Module not found`. Existing repositories can remove the `.js` suffix from imports targeting TypeScript source; package exports and compiled output are unchanged.
