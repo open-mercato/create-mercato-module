@@ -171,7 +171,31 @@ module is enabled; for an npm locator Open Mercato installs and enables in one
 step, so the warning follows that step or is attached to its error. Enable the
 listed modules in `src/modules.ts`, then run `install` again if it failed. The
 check is skipped when `src/modules.ts` does not define a plain `enabledModules`
-array.
+array. Conditional registrations are included only when literal or current
+process-environment conditions can be evaluated. Unsupported condition branches
+are conservatively excluded; the checker does not execute application code.
+
+Requirements accept legacy module IDs (`customers`), scoped npm packages
+(`@pkarw/marketing_consents@beta`), explicit npm locators
+(`npm:marketing-consents@1.0.0`), and GitHub repository locators (`owner/repo`,
+`github:owner/repo`, HTTPS, and SSH). Canonical identities are
+`npm:<package-name>` and `github:<owner>/<repository>`; versions and refs are
+installation choices and GitHub names compare without case sensitivity.
+Packages from different publishers do not satisfy each other's requirements
+even when their module IDs are identical. Missing package requirements include
+an `install` command preserving the requested version or ref.
+
+The checker derives npm identity from the installed package's manifest name,
+falling back to the enabled entry's `from` when the name is unavailable, and
+GitHub identity from its app dependency specifier or dedicated package
+`repository` metadata (monorepo subdirectories are excluded). An optional
+`locator` on an enabled entry or module `metadata` preserves identity for local,
+ejected, and linked modules. `link` records its canonical GitHub locator when
+registering a local checkout, together with its `packageName` so npm requirements
+continue to match the linked package. GitHub installation rejects a module ID already
+registered from another package/source, or occupied by a local module, before
+running `yarn add`.
+
 
 | Option | Behavior |
 |---|---|
