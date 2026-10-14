@@ -84,6 +84,7 @@ accepts a dedicated GitHub repository when the package is not on npm:
 
 ```bash
 npx create-mercato-module install your-name/mercato-visits
+npx create-mercato-module install your-name/mercato-visits@1.2.3
 npx create-mercato-module install https://github.com/your-name/mercato-visits.git
 ```
 
@@ -91,8 +92,12 @@ Scoped npm packages, `npm:unscoped-package`, GitHub URLs, `owner/repository`,
 and a bare repository name for your authenticated GitHub account are supported.
 Use `--eject` for packages that allow source ejection, or `--module <module_id>`
 to choose one module from a multi-module package. GitHub installs use the
-current default-branch head unless `--ref <tag-or-commit>` selects another ref;
-the resolved full commit is pinned in either case.
+current default-branch head unless `owner/repo@version-or-ref`, `owner/repo#ref`,
+or `--ref <tag-or-commit>` selects another ref. Like npm's `package@1.2.3`,
+`owner/repo@1.2.3` selects a version: it tries the exact `1.2.3` ref first,
+then `v1.2.3` only if the exact ref is missing. Prereleases such as
+`@1.2.3-beta.1` follow the same rule. `#ref` and `--ref` always select an exact
+Git ref. The resolved full commit is pinned in every case.
 
 ## Publish an existing module
 

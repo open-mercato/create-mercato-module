@@ -98,9 +98,8 @@ function preparePackage(
       const source = contents.toString('utf8')
       rewritten.set(
         file,
-        rewriteSource(source, file, sourceRoot, id, (name) =>
-          dependencies.add(name),
-        ),
+        rewriteSource(source, file, sourceRoot, id,
+          (name) => dependencies.add(name), 'source'),
       )
       if (/\.[jt]sx$/.test(file)) dependencies.add('react')
     }
@@ -178,7 +177,7 @@ function preparePackage(
   writeJson(path.join(destination, 'package.json'), manifest)
   fs.writeFileSync(
     path.join(destination, 'src/index.ts'),
-    `export { metadata } from './modules/${id}/index.js'\n`,
+    `export { metadata } from './modules/${id}/index'\n`,
   )
   fs.writeFileSync(
     path.join(destination, 'src/.npmignore'),

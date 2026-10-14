@@ -150,8 +150,12 @@ delegate activation to `yarn mercato module enable`.
 
 ```bash
 npx create-mercato-module install @your-name/mercato-visits@beta
+npx create-mercato-module install @your-name/mercato-visits@1.2.3
 npx create-mercato-module install npm:unscoped-visits
 npx create-mercato-module install your-name/mercato-visits
+npx create-mercato-module install your-name/mercato-visits@1.2.3
+npx create-mercato-module install your-name/mercato-visits@1.2.3-beta.1
+npx create-mercato-module install your-name/mercato-visits@release/1.2.3
 npx create-mercato-module install https://github.com/your-name/mercato-visits.git
 ```
 
@@ -170,6 +174,23 @@ set`; it never adds a wildcard or approves another blocked dependency. Without
 a terminal, use `--approve-git-repository` to explicitly approve this step.
 If the retry fails, the approved URL remains in the app configuration for the
 next attempt; inspect the `.yarnrc.yml` diff before committing it.
+
+Use `owner/repo@version-or-ref` for the same suffix syntax as npm's
+`package@version`. A numeric version such as `@1.2.3` first resolves the exact
+Git ref `1.2.3`. Only when GitHub reports that ref missing (HTTP 404 or its
+commit-not-found HTTP 422 response), the installer tries `v1.2.3`, matching the
+tags accepted by this tool's publication
+workflow. Prereleases such as `@1.2.3-beta.1` work the same way. If both refs
+exist, the exact unprefixed ref wins to preserve existing installations.
+
+Non-numeric suffixes such as `@v1.2.3`, `@beta`, `@release/1.2.3`, and commit
+SHAs select that exact Git ref. GitHub suffixes do not query npm dist-tags or
+resolve semver ranges. `owner/repo#ref` and `--ref` always mean an exact ref,
+including numeric refs; an explicit `--ref` disables the version-tag fallback.
+If a locator suffix and `--ref` are both provided, they must match exactly.
+Authentication, rate-limit, and network failures stop installation. A missing
+version never falls back to the default branch, and Yarn is called only after
+the selected ref resolves to a full commit SHA.
 
 A module can declare the modules it depends on as `requires` in the `metadata`
 export of its `index.ts`. `install` compares that list with the modules
@@ -211,7 +232,7 @@ running `yarn add`.
 | `--package @your-name/mercato-visits` | Verify the discovered/requested package identity before installation |
 | `--approve-git-repository` | Approve adding only the requested GitHub repository URL to the app's Yarn `approvedGitRepositories` if installation is blocked |
 | `--module module_id` | Choose one module from a package that contains multiple modules |
-| `--ref tag-or-branch-or-commit` | Resolve and pin this GitHub ref instead of the current default-branch head; rejected for npm locators |
+| `--ref tag-or-branch-or-commit` | Resolve and pin this exact GitHub ref; must match any locator suffix; rejected for npm locators |
 | `--eject` | Ask Open Mercato to copy ejectable source into `src/modules` and register it as `@app` |
 
 ### `link <repository-or-npm-package> [local-name]`

@@ -22,6 +22,7 @@ const help = `Create and publish one module from an existing Open Mercato app.
   npx create-mercato-module publish visits
   npx create-mercato-module install <repo-or-npm-package>
   npx create-mercato-module install pkarw/visits-example
+  npx create-mercato-module install pkarw/visits-example@1.2.3
   npx create-mercato-module install @piotrkarwatka/visits
   npx create-mercato-module link <repo-or-npm-package> [local-name]
   npx create-mercato-module link pkarw/visits-example
@@ -57,11 +58,13 @@ Link options:
 
 Install options:
   Repository URL, owner/repo, or repo name (your GitHub account).
+  owner/repo@version-or-ref   select a GitHub version, tag, branch, or commit
+  Numeric @versions try the exact ref, then v<version> only if it is missing.
   Scoped npm packages and npm:package-name install from npm.
   Package name and module ID are discovered automatically.
   --package @your-name/visits  optional package identity check
   --module module_id         choose one module from a multi-module package
-  --ref tag|branch|commit    pin a GitHub install to this ref's resolved commit
+  --ref tag|branch|commit    pin an exact Git ref; must match a locator ref
   --eject                    copy ejectable module source into src/modules
   --approve-git-repository    approve adding the requested GitHub URL to Yarn's allowlist if blocked
 

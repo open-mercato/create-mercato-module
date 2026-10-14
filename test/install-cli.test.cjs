@@ -10,6 +10,7 @@ const { parse } = require('../dist/cli.js')
 const commit = '0123456789abcdef0123456789abcdef01234567'
 
 function fixture(context, options = {}) {
+  const commits = options.commits ?? {}
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-install-cli-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const app = path.join(root, 'app')
@@ -39,7 +40,7 @@ function fixture(context, options = {}) {
   )
   fs.writeFileSync(
     path.join(binary, 'gh'),
-    `#!${process.execPath}\nconst fs=require('node:fs');const a=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({command:'gh',args:a})+'\\n');if(a[0]==='auth')process.exit(0);if(a[1]==='user'){console.log(JSON.stringify({login:'fixture-owner'}));process.exit(0)}if(a[1]?.includes('/commits/')){console.log(${JSON.stringify(commit)});process.exit(0)}if(a[1]?.includes('/contents/package.json')){console.log(JSON.stringify({name:'@fixture/visits',version:'1.2.3',mercatoModule:{id:'visits',formatVersion:1}}));process.exit(0)}if(a[1]?.startsWith('repos/')){console.log(JSON.stringify({private:false,default_branch:'main'}));process.exit(0)}process.exit(1)\n`,
+    `#!${process.execPath}\nconst fs=require('node:fs');const a=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({command:'gh',args:a})+'\\n');if(a[0]==='auth')process.exit(0);if(a[1]==='user'){console.log(JSON.stringify({login:'fixture-owner'}));process.exit(0)}if(a[1]?.includes('/commits/')){const refs=${JSON.stringify(commits)};const ref=decodeURIComponent(a[1].split('/commits/')[1]);if(refs[ref]===null){console.error('gh: No commit found for SHA: '+ref+' (HTTP 422)');process.exit(1)}console.log(refs[ref]||${JSON.stringify(commit)});process.exit(0)}if(a[1]?.includes('/contents/package.json')){console.log(JSON.stringify({name:'@fixture/visits',version:'1.2.3',mercatoModule:{id:'visits',formatVersion:1}}));process.exit(0)}if(a[1]?.startsWith('repos/')){console.log(JSON.stringify({private:false,default_branch:'main'}));process.exit(0)}process.exit(1)\n`,
     { mode: 0o755 },
   )
   const cli = (args) => {
@@ -139,6 +140,30 @@ test('install CLI accepts npm and GitHub locators end to end', (context) => {
       ],
     },
   ])
+})
+
+test('install CLI resolves npm-style GitHub versions before calling Yarn', (context) => {
+  const selectedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const { cli, readCalls } = fixture(context, { commits: { '1.2.3': null, 'v1.2.3': selectedCommit } })
+  const result = cli(['install', 'fixture-owner/visits-example@1.2.3', '--module', 'visits', '--eject'])
+  assert.equal(result.status, 0, result.output)
+  assert.match(result.output, /Installed @fixture\/visits/)
+  assert.deepEqual(
+    readCalls().filter(call => call.args[1]?.includes('/commits/')).map(call => call.args[1]),
+    ['repos/fixture-owner/visits-example/commits/1.2.3', 'repos/fixture-owner/visits-example/commits/v1.2.3'],
+  )
+  assert.deepEqual(readCalls().slice(-2), [
+    { command: 'yarn', args: ['add', `@fixture/visits@github:fixture-owner/visits-example#${selectedCommit}`] },
+    { command: 'yarn', args: ['mercato', 'module', 'enable', '@fixture/visits', '--allow-third-party', '--module', 'visits', '--eject'] },
+  ])
+})
+
+test('install CLI fails a missing version without invoking Yarn', (context) => {
+  const { cli, readCalls } = fixture(context, { commits: { '1.2.3': null, 'v1.2.3': null } })
+  const result = cli(['install', 'fixture-owner/visits-example@1.2.3'])
+  assert.notEqual(result.status, 0)
+  assert.match(result.output, /Cannot resolve.*No files were changed/)
+  assert.equal(readCalls().some(call => call.command === 'yarn'), false)
 })
 
 test('install CLI parsing validates options and locator arity', () => {
