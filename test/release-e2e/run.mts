@@ -277,6 +277,8 @@ export async function main(args: string[]): Promise<void> {
         for (const prefix of ['src', 'dist']) {
           assert.equal(fs.readFileSync(path.join(installedRoot, prefix, 'modules', fixtureContract.moduleId, fixtureContract.asset), 'utf8').trim(), fixtureContract.marker)
           assert.ok(fs.existsSync(path.join(installedRoot, prefix, 'modules', fixtureContract.moduleId, 'migrations/.snapshot-open-mercato.json')))
+          const migrationExtension = prefix === 'src' ? 'ts' : 'js'
+          assert.ok(fs.existsSync(path.join(installedRoot, prefix, 'modules', fixtureContract.moduleId, `${fixtureContract.migration}.${migrationExtension}`)), 'Fixture migration must ship with its entity')
         }
         assert.ok(!fs.existsSync(path.join(app, 'src/modules', fixtureContract.moduleId)), 'Consumer must load packaged source, not a local copy')
         if (lane === 'npm') assert.ok(!fs.existsSync(path.join(app, '.git')), 'No-Git app must stay without a Git repository')

@@ -86,5 +86,12 @@ test('release fixture writer creates portable module source and refuses to repla
   const moduleRoot = path.join(directory, 'src/modules', fixtureContract.moduleId)
   assert.match(fs.readFileSync(path.join(moduleRoot, 'data/entities.ts'), 'utf8'), /updatedAt: Date/)
   assert.match(fs.readFileSync(path.join(moduleRoot, 'api/status.ts'), 'utf8'), /\.\.\/lib\/fields/)
+  const migration = fs.readFileSync(path.join(moduleRoot, `${fixtureContract.migration}.ts`), 'utf8')
+  assert.match(migration, /extends Migration/)
+  assert.match(migration, /create table "release_checks"/)
+  for (const column of ['id', 'organization_id', 'tenant_id', 'status', 'updated_at']) {
+    assert.ok(migration.includes(`"${column}"`), `Fixture migration must include ${column}`)
+  }
+  assert.match(migration, /drop table if exists "release_checks"/)
   assert.throws(() => writeFixture(directory), /already exists/)
 })
