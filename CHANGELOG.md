@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Keep published TypeScript source imports compatible with linked Next.js development while retaining `.js` imports in compiled ESM and types. Previously, publishing rewrote `src/` imports to `.js` and linking them back into an app could fail with `Module not found`. Existing repositories can remove the `.js` suffix from imports targeting TypeScript source; package exports and compiled output are unchanged.
+
 ## 0.4.0
 
 ### Linking and packaging
