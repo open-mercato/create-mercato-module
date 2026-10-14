@@ -174,6 +174,8 @@ set`; it never adds a wildcard or approves another blocked dependency. Without
 a terminal, use `--approve-git-repository` to explicitly approve this step.
 If the retry fails, the approved URL remains in the app configuration for the
 next attempt; inspect the `.yarnrc.yml` diff before committing it.
+After approval, Yarn shows live installation progress. The installer waits for
+that installation to finish, then enables the module in the same invocation.
 
 Use `owner/repo@version-or-ref` for the same suffix syntax as npm's
 `package@version`. A numeric version such as `@1.2.3` first resolves the exact
@@ -301,7 +303,7 @@ Choose one publisher for each version: local `publish visits` or the repository 
 | Migrations and schema snapshots | Symlinks and credential files |
 | Package metadata and rebuild script | Authentication tokens |
 
-The package includes `src/modules/<id>`, `dist/modules/<id>`, and portable `types/modules/<id>` for discovery, ejection, runtime imports, and consumer type resolution. Compilation preserves client directives, React's automatic JSX runtime, and legacy decorator metadata. In linked development, publication keeps the repository's author source and tests intact; the build rewrites own-module aliases in generated output and portable type sources.
+The package includes `src/modules/<id>`, `dist/modules/<id>`, and portable `types/modules/<id>` for discovery, ejection, runtime imports, and consumer type resolution. Compilation preserves client directives, React's automatic JSX runtime, and legacy decorator metadata. Entity convention files (`entities`, `entities.override`, and `schema` under `data/` or legacy `db/`) also keep a TypeScript source mirror beside their compiled JavaScript in `dist`, allowing the host to discover exported entity classes and fields. Executable package exports continue to resolve to JavaScript. In linked development, publication keeps the repository's author source and tests intact; the build rewrites own-module aliases in generated output and portable type sources.
 
 Imported dependencies are recorded from installed versions. Framework packages, React, Next.js, and MikroORM become exact-version peers to match the source app. Other imported packages become runtime dependencies.
 

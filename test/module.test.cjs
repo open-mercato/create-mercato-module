@@ -214,6 +214,48 @@ test('preserves client directives and emits React automatic runtime and decorato
   assert.equal(new loaded.Visit().title, 'hello')
 })
 
+for (const conventionFile of [
+  'data/entities.ts', 'data/entities.override.ts', 'data/schema.ts',
+  'db/entities.ts', 'db/entities.override.ts', 'db/schema.ts',
+  'data/entities.tsx', 'db/schema.tsx',
+]) {
+  test(`preserves discoverable entity source for ${conventionFile} in exported packages and repository rebuilds`, async (context) => {
+    const { app, directory, destination } = fixture(context)
+    addFile(directory, 'lib/decorators.ts', 'export const Entity = () => (target: Function) => undefined\nexport const Property = () => (target: object, key: string) => undefined\n')
+    addFile(directory, conventionFile, [
+      "import { Entity, Property } from '@/modules/visits/lib/decorators'",
+      "@Entity()",
+      'export class Visit {',
+      '  @Property()',
+      "  title: string = 'hello'",
+      '}',
+    ].join('\n'))
+    preparePackage(app, 'visits', settings, destination)
+
+    const mirror = path.join(destination, 'dist/modules/visits', conventionFile)
+    assert.ok(fs.existsSync(mirror), 'host convention-file scanners must see TypeScript class declarations in dist')
+    const source = fs.readFileSync(mirror, 'utf8')
+    const ts = require('typescript')
+    const parsed = ts.createSourceFile(mirror, source, ts.ScriptTarget.Latest, true)
+    const exportedClasses = parsed.statements.filter(node => ts.isClassDeclaration(node) && node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword))
+    assert.deepEqual(exportedClasses.map(node => node.name.text), ['Visit'])
+    assert.match(source, /from "\.\.\/lib\/decorators\.js"/)
+    assert.ok(!source.includes('@/'))
+
+    const runtime = mirror.replace(/\.tsx?$/, '.js')
+    const loaded = await import(pathToFileURL(runtime).href)
+    assert.equal(new loaded.Visit().title, 'hello')
+    assert.equal(readJson(path.join(destination, 'package.json')).exports['./*.ts'].default, './dist/*.js')
+
+    // Modules built later in their dedicated GitHub repo use this shipped
+    // builder rather than the publisher's preparePackage implementation.
+    fs.symlinkSync(path.resolve(__dirname, '../node_modules'), path.join(destination, 'node_modules'))
+    run(process.execPath, ['build.cjs'], destination, { capture: true })
+    assert.equal(fs.readFileSync(mirror, 'utf8'), source)
+    assert.ok(fs.existsSync(runtime))
+  })
+}
+
 test('rewrites import types and root self aliases; rejects CommonJS constructs before export', (context) => {
   const { app, directory, destination } = fixture(context)
   const source = addFile(directory, 'types.ts', "export type Info = typeof import('@/modules/visits').metadata\n")

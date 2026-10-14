@@ -16,6 +16,7 @@ function fixture(context, options = {}) {
   const app = path.join(root, 'app')
   const binary = path.join(root, 'bin')
   const calls = path.join(root, 'calls.jsonl')
+  const progressAck = path.join(root, 'progress-observed')
   fs.mkdirSync(path.join(app, 'src'), { recursive: true })
   fs.mkdirSync(path.join(app, 'node_modules/@open-mercato/core'), {
     recursive: true,
@@ -38,6 +39,8 @@ function fixture(context, options = {}) {
     `#!${process.execPath}\nconst fs=require('node:fs');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({command:'yarn',args})+'\\n');\n` + (options.blocked ? `const approvedFile=${JSON.stringify(path.join(root, 'approved.json'))};if(args[0]==='add'&&!fs.existsSync(approvedFile)){console.error("YN0080: Request to 'https://github.com/fixture-owner/visits-example.git' blocked by approvedGitRepositories");process.exit(1)}if(args[0]==='config'&&args[1]==='get')console.log(JSON.stringify(['https://github.com/open-mercato/*']));if(args[0]==='config'&&args[1]==='set')fs.writeFileSync(approvedFile,args.at(-1));\n` : ''),
     { mode: 0o755 },
   )
+  if (options.awaitRetryProgress)
+    fs.appendFileSync(path.join(binary, 'yarn'), `if(args[0]==='add'){console.log('YARN_RETRY_PROGRESS');const started=Date.now();const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(progressAck)})){clearInterval(timer);process.exit(0)}if(Date.now()-started>3000){console.error('Retry progress was not forwarded while Yarn was running');process.exit(1)}},25)}\n`)
   fs.writeFileSync(
     path.join(binary, 'gh'),
     `#!${process.execPath}\nconst fs=require('node:fs');const a=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({command:'gh',args:a})+'\\n');if(a[0]==='auth')process.exit(0);if(a[1]==='user'){console.log(JSON.stringify({login:'fixture-owner'}));process.exit(0)}if(a[1]?.includes('/commits/')){const refs=${JSON.stringify(commits)};const ref=decodeURIComponent(a[1].split('/commits/')[1]);if(refs[ref]===null){console.error('gh: No commit found for SHA: '+ref+' (HTTP 422)');process.exit(1)}console.log(refs[ref]||${JSON.stringify(commit)});process.exit(0)}if(a[1]?.includes('/contents/package.json')){console.log(JSON.stringify({name:'@fixture/visits',version:'1.2.3',mercatoModule:{id:'visits',formatVersion:1}}));process.exit(0)}if(a[1]?.startsWith('repos/')){console.log(JSON.stringify({private:false,default_branch:'main'}));process.exit(0)}process.exit(1)\n`,
@@ -76,6 +79,8 @@ function fixture(context, options = {}) {
     const timer = setTimeout(() => { child.kill(); reject(new Error('Interactive approval timed out')) }, 15000)
     child.stdout.on('data', data => {
       output += data
+      if (options.awaitRetryProgress && output.includes('YARN_RETRY_PROGRESS'))
+        fs.writeFileSync(progressAck, 'observed')
       if (!answered && output.includes('[y/N]')) {
         answered = true
         child.stdin.write(`${answer}\n`)
@@ -241,6 +246,18 @@ test('version-tag fallback and repository approval keep the same pinned dependen
     'https://github.com/fixture-owner/visits-example.git',
   ])
   assert.ok(calls.some(call => call.args[1]?.endsWith(`contents/package.json?ref=${selectedCommit}`)))
+})
+
+test('approved retry forwards live Yarn progress and completes in the same invocation', async (context) => {
+  const { interactive, readCalls } = fixture(context, {
+    blocked: true, awaitRetryProgress: true,
+  })
+  const result = await interactive('yes')
+  assert.equal(result.status, 0, result.output)
+  assert.match(result.output, /Retrying installation/)
+  assert.match(result.output, /YARN_RETRY_PROGRESS/)
+  assert.match(result.output, /Installed @fixture\/visits/)
+  assert.equal(readCalls().at(-1).args[2], 'enable')
 })
 
 test('interactive installer writes Yarn approval only after an affirmative answer', async (context) => {

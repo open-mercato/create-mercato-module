@@ -9,6 +9,7 @@ export const fixtureContract = {
   api: 'api/status',
   entity: 'data/entities',
   entityExport: 'ReleaseCheck',
+  migration: 'migrations/Migration20261014000000',
   translationKey: 'release_checks.title',
   asset: 'assets/fixture.txt',
 }
@@ -29,6 +30,7 @@ export function writeFixture(appDirectory: string, options: { extend?: boolean }
     'i18n/en.json': JSON.stringify({ 'release_checks.title': fixtureContract.marker }, null, 2) + '\n',
     'i18n/pl.json': JSON.stringify({ 'release_checks.title': 'Test wydania Mercato' }, null, 2) + '\n',
     'assets/fixture.txt': `${fixtureContract.marker}\n`,
+    [`${fixtureContract.migration}.ts`]: `import { Migration } from '@mikro-orm/migrations'\nexport class Migration20261014000000 extends Migration {\n  override async up(): Promise<void> {\n    this.addSql('create table "release_checks" ("id" uuid not null, "organization_id" uuid not null, "tenant_id" uuid not null, "status" text not null, "updated_at" timestamptz not null, constraint "release_checks_pkey" primary key ("id"));')\n  }\n  override async down(): Promise<void> {\n    this.addSql('drop table if exists "release_checks";')\n  }\n}\n`,
     'migrations/.snapshot-open-mercato.json': '{}\n',
   }
   for (const [filename, contents] of Object.entries(files)) {

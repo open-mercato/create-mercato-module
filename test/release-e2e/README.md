@@ -55,7 +55,7 @@ How it stays local:
 
 Real npm and GitHub credentials are removed before local fixture commands run. Publication commands receive only the ephemeral token issued by the throwaway Verdaccio instance. The CI job has no repository secrets and a read-only GitHub token, so even a defect could not publish remotely.
 
-The app in step 6 runs its development server; the scaffold's production build is not part of these checks. The module's entity is discovered and loaded but has no migration, so no table is created for it.
+The app in step 6 runs its development server; the scaffold's production build is not part of these checks. Initialization applies the fixture migration to create the module's table before rebuilding its entity index.
 
 Not covered locally, because there is no faithful stand-in: npm Trusted Publishing (OIDC) and real GitHub permissions and branch protection. CLI integration tests and the local release harness cover linking and linked releases against local repositories; verify Trusted Publishing on a real repository.
 
@@ -138,7 +138,7 @@ yarn install
 node test/release-e2e/fixture.mts /tmp/mercato-fixture-source
 ```
 
-The writer creates `src/modules/release_checks` and refuses to overwrite an existing directory. It includes a React hook page, authenticated API handler, relative import, MikroORM entity, translations, runtime asset, and migration snapshot. It does not register or migrate the entity. The publishing tool exports the existing module directly.
+The writer creates `src/modules/release_checks` and refuses to overwrite an existing directory. It includes a React hook page, authenticated API handler, relative import, MikroORM entity, translations, runtime asset, table migration, and migration snapshot. The writer does not register the module or run migrations; the full local rehearsal applies the migration during app initialization. The publishing tool exports the existing module directly.
 
 Publish that module using the version of this tool under review, with an npm scope where you have private publication access. Save the exact package version and matching Git commit. Pass those values to `run.mts`. Consumer apps should use the same pinned framework version as the source app because generated packages intentionally use exact framework peers.
 

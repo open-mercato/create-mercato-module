@@ -237,7 +237,8 @@ export function installFromInput(
     if (approved.includes(url)) throw error
     execute('yarn', ['config', 'set', 'approvedGitRepositories', '--json', JSON.stringify([...approved, url])], app.directory)
     warn(`✅ Added ${url} to this app's approvedGitRepositories. Retrying installation.`)
-    add()
+    // Installation can outlast a captured probe; show progress and wait for Yarn.
+    execute('yarn', ['add', specifier], app.directory)
   }
   const required = missing(packageName)
   if (required.length) warn(requirementsWarning(packageName, required))
