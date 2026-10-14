@@ -15,6 +15,14 @@ export interface InstallOptions {
   moduleId?: string
   ref?: string
   warn?: (message: string) => void
+  approveGitRepository?: boolean
+}
+
+export class GitRepositoryApprovalRequired extends Error {
+  constructor(readonly repository: string, cause?: unknown) {
+    super(`🔒 Yarn blocked this repository because it is not in approvedGitRepositories.\n\n🐙 Repository: https://github.com/${repository}.git\n📝 Approval adds only this exact URL to this app's Yarn configuration and retries installation. Existing approvals are preserved.\n\nApprove interactively or pass --approve-git-repository for this installation.`, { cause })
+    this.name = 'GitRepositoryApprovalRequired'
+  }
 }
 
 export interface InstalledModule {
@@ -208,7 +216,29 @@ export function installFromInput(
     repository,
   )
   const specifier = `${packageName}@github:${repository}#${commit}`
-  execute('yarn', ['add', specifier], app.directory)
+  const add = () => {
+    const result = execute('yarn', ['add', specifier], app.directory, { capture: true })
+    if (result.stdout) console.log(result.stdout.trimEnd())
+    if (result.stderr) console.error(result.stderr.trimEnd())
+  }
+  try {
+    add()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const url = `https://github.com/${repository}.git`
+    if (!message.includes('YN0080') || !message.includes('approvedGitRepositories') || !message.includes(url))
+      throw error
+    if (!options.approveGitRepository) throw new GitRepositoryApprovalRequired(repository, error)
+    const result = execute('yarn', ['config', 'get', 'approvedGitRepositories', '--json'], app.directory, { capture: true })
+    let approved: unknown
+    try { approved = JSON.parse(result.stdout) } catch {}
+    if (!Array.isArray(approved) || !approved.every(value => typeof value === 'string'))
+      throw new Error('Cannot read approvedGitRepositories safely. Yarn configuration was not changed.', { cause: error })
+    if (approved.includes(url)) throw error
+    execute('yarn', ['config', 'set', 'approvedGitRepositories', '--json', JSON.stringify([...approved, url])], app.directory)
+    warn(`✅ Added ${url} to this app's approvedGitRepositories. Retrying installation.`)
+    add()
+  }
   const required = missing(packageName)
   if (required.length) warn(requirementsWarning(packageName, required))
   try {
