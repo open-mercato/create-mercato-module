@@ -12,7 +12,7 @@ import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { writeFixture, fixtureContract } from './fixture.mts'
-import { main as runLanes, redact } from './run.mts'
+import { main as runLanes, redact, pinFixtureYarn } from './run.mts'
 
 const packageName = '@mercato-e2e/release-checks'
 const repository = 'mercato-e2e/release-checks'
@@ -180,6 +180,7 @@ export async function main(args: string[]): Promise<void> {
     const sourceApp = path.join(options.results, 'source-app')
     if (fs.existsSync(sourceApp)) throw new Error(`Refusing to overwrite existing app: ${sourceApp}`)
     await command('scaffold-source-app', npx, ['--yes', '--package', options.createApp, '--', 'create-mercato-app', sourceApp, '--preset', 'empty', '--agents', 'none', '--no-init-git'], options.results)
+    pinFixtureYarn(sourceApp)
     await command('install-source-app', yarn, ['install'], sourceApp)
     // The published module starts as a real `init` scaffold and gains a page, API, entity and assets.
     await command('init-module', process.execPath, [toolBin, 'init', fixtureContract.moduleId], sourceApp)
