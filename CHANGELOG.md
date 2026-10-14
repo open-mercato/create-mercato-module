@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1
+
 - Show live Yarn progress after approving a GitHub repository and allow the retry to finish before enabling the module. The retry no longer inherits the short timeout used for captured inspection commands, which could interrupt a slow installation and require another invocation.
 - Preserve TypeScript entity convention files (`data/` and legacy `db/` entities, overrides, and schemas) beside compiled JavaScript in exported packages and dedicated-repository rebuilds. Open Mercato can then discover entity IDs and fields instead of generating an empty registry. Runtime import paths are unchanged. Existing repositories need the updated generated `build.cjs`, followed by a rebuild, host generation, and a development-server restart.
 
