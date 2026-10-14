@@ -301,7 +301,7 @@ Choose one publisher for each version: local `publish visits` or the repository 
 | Migrations and schema snapshots | Symlinks and credential files |
 | Package metadata and rebuild script | Authentication tokens |
 
-The package includes `src/modules/<id>`, `dist/modules/<id>`, and portable `types/modules/<id>` for discovery, ejection, runtime imports, and consumer type resolution. Compilation preserves client directives, React's automatic JSX runtime, and legacy decorator metadata. In linked development, publication keeps the repository's author source and tests intact; the build rewrites own-module aliases in generated output and portable type sources.
+The package includes `src/modules/<id>`, `dist/modules/<id>`, and portable `types/modules/<id>` for discovery, ejection, runtime imports, and consumer type resolution. Compilation preserves client directives, React's automatic JSX runtime, and legacy decorator metadata. Entity convention files (`entities`, `entities.override`, and `schema` under `data/` or legacy `db/`) also keep a TypeScript source mirror beside their compiled JavaScript in `dist`, allowing the host to discover exported entity classes and fields. Executable package exports continue to resolve to JavaScript. In linked development, publication keeps the repository's author source and tests intact; the build rewrites own-module aliases in generated output and portable type sources.
 
 Imported dependencies are recorded from installed versions. Framework packages, React, Next.js, and MikroORM become exact-version peers to match the source app. Other imported packages become runtime dependencies.
 

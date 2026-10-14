@@ -404,6 +404,14 @@ function build(packageDirectory: string): void {
       )
       fs.writeFileSync(output, compile(source, file))
       fs.writeFileSync(typeOutput, source)
+      // Host entity-ID/field generators parse exported TypeScript classes in
+      // the resolved dist convention directory. Runtime exports still use JS.
+      if (
+        ['data', 'db'].includes(path.dirname(relative)) &&
+        /^(?:entities(?:\.override)?|schema)\.tsx?$/.test(path.basename(relative))
+      ) {
+        fs.writeFileSync(path.join(outputRoot, relative), source)
+      }
     } else {
       fs.copyFileSync(
         file,
