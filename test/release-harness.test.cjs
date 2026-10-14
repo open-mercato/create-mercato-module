@@ -28,6 +28,30 @@ test('release harness disables Yarn package-age gates for nested Git package bui
   assert.equal(original.YARN_NPM_MINIMAL_AGE_GATE, '1d')
 })
 
+test('fresh release fixtures use patched Yarn without changing app dependencies or approvals', async (context) => {
+  const { pinFixtureYarn } = await import('./release-e2e/run.mts')
+  const app = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-yarn-fixture-'))
+  context.after(() => fs.rmSync(app, { recursive: true, force: true }))
+  const manifest = {
+    name: 'release-fixture',
+    packageManager: 'yarn@4.17.1',
+    dependencies: { '@open-mercato/core': '0.8.1-develop.7452.1.5e211edd51' },
+    scripts: { generate: 'mercato generate' },
+  }
+  const config = 'approvedGitRepositories:\n  - https://github.com/open-mercato/*\n'
+  fs.writeFileSync(path.join(app, 'package.json'), JSON.stringify(manifest))
+  fs.writeFileSync(path.join(app, '.yarnrc.yml'), config)
+  pinFixtureYarn(app)
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(app, 'package.json'), 'utf8')), {
+    ...manifest,
+    packageManager: 'yarn@4.18.1',
+  })
+  assert.equal(fs.readFileSync(path.join(app, '.yarnrc.yml'), 'utf8'), config)
+  const pinned = fs.readFileSync(path.join(app, 'package.json'), 'utf8')
+  pinFixtureYarn(app)
+  assert.equal(fs.readFileSync(path.join(app, 'package.json'), 'utf8'), pinned)
+})
+
 test('real GitHub release checks pass the preflight commit through install', () => {
   const source = fs.readFileSync(
     path.join(__dirname, 'release-e2e/run.mts'),

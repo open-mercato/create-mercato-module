@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- GitHub installs accept npm-style version selectors such as `owner/repo@1.2.3` and `owner/repo@1.2.3-beta.1`. An existing exact ref wins; when it is missing, installation tries the conventional `v`-prefixed release tag and pins the resolved commit. Explicit `#ref` and `--ref` selectors keep exact-ref behavior.
 - Keep published TypeScript source imports compatible with linked Next.js development while retaining `.js` imports in compiled ESM and types. Previously, publishing rewrote `src/` imports to `.js` and linking them back into an app could fail with `Module not found`. Existing repositories can remove the `.js` suffix from imports targeting TypeScript source; package exports and compiled output are unchanged.
 
 ## 0.4.0

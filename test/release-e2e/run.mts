@@ -66,6 +66,15 @@ export function gitPackageEnvironment(
   }
 }
 
+export function pinFixtureYarn(app: string): void {
+  const filename = path.join(app, 'package.json')
+  const manifest = JSON.parse(fs.readFileSync(filename, 'utf8'))
+  // 4.18.1 fixes the got retry/cancellation crash present in the pinned scaffold.
+  // https://github.com/yarnpkg/berry/pull/7249
+  manifest.packageManager = 'yarn@4.18.1'
+  fs.writeFileSync(filename, `${JSON.stringify(manifest, null, 2)}\n`)
+}
+
 export function hasEnabledModule(source: string, id: string): boolean {
   if (!/^[a-z][a-z0-9_]*$/.test(id)) throw new Error('Invalid module id.')
   return new RegExp(`\\bid\\s*:\\s*['"]${id}['"]`).test(source)
@@ -201,6 +210,7 @@ export async function main(args: string[]): Promise<void> {
       if (app !== options.reuseApp) {
         if (fs.existsSync(app)) throw new Error(`Refusing to overwrite existing app: ${app}`)
         await command(lane, 'scaffold', npx, ['--yes', '--package', options.createApp, '--', 'create-mercato-app', app, '--preset', 'empty', '--agents', 'none', '--no-init-git'], options.results)
+        pinFixtureYarn(app)
       }
       const yarnConfig = path.join(app, '.yarnrc.yml')
       const originalConfig = fs.readFileSync(yarnConfig, 'utf8')

@@ -34,6 +34,7 @@ function repositoryCommit(
   repository: string,
   execute: Executor,
   requestedRef?: string,
+  versionTag?: string,
 ): string {
   let ref = requestedRef
   if (ref && !validGitRef(ref))
@@ -57,21 +58,30 @@ function repositoryCommit(
       )
     ref = branch
   }
-  const result = execute(
-    'gh',
-    [
-      'api',
-      `repos/${repository}/commits/${encodeURIComponent(ref)}`,
-      '--jq',
-      '.sha',
-    ],
-    app.directory,
-    { capture: true },
-  )
+  const lookup = (selectedRef: string) =>
+    execute(
+      'gh',
+      [
+        'api',
+        `repos/${repository}/commits/${encodeURIComponent(selectedRef)}`,
+        '--jq',
+        '.sha',
+      ],
+      app.directory,
+      { capture: true, allowFailure: true },
+    )
+  let result = lookup(ref)
+  // Preserve exact refs; only a missing numeric @version may try its release tag.
+  const refMissing =
+    /\bHTTP 404\b/.test(result.stderr) ||
+    (/\bHTTP 422\b/.test(result.stderr) &&
+      /No commit found for SHA:/.test(result.stderr))
+  if (result.status !== 0 && refMissing && versionTag)
+    result = lookup(versionTag)
   const commit = result.stdout.trim()
-  if (!/^[0-9a-f]{40}$/.test(commit))
+  if (result.status !== 0 || !/^[0-9a-f]{40}$/.test(commit))
     throw new Error(
-      `🐙 Cannot resolve ${repository}'s ${requestedRef ? `ref ${requestedRef}` : 'default branch'} to a commit. No files were changed.`,
+      `🐙 Cannot resolve ${repository}'s ${requestedRef ? `ref ${requestedRef}${versionTag ? ` or tag ${versionTag}` : ''}` : 'default branch'} to a commit. Check the ref, gh auth status, and network access, then retry. No files were changed.`,
     )
   return commit
 }
@@ -165,11 +175,19 @@ export function installFromInput(
   const repositoryInput =
     parsed?.kind === 'github' ? parsed.identity.slice('github:'.length) : input
   const repository = githubRepositoryFromInput(app, repositoryInput, execute)
+  const versionTag =
+    hashIndex < 0 &&
+    !options.ref &&
+    locatorRef &&
+    /^\d+\.\d+\.\d+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?$/.test(locatorRef)
+      ? `v${locatorRef}`
+      : undefined
   const commit = repositoryCommit(
     app,
     repository,
     execute,
     options.ref ?? locatorRef,
+    versionTag,
   )
   const manifest = inspectDevelopmentRepository(
     app.directory,

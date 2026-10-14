@@ -30,6 +30,12 @@ Use ports that are free on your machine, and a new results directory for every r
 
 CI passes an exact `create-mercato-app` version so a moving prerelease tag cannot expose a partially published framework set. Update that pin deliberately after confirming the scaffold and all of its exact Open Mercato dependencies are available together.
 
+Fresh test apps also pin `packageManager` to `yarn@4.18.1`, which includes the
+[fix for the registry retry/cancellation crash](https://github.com/yarnpkg/berry/pull/7249)
+in Yarn 4.17.1 from the scaffold. This applies to the source fixture and both
+fresh consumer apps. Framework dependency pins and Yarn approval settings stay
+unchanged. `--reuse-app` keeps that existing app's package manager.
+
 What a run does:
 
 1. Scaffolds a real app, installs it, creates a module with `init`, and adds a page, API, entity, translations, and an asset to it.
