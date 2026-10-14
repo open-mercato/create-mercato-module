@@ -45,6 +45,22 @@ or the default-branch selection behavior are planned.
   separately from generic HTTP 422 validation failures.
 - A GitHub version selector resolves Git refs, not npm dist-tags or ranges.
 
+## Verification evidence
+
+- Focused installer/CLI suite: 33 passed. Three new version-tag regression
+  tests fail against the base installer.
+- Full configured gate passed: typecheck; 184 tests passed, 5 existing opt-in
+  real-framework tests skipped; npm pack dry-run produced 53 packaged files.
+- Lint and diff whitespace checks passed. On macOS the full gate used
+  `TMPDIR=/private/tmp` because the default `/var` path is a symlink rejected
+  by existing safety checks. No test or source guard was weakened.
+- Code review found no actionable findings. GitHub rejected formal self-approval;
+  the full assessment is posted on PR #8 for independent review.
+- Remote CI remains pending. Missing configured workflow labels were skipped
+  by the tracker guards; the existing documentation label was applied.
+- PR #8 contains the review, validation evidence, risks, manual smoke steps,
+  and rollback instructions. No npm release was made.
+
 ## Progress
 
 PR: #8
@@ -58,5 +74,5 @@ PR: #8
 
 ### Phase 2: Verification and PR delivery
 
-- [ ] 2.1 Complete the validation gate and automated code review
-- [ ] 2.2 Finalize the ready PR with verification evidence
+- [x] 2.1 Complete the validation gate and automated code review — reviewed adea7ca and f27741d
+- [x] 2.2 Finalize the ready PR with verification evidence — PR #8
