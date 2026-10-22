@@ -43,7 +43,21 @@ if (contents) {
   process.exit(0)
 }
 
-const api = args[0] === 'api' ? /^repos\/([^/]+\/[^/]+)(?:\/commits\/(.+))?$/.exec(args[1] ?? '') : null
+// gh api --method POST repos/<owner>/<repo>/git/refs -f ref=refs/tags/<tag> -f sha=<commit>
+const refs = args[0] === 'api' && args[1] === '--method' && args[2] === 'POST' ? /^repos\/([^/]+\/[^/]+)\/git\/refs$/.exec(args[3] ?? '') : null
+if (refs) {
+  const directory = repository(refs[1])
+  if (!fs.existsSync(directory)) fail('gh: Not Found (HTTP 404)')
+  const fields = Object.fromEntries(args.slice(4).filter((_, index) => index % 2 === 1).map((field) => field.split(/=(.*)/s).slice(0, 2)))
+  if (args.length !== 8 || !/^refs\/tags\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(fields.ref ?? '') || !/^[0-9a-f]{40}$/.test(fields.sha ?? '')) fail(`gh shim: unsupported ref request ${args.join(' ')}`)
+  if (git(['rev-parse', '--verify', '--quiet', fields.ref], directory).status === 0) fail('gh: Reference already exists (HTTP 422)')
+  const created = git(['update-ref', fields.ref, fields.sha, '0'.repeat(40)], directory)
+  if (created.status !== 0) fail(`gh: Object does not exist (HTTP 422)\n${created.stderr}`)
+  process.stdout.write(JSON.stringify({ ref: fields.ref, object: { sha: fields.sha } }))
+  process.exit(0)
+}
+
+const api = args[0] === 'api' ?/^repos\/([^/]+\/[^/]+)(?:\/commits\/(.+))?$/.exec(args[1] ?? '') : null
 if (api) {
   const directory = repository(api[1])
   if (!fs.existsSync(directory)) fail('gh: Not Found (HTTP 404)')

@@ -160,6 +160,9 @@ test('CLI switches an installed package registration to @app and publishes a new
   const released = cli(['publish', 'visits', '--yes'])
   assert.equal(released.status, 0, released.output)
   assert.match(run('git', ['--git-dir', bare, 'show', 'main:dist/modules/visits/new.js'], app.directory, { capture: true }).stdout, /New linked feature/)
+  assert.match(released.output, /Tagged release-checks\/visits-example 0\.1\.1/)
+  const tagged = (ref) => run('git', ['--git-dir', bare, 'rev-parse', `${ref}^{commit}`], app.directory, { capture: true }).stdout.trim()
+  assert.equal(tagged('0.1.1'), tagged('main'), 'install owner/repo@0.1.1 must find the release commit')
 })
 
 test('CLI reads npm 12 repository metadata, which npm wraps in an array', context => {

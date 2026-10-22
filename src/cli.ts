@@ -382,7 +382,7 @@ async function main(argv = process.argv.slice(2)) {
       : !repository
         ? settings.repository
         : repository.state === 'missing'
-          ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created)`
+          ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created before npm publication; it stays if npm rejects the package)`
           : `${settings.repository} (existing ${repository.private ? 'private' : 'PUBLIC'} repository)`
     console.log(
       `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
@@ -414,16 +414,21 @@ async function main(argv = process.argv.slice(2)) {
       console.log(
         'ℹ️ Publication canceled: the package name was not confirmed. The local archive is available for inspection.',
       )
+      // Scripts wrapping the wizard must not mistake a cancellation for a release.
+      process.exitCode = 1
       return
     }
     saveConfig(app, args.id, settings, false)
-    publish(prepared, settings, undefined, {
+    const released = publish(prepared, settings, undefined, {
       // Linked checkouts are the source and are never overwritten.
       ...(repository && !prepared.linkedCheckout
         ? { expectedHead: repository.head ?? null }
         : {}),
     })
     saveConfig(app, args.id, settings, true)
+    if (released.tag)
+      console.log(`\n🏷️ Tagged ${settings.repository} ${released.tag}.`)
+    if (released.tagWarning) console.log(`\n⚠️ ${released.tagWarning}`)
     console.log(
       `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  yarn mercato module add ${settings.packageName}@${settings.version} --allow-third-party`,
     )

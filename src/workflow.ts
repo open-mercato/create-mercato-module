@@ -39,8 +39,21 @@ jobs:
           NODE_AUTH_TOKEN: \${{ secrets.NPM_READ_TOKEN }}
       - name: Check release tag
         run: node -e 'const manifest = require("./package.json"); if (process.env.GITHUB_REF_TYPE === "tag" && process.env.GITHUB_REF_NAME !== "v" + manifest.version) throw new Error("Tag must match package.json version")'
+      # create-mercato-module tags local releases without a v prefix; a v tag
+      # pushed later for an npm version that already exists has nothing to do.
+      - name: Skip a version already on npm
+        id: published
+        run: |
+          if npm view "$(node -p "require('./package.json').name")@$(node -p "require('./package.json').version")" version > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::This version is already on npm; nothing to publish."
+          fi
+        env:
+          NODE_AUTH_TOKEN: \${{ secrets.NPM_READ_TOKEN }}
       - run: npm run build
+        if: steps.published.outputs.exists != 'true'
       - name: Publish with npm Trusted Publishing
+        if: steps.published.outputs.exists != 'true'
         run: |
           TAG=latest
           if node -e "process.exit(require('./package.json').version.includes('-') ? 0 : 1)"; then TAG=next; fi

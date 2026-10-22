@@ -115,7 +115,7 @@ test('repeat publication uses saved settings, auto-bumps version and only asks f
   const { app, cli } = fixture(context)
   saveConfig(app, 'visits', settings, true)
   const result = cli(['publish', 'visits'])
-  assert.equal(result.status, 0, result.output)
+  assert.equal(result.status, 1, 'the unanswered confirmation cancels the publication')
   assert.match(result.output, /@fixture\/visits@0\.1\.1/)
   assert.equal((result.output.match(/PROMPT:/g) || []).length, 1)
   assert.match(result.output, /PROMPT:.*Publish this module/s)
@@ -125,11 +125,11 @@ test('repeat publication uses saved settings, auto-bumps version and only asks f
 test('explicit settings are not prompted again and configure intentionally opens saved fields', (context) => {
   const { app, cli } = fixture(context)
   const supplied = cli(['publish', 'visits', '--package', settings.packageName, '--version', settings.version, '--repo', '-', '--access', 'public', '--auth', 'login'])
-  assert.equal(supplied.status, 0, supplied.output)
+  assert.equal(supplied.status, 1, supplied.output)
   assert.equal((supplied.output.match(/PROMPT:/g) || []).length, 1)
   saveConfig(app, 'visits', settings, true)
   const configured = cli(['publish', 'visits', '--configure'])
-  assert.equal(configured.status, 0, configured.output)
+  assert.equal(configured.status, 1, configured.output)
   assert.equal((configured.output.match(/PROMPT:/g) || []).length, 5)
   assert.match(configured.output, /📦 npm package|🔖 Version|🐙 Dedicated GitHub|🔐 Access/)
 })
@@ -148,13 +148,13 @@ test('publication needs the package name retyped interactively and explicit appr
   const { app, cli } = fixture(context)
   const arguments_ = ['publish', 'visits', '--package', settings.packageName, '--version', settings.version, '--repo', '-', '--auth', 'login']
   const declined = cli(arguments_)
-  assert.equal(declined.status, 0, declined.output)
+  assert.equal(declined.status, 1, 'a declined confirmation must not look like a release')
   assert.match(declined.output, /PROMPT:.*Type the package name \(@fixture\/visits\) to confirm/s)
   assert.match(declined.output, /Publication canceled/)
   process.env.FIXTURE_CONFIRMATION = 'y'
   context.after(() => { delete process.env.FIXTURE_CONFIRMATION })
   const shortcut = cli(arguments_)
-  assert.equal(shortcut.status, 0, shortcut.output)
+  assert.equal(shortcut.status, 1, shortcut.output)
   assert.match(shortcut.output, /Publication canceled/, 'y/yes must not approve a publication')
   process.env.FIXTURE_CONFIRMATION = settings.packageName
   process.env.FIXTURE_REGISTRY = path.join(app.directory, '..', 'published.json')
