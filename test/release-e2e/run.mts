@@ -279,9 +279,11 @@ export async function main(args: string[]): Promise<void> {
           if (options.registry) assert.match(installed, new RegExp(`Added ${options.packageName.replace('/', '\\/')} to this app's npmPreapprovedPackages`))
         } else if (!options.gitUrl) await command(lane, 'install-module-from-github', node, [toolBin, 'install', `https://github.com/${options.repository}.git`, '--ref', githubCommit], app)
         else {
-          // The user path: owner/repo@version through install, with github.com
-          // redirected to the local Git server and closed to Yarn's own fetches.
-          await command(lane, 'block-github-network', yarn, ['config', 'set', 'networkSettings', '--json', JSON.stringify(Object.fromEntries(['github.com', 'api.github.com', 'codeload.github.com'].map((host) => [host, { enableNetwork: false }])))], app)
+          // The user path: owner/repo@version through install. Git is redirected to
+          // the local server by insteadOf; Yarn's own HTTP requests to GitHub go to a
+          // closed loopback port (enableNetwork: false would also refuse the Git URL).
+          const closedProxy = `http://127.0.0.1:${await freePort()}`
+          await command(lane, 'block-github-network', yarn, ['config', 'set', 'networkSettings', '--json', JSON.stringify({ 'github.com': { httpProxy: closedProxy, httpsProxy: closedProxy }, 'api.github.com': { enableNetwork: false }, 'codeload.github.com': { enableNetwork: false } })], app)
           const gitEnvironment = { ...gitPackageEnvironment(environment), GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: `url.${new URL(options.gitUrl).origin}/.insteadOf`, GIT_CONFIG_VALUE_0: 'https://github.com/' }
           await command(lane, 'install-module-from-github', node, [toolBin, 'install', `${options.repository}@${options.ref}`, '--approve-git-repository'], app, gitEnvironment)
           const dependency = (JSON.parse(fs.readFileSync(path.join(app, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> }).dependencies?.[options.packageName]

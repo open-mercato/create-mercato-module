@@ -51,7 +51,7 @@ How it stays local:
 | --- | --- | --- |
 | npmjs.com | [Verdaccio](https://verdaccio.org/) in a container, configured by `verdaccio.yaml` | No uplink, accepts only the `@mercato-e2e` scope. The tool is pointed at it with `MERCATO_NPM_REGISTRY`, which accepts only addresses on this machine. |
 | GitHub API and `gh` | `gh-shim.mjs`, first on `PATH` | Answers from bare repositories in the results directory and refuses any other command. |
-| GitHub as a Git host | The same bare repositories, served on a loopback port | `install` adds the usual `github:` dependency. A Git `insteadOf` rule sends `https://github.com/` to the loopback server, and Yarn's `networkSettings` disable network access to `github.com`, `api.github.com` and `codeload.github.com`. |
+| GitHub as a Git host | The same bare repositories, served on a loopback port | `install` adds the usual `github:` dependency. A Git `insteadOf` rule sends `https://github.com/` to the loopback server, and Yarn's `networkSettings` send its own requests to `github.com` to a closed loopback proxy and disable `api.github.com` and `codeload.github.com`. |
 
 Real npm and GitHub credentials are removed before local fixture commands run. Publication commands receive only the ephemeral token issued by the throwaway Verdaccio instance. The CI job has no repository secrets and a read-only GitHub token, so even a defect could not publish remotely.
 
