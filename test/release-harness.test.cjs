@@ -71,11 +71,21 @@ test('release harness recognizes required modules in generated registrations', a
   assert.throws(() => hasEnabledModule('', '../api_keys'), /module id/)
 })
 
-test('release CI pins a coherent create-app version instead of a moving tag', () => {
+test('release CI keeps a pinned create-app leg next to the latest scaffold', () => {
   const workflow = fs.readFileSync(path.join(process.cwd(), '.github/workflows/test.yml'), 'utf8')
-  const createApp = workflow.match(/--create-app (create-mercato-app@\S+)/)?.[1]
-  assert.ok(createApp, 'release CI must pass --create-app')
-  assert.doesNotMatch(createApp, /@(develop|latest)$/)
+  assert.match(workflow, /--create-app "\$CREATE_APP"/, 'release CI must pass the matrix scaffold')
+  const scaffolds = [...workflow.matchAll(/- scaffold: (create-mercato-app@\S+)/g)].map((match) => match[1])
+  assert.ok(scaffolds.some((scaffold) => /@\d+\.\d+\.\d+$/.test(scaffold)), 'one leg must pin an exact, coherent release')
+  assert.ok(scaffolds.includes('create-mercato-app@latest'), 'one leg must follow what new users get')
+  assert.ok(!scaffolds.some((scaffold) => scaffold.endsWith('@develop')))
+})
+
+test('local release checks install both lanes through create-mercato-module install', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'release-e2e/run.mts'), 'utf8')
+  assert.doesNotMatch(source, /approve-fixture-age|approve-local-git|enable-github-module/, 'no harness shortcut around the user path')
+  assert.match(source, /install-refused-by-age-gate/)
+  assert.match(source, /\[toolBin, 'install', npmLocator, '--preapprove-package'\]/)
+  assert.match(source, /\[toolBin, 'install', `\$\{options\.repository\}@\$\{options\.ref\}`, '--approve-git-repository'\]/)
 })
 
 test('release fixture writer creates portable module source and refuses to replace existing source', async (context) => {

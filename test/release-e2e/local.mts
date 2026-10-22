@@ -37,7 +37,7 @@ export function parseLocalOptions(args: string[]): Options {
     try { database = new URL(databaseValue) } catch {}
     if (!database || !['postgres:', 'postgresql:'].includes(database.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(database.hostname)) throw new Error('--database-url must be a throwaway Postgres on this machine, for example postgres://postgres:postgres@127.0.0.1:54329/open-mercato. The checks initialize it from scratch.')
   }
-  return { databaseUrl: database?.href, registry: registry.href, results: path.resolve(values.results ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-local-'))), createApp: values['create-app'] ?? 'create-mercato-app@develop' }
+  return { databaseUrl: database?.href, registry: registry.href, results: path.resolve(values.results ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-local-'))), createApp: values['create-app'] ?? 'create-mercato-app@latest' }
 }
 
 // Serves the bare repositories over loopback HTTP so Yarn can install from them.
@@ -176,6 +176,7 @@ export async function main(args: string[]): Promise<void> {
   }
 
   let server: Awaited<ReturnType<typeof serveRepositories>> | undefined
+  const originalPath = process.env.PATH
   try {
     const sourceApp = path.join(options.results, 'source-app')
     if (fs.existsSync(sourceApp)) throw new Error(`Refusing to overwrite existing app: ${sourceApp}`)
@@ -189,6 +190,11 @@ export async function main(args: string[]): Promise<void> {
     await command('generate-source-app', yarn, ['generate'], sourceApp)
 
     const bare = path.join(githubRoot, `${repository}.git`)
+    // install owner/repo@<version> needs the tag publish creates once npm has the release.
+    const assertReleaseTag = async (version: string) => {
+      const [tagged, head] = (await command(`release-tag-${version}`, 'git', ['--git-dir', bare, 'rev-parse', `refs/tags/${version}^{commit}`, 'main'], options.results)).trim().split('\n')
+      assert.equal(tagged, head, `Tag ${version} must point to its release commit`)
+    }
     for (const [index, version] of versions.entries()) {
       const output = await command(`publish-${version}`, process.execPath, [toolBin, 'publish', fixtureContract.moduleId, '--package', packageName, '--version', version, '--repo', repository, '--access', 'restricted', '--auth', 'token', '--yes'], sourceApp)
       assert.match(output, /Using the local test registry/, 'Publication must target the local registry')
@@ -197,6 +203,7 @@ export async function main(args: string[]): Promise<void> {
       const published = (await (await fetch(new URL(packageName.replace('/', '%2f'), options.registry))).json()) as { versions?: Record<string, unknown> }
       assert.ok(published.versions?.[version], `The local registry must hold ${packageName}@${version}`)
       assert.match(await command(`release-commit-${version}`, 'git', ['--git-dir', bare, 'log', '-1', '--format=%B', 'main'], options.results), new RegExp(`^Release ${packageName}@${version.replaceAll('.', '\\.')}\\n\\nMercato-Source: app`), 'The repository must receive the release commit')
+      await assertReleaseTag(version)
     }
     assert.equal((await command('release-history', 'git', ['--git-dir', bare, 'rev-list', '--count', 'main'], options.results)).trim(), String(versions.length))
 
@@ -219,6 +226,7 @@ export async function main(args: string[]): Promise<void> {
     assert.match(await command('linked-release-source', 'git', ['--git-dir', bare, 'show', `main:dist/modules/${fixtureContract.moduleId}/linked-edit.js`], options.results), /42/)
     assert.equal(fs.readFileSync(path.join(checkout, 'README.md'), 'utf8'), readme)
     assert.ok((await (await fetch(new URL(packageName.replace('/', '%2f'), options.registry))).json() as { versions: Record<string, unknown> }).versions['0.0.3'])
+    await assertReleaseTag('0.0.3')
 
     const version = '0.0.3'
     await command('prepare-git-server', 'git', ['--git-dir', bare, 'update-server-info'], options.results)
@@ -226,7 +234,10 @@ export async function main(args: string[]): Promise<void> {
     fs.writeFileSync(path.join(options.results, 'local-results.json'), JSON.stringify({ createdAt: new Date().toISOString(), registry: options.registry, packageName, version, stages }, null, 2) + '\n')
 
     process.env.RELEASE_E2E_LOCAL_TOKEN = token
-    const shared = ['--package', packageName, '--version', version, '--repo', repository, '--ref', 'main', '--create-app', options.createApp, '--registry', options.registry, '--git-url', `${server.url}${repository}.git`]
+    // Consumer apps install from "GitHub" through the same stand-in gh and bare repositories.
+    process.env.PATH = environment.PATH
+    process.env.RELEASE_E2E_GITHUB_ROOT = githubRoot
+    const shared = ['--package', packageName, '--version', version, '--repo', repository, '--ref', version, '--create-app', options.createApp, '--registry', options.registry, '--git-url', `${server.url}${repository}.git`]
     // Each lane installs into its own fresh app, never the one that published the module.
     await runLanes([...shared, '--lanes', 'npm,github', '--results', path.join(options.results, 'consumers')])
     if (options.databaseUrl) await fullAppCheck(path.join(options.results, 'consumers/npm-app'), options.databaseUrl)
@@ -234,6 +245,8 @@ export async function main(args: string[]): Promise<void> {
     process.stdout.write(`\n✅ Local release checks passed without contacting npmjs.com or github.com for the fixture. Results: ${options.results}\n`)
   } finally {
     delete process.env.RELEASE_E2E_LOCAL_TOKEN
+    delete process.env.RELEASE_E2E_GITHUB_ROOT
+    process.env.PATH = originalPath
     await server?.close()
     fs.writeFileSync(path.join(options.results, 'local-results.json'), JSON.stringify({ createdAt: new Date().toISOString(), registry: options.registry, packageName, stages }, null, 2) + '\n')
   }

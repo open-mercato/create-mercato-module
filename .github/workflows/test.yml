@@ -16,8 +16,16 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         node: [24, 26]
+        npm: [bundled]
+        include:
+          # npm 12 prints pack and view JSON in new shapes; users upgrade npm
+          # independently of Node, so test it next to the bundled version.
+          - node: 24
+            npm: '12'
+    name: test (node ${{ matrix.node }}, npm ${{ matrix.npm }})
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -26,6 +34,12 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
+      - name: Install npm ${{ matrix.npm }}
+        if: matrix.npm != 'bundled'
+        env:
+          NPM_VERSION: ${{ matrix.npm }}
+        run: npm install --global "npm@$NPM_VERSION"
+      - run: npm --version
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
@@ -79,9 +93,20 @@ jobs:
   # container without an uplink and "GitHub" is a set of local bare repositories,
   # so a run cannot leave packages on npmjs.com or repositories on github.com.
   release-checks:
-    name: Create, publish, install and run (local, no secrets)
+    name: Create, publish, install and run (local, no secrets; ${{ matrix.scaffold }}, npm ${{ matrix.npm }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The release users get today, with the npm bundled with Node 24.
+          - scaffold: create-mercato-app@0.9.0
+            npm: bundled
+          # Whatever a new user gets right now: catches scaffold and npm changes
+          # before they reach a pinned leg. A failure here can be upstream drift.
+          - scaffold: create-mercato-app@latest
+            npm: latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -90,6 +115,12 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: Install npm ${{ matrix.npm }}
+        if: matrix.npm != 'bundled'
+        env:
+          NPM_VERSION: ${{ matrix.npm }}
+        run: npm install --global "npm@$NPM_VERSION"
+      - run: npm --version
       - run: corepack enable
       - run: npm ci
       - run: npm run build
@@ -110,11 +141,11 @@ jobs:
           docker logs mercato-e2e-db
           exit 1
       - name: Local release checks
-        # A moving develop tag can briefly reference framework packages that have
-        # not reached npm yet. Update this exact, coherent set deliberately.
+        env:
+          CREATE_APP: ${{ matrix.scaffold }}
         run: >-
           npm run test:release:local --
-          --create-app create-mercato-app@0.8.1-develop.7452.1.5e211edd51
+          --create-app "$CREATE_APP"
           --registry http://127.0.0.1:4874/
           --database-url postgres://postgres:postgres@127.0.0.1:54329/open-mercato
           --results "$RUNNER_TEMP/release-checks"
@@ -122,7 +153,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: release-checks
+          name: release-checks-${{ strategy.job-index }}
           path: |
             ${{ runner.temp }}/release-checks/**/*.log
             ${{ runner.temp }}/release-checks/**/*results.json

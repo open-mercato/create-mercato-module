@@ -48,7 +48,7 @@ export function parseOptions(args: string[]): Options {
   if (lanes.some((lane) => !['npm', 'github'].includes(lane)) || new Set(lanes).size !== lanes.length) throw new Error('--lanes must be npm, github, or npm,github.')
   const ref = values.ref ?? version
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref)) throw new Error('--ref must be a Git tag, branch, or commit SHA.')
-  return { packageName, version, repository, ref, createApp: values['create-app'] ?? 'create-mercato-app@develop', results: path.resolve(values.results ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-e2e-'))), lanes, reuseApp: values['reuse-app'] ? path.resolve(values['reuse-app']) : undefined, registry: values.registry ? loopbackUrl(values.registry, '--registry') : undefined, gitUrl: values['git-url'] ? loopbackUrl(values['git-url'], '--git-url') : undefined }
+  return { packageName, version, repository, ref, createApp: values['create-app'] ?? 'create-mercato-app@latest', results: path.resolve(values.results ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-e2e-'))), lanes, reuseApp: values['reuse-app'] ? path.resolve(values['reuse-app']) : undefined, registry: values.registry ? loopbackUrl(values.registry, '--registry') : undefined, gitUrl: values['git-url'] ? loopbackUrl(values['git-url'], '--git-url') : undefined }
 }
 
 export function redact(text: string, secrets: string[]): string {
@@ -112,7 +112,7 @@ export async function main(args: string[]): Promise<void> {
   const toolManifest = JSON.parse(fs.readFileSync(path.join(toolRoot, 'package.json'), 'utf8')) as { bin: Record<string, string> }
   const toolBin = path.join(toolRoot, toolManifest.bin['create-mercato-module'])
   let githubCommit = options.ref
-  async function command(lane: string, stage: string, executable: string, commandArgs: string[], cwd: string, commandEnvironment = environment): Promise<string> {
+  async function command(lane: string, stage: string, executable: string, commandArgs: string[], cwd: string, commandEnvironment = environment, expectFailure = false): Promise<string> {
     const started = Date.now()
     process.stdout.write(`\n🧪 ${lane}: ${stage}\n`)
     const logfile = path.join(options.results, `${lane}-${stage.replace(/[^a-z0-9-]/gi, '-')}.log`)
@@ -128,8 +128,9 @@ export async function main(args: string[]): Promise<void> {
         clearTimeout(timeout)
         const sanitized = redact(output, secrets)
         fs.writeFileSync(logfile, sanitized)
-        stages.push({ lane, stage, status: code === 0 ? 'passed' : 'failed', durationMs: Date.now() - started })
-        if (code !== 0) reject(new Error(`${lane}/${stage} exited ${code}. Diagnostics: ${logfile}\n${sanitized.slice(-4000)}`))
+        const passed = expectFailure ? code !== 0 : code === 0
+        stages.push({ lane, stage, status: passed ? 'passed' : 'failed', durationMs: Date.now() - started })
+        if (!passed) reject(new Error(`${lane}/${stage} exited ${code}${expectFailure ? ' but was expected to fail' : ''}. Diagnostics: ${logfile}\n${sanitized.slice(-4000)}`))
         else resolve(output)
       })
     })
@@ -217,7 +218,6 @@ export async function main(args: string[]): Promise<void> {
       const yarnConfig = path.join(app, '.yarnrc.yml')
       const originalConfig = fs.readFileSync(yarnConfig, 'utf8')
       try {
-        await command(lane, 'approve-fixture-age', yarn, ['config', 'set', 'npmPreapprovedPackages', '--json', JSON.stringify(['@open-mercato/*', options.packageName])], app)
         if (options.registry) {
           await command(lane, 'allow-local-registry', yarn, ['config', 'set', 'unsafeHttpWhitelist', '--json', JSON.stringify([new URL(options.registry).hostname])], app)
           await command(lane, 'use-local-registry', yarn, ['config', 'set', 'npmScopes', '--json', JSON.stringify({ [scope.slice(1)]: { npmRegistryServer: options.registry.replace(/\/$/, '') } })], app)
@@ -252,12 +252,28 @@ export async function main(args: string[]): Promise<void> {
         assert.ok(fs.existsSync(path.join(app, 'src/modules', localId, 'index.ts')))
         const registrationsBeforeInstall = fs.readFileSync(path.join(app, 'src/modules.ts'), 'utf8')
         assert.match(registrationsBeforeInstall, /local_release_checks/)
-        if (lane === 'npm') await command(lane, 'install-module-from-npm', node, [toolBin, 'install', `${options.packageName}@${options.version}`], app)
-        else if (!options.gitUrl) await command(lane, 'install-module-from-github', node, [toolBin, 'install', `https://github.com/${options.repository}.git`, '--ref', githubCommit], app)
+        if (lane === 'npm') {
+          const npmLocator = `${options.packageName}@${options.version}`
+          // A local fixture was published minutes ago, so the app's Yarn age gate
+          // holds it back exactly as it does for a user right after publish.
+          if (options.registry) {
+            const before = fs.readFileSync(yarnConfig, 'utf8')
+            const held = await command(lane, 'install-refused-by-age-gate', node, [toolBin, 'install', npmLocator], app, environment, true)
+            assert.match(held, /⏳ Yarn in this app installs npm versions only \d+ \w+ after publication \(npmMinimalAgeGate\)/, 'install must explain the age gate')
+            assert.match(held, /--preapprove-package/)
+            assert.equal(fs.readFileSync(yarnConfig, 'utf8'), before, 'an unapproved install must not change Yarn configuration')
+          }
+          const installed = await command(lane, 'install-module-from-npm', node, [toolBin, 'install', npmLocator, '--preapprove-package'], app)
+          if (options.registry) assert.match(installed, new RegExp(`Added ${options.packageName.replace('/', '\\/')} to this app's npmPreapprovedPackages`))
+        } else if (!options.gitUrl) await command(lane, 'install-module-from-github', node, [toolBin, 'install', `https://github.com/${options.repository}.git`, '--ref', githubCommit], app)
         else {
-          await command(lane, 'approve-local-git', yarn, ['config', 'set', 'approvedGitRepositories', '--json', JSON.stringify([`${new URL(options.gitUrl).origin}/**`])], app)
-          await command(lane, 'install-module-from-github', yarn, ['add', `${options.packageName}@${options.gitUrl}#commit=${githubCommit}`], app, gitPackageEnvironment(environment))
-          await command(lane, 'enable-github-module', yarn, ['mercato', 'module', 'enable', options.packageName, '--allow-third-party'], app)
+          // The user path: owner/repo@version through install, with github.com
+          // redirected to the local Git server and closed to Yarn's own fetches.
+          await command(lane, 'block-github-network', yarn, ['config', 'set', 'networkSettings', '--json', JSON.stringify(Object.fromEntries(['github.com', 'api.github.com', 'codeload.github.com'].map((host) => [host, { enableNetwork: false }])))], app)
+          const gitEnvironment = { ...gitPackageEnvironment(environment), GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: `url.${new URL(options.gitUrl).origin}/.insteadOf`, GIT_CONFIG_VALUE_0: 'https://github.com/' }
+          await command(lane, 'install-module-from-github', node, [toolBin, 'install', `${options.repository}@${options.ref}`, '--approve-git-repository'], app, gitEnvironment)
+          const dependency = (JSON.parse(fs.readFileSync(path.join(app, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> }).dependencies?.[options.packageName]
+          assert.equal(dependency, `github:${options.repository}#${githubCommit}`, 'install must pin the commit of the release tag')
         }
         await command(lane, 'regenerate-app', yarn, ['generate'], app)
         const packageManifest = appRequire(`${options.packageName}/package.json`) as { version: string }

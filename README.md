@@ -34,14 +34,14 @@ You need **Node.js 24+, Yarn 4, and Docker**. On Windows, use WSL2. Already insi
 ### 1. Create an Open Mercato app
 
 ```bash
-npx create-mercato-app@develop my-app --preset empty
+npx create-mercato-app@latest my-app --preset empty
 cd my-app
 cp .env.example .env
 docker compose up -d
 yarn install
 ```
 
-Follow the scaffold prompts to choose your AI coding tools. The `develop` channel provides the framework version used for this tool's standalone installation checks. See the [Open Mercato installation guide](https://docs.openmercato.com/installation) for setup details.
+Follow the scaffold prompts to choose your AI coding tools. This tool's release checks run against the latest `create-mercato-app` release. See the [Open Mercato installation guide](https://docs.openmercato.com/installation) for setup details.
 
 ### 2. Create and build your module
 
