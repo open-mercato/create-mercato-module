@@ -3,6 +3,7 @@ import { run, validateId } from './common.js'
 import { inspectDevelopmentRepository } from './development.js'
 import { githubRepositoryFromInput, npmPackageLocator } from './link.js'
 import { parseModuleLocator } from './module-locators.js'
+import { frameworkPeerWarning } from './framework-peers.js'
 import {
   assertNoModuleCollision,
   missingRequirements,
@@ -281,6 +282,8 @@ export function installFromInput(
       throw withContext(error, requirementsWarning(npm.packageName, required))
     }
     const required = missing(npm.packageName)
+    const peers = frameworkPeerWarning(app.directory, npm.packageName)
+    if (peers) warn(peers)
     if (required.length) warn(requirementsWarning(npm.packageName, required))
     return {
       packageName: npm.packageName,
@@ -356,6 +359,8 @@ export function installFromInput(
     execute('yarn', ['add', specifier], app.directory)
   }
   const required = missing(packageName)
+  const peers = frameworkPeerWarning(app.directory, packageName)
+  if (peers) warn(peers)
   if (required.length) warn(requirementsWarning(packageName, required))
   try {
     execute(
