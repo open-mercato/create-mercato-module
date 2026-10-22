@@ -78,11 +78,11 @@ Defects 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 and 13 from the end-to-end report (th
 
 ### Phase 1: Publish correctness
 
-- [ ] 1.1 Accept both `npm pack --json` formats, with unit tests for each.
-- [ ] 1.2 Read the raw origin URL in linked publish.
-- [ ] 1.3 Name the pushed repository/commit when npm fails after GitHub; note it in the summary.
-- [ ] 1.4 Tag releases as `<version>` after npm publication; the workflow skips versions already on npm.
-- [ ] 1.5 A declined wizard confirmation exits 1.
+- [x] 1.1 Accept both `npm pack --json` formats, with unit tests for each. — 33b4edc
+- [x] 1.2 Read the raw origin URL in linked publish. — 4fdb280
+- [x] 1.3 Name the pushed repository/commit when npm fails after GitHub; note it in the summary. — 98b9de5
+- [x] 1.4 Tag releases as `<version>` after npm publication; the workflow skips versions already on npm. — 98b9de5
+- [x] 1.5 A declined wizard confirmation exits 1. — 98b9de5
 
 ### Phase 2: Install
 
