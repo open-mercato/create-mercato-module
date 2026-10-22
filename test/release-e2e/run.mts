@@ -195,7 +195,9 @@ export async function main(args: string[]): Promise<void> {
     if (options.lanes.includes('npm') && token) {
       await command('preflight', 'npm-auth', 'npm', ['whoami', ...(options.registry ? ['--registry', options.registry] : [])], toolRoot)
       const registryVersion = await command('preflight', 'npm-fixture-available', 'npm', ['view', `${options.packageName}@${options.version}`, 'version', '--json'], toolRoot)
-      assert.equal(JSON.parse(registryVersion.trim()), options.version, 'Wait until the registry exposes the exact fixture version before running release checks')
+      const viewed = JSON.parse(registryVersion.trim())
+      // npm 12 wraps --json view results in an array.
+      assert.equal(Array.isArray(viewed) ? viewed[0] : viewed, options.version, 'Wait until the registry exposes the exact fixture version before running release checks')
     }
     if (options.lanes.includes('github') && options.gitUrl) {
       githubCommit = (await command('preflight', 'git-fixture-available', 'git', ['ls-remote', options.gitUrl, options.ref], toolRoot)).trim().split(/\s+/)[0] ?? ''

@@ -132,6 +132,8 @@ function npmRepository(
   try {
     metadata = JSON.parse(result.stdout)
   } catch {}
+  // npm 12 wraps every --json view result in an array.
+  if (Array.isArray(metadata) && metadata.length === 1) metadata = metadata[0]
   const url =
     typeof metadata === 'string'
       ? metadata

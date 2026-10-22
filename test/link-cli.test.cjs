@@ -162,6 +162,13 @@ test('CLI switches an installed package registration to @app and publishes a new
   assert.match(run('git', ['--git-dir', bare, 'show', 'main:dist/modules/visits/new.js'], app.directory, { capture: true }).stdout, /New linked feature/)
 })
 
+test('CLI reads npm 12 repository metadata, which npm wraps in an array', context => {
+  const { app, settings, cli } = fixture(context, { npmRepository: [{ type: 'git', url: 'git+https://github.com/release-checks/visits-example.git' }] })
+  const linked = cli(['link', '@fixture/visits', '--no-generate'])
+  assert.equal(linked.status, 0, linked.output)
+  assert.equal(loadConfig(app).modules.visits.repository, settings.repository)
+})
+
 for (const [description, options, input, expected] of [
   ['missing npm package', { npmMissing: true }, '@fixture/visits', /Cannot read .* from npm/],
   ['missing repository metadata', { npmRepository: null }, '@fixture/visits', /no dedicated GitHub module repository/],

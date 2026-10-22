@@ -7,7 +7,7 @@ const { createRequire } = require('node:module')
 const { pathToFileURL } = require('node:url')
 const { scaffold } = require('../dist/scaffold.js')
 const { run, readJson, writeJson } = require('../dist/common.js')
-const { exportPackage, exportLinkedPackage, publishRepository, publicationRisks } = require('../dist/publish.js')
+const { exportPackage, exportLinkedPackage, publishRepository, publicationRisks, packEntries } = require('../dist/publish.js')
 
 function fixture(context) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-linked-publish-'))
@@ -168,7 +168,7 @@ test('GitHub-style packing of raw repository aliases installs and discovers port
   fs.symlinkSync(path.dirname(require.resolve('typescript/package.json')), path.join(app.directory, 'node_modules/typescript'))
   fs.mkdirSync(path.join(sourceRoot, '__tests__'), { recursive: true })
   fs.writeFileSync(path.join(sourceRoot, '__tests__/excluded.test.ts'), 'export const devOnly = true\n')
-  const packed = JSON.parse(run('npm', ['pack', '--json'], checkout, { capture: true }).stdout)[0]
+  const packed = packEntries(run('npm', ['pack', '--json'], checkout, { capture: true }).stdout)[0]
   assert.ok(!packed.files.some(file => file.path.includes('__tests__') || file.path.includes('.test.')), 'development tests must not ship in npm')
   const consumer = path.join(path.dirname(app.directory), 'consumer')
   const installed = path.join(consumer, 'node_modules/@fixture/visits')

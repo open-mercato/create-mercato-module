@@ -71,6 +71,29 @@ function exportPackage(
   return packPrepared(result, workspace)
 }
 
+interface PackEntry {
+  filename: string
+  integrity: string
+  files: { path: string }[]
+}
+
+// npm 11 and older print an array of packed packages; npm 12 prints an object
+// keyed by package name.
+function packEntries(stdout: string): PackEntry[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(stdout)
+  } catch {
+    throw new Error(
+      'npm pack returned an unreadable file list. Check your npm version and retry.',
+    )
+  }
+  if (Array.isArray(parsed)) return parsed
+  if (typeof parsed === 'object' && parsed !== null)
+    return Object.values(parsed)
+  return []
+}
+
 function packPrepared(
   result:
     | ExportedPackage
@@ -83,21 +106,12 @@ function packPrepared(
     result.destination,
     { capture: true, timeout: 600_000 },
   )
-  let entries: {
-    filename: string
-    integrity: string
-    files: { path: string }[]
-  }[]
-  try {
-    entries = JSON.parse(packed.stdout)
-  } catch {
-    throw new Error(
-      'npm pack returned an unreadable file list. Check your npm version and retry.',
-    )
-  }
+  const entries = packEntries(packed.stdout)
   if (
-    !Array.isArray(entries) ||
     entries.length !== 1 ||
+    typeof entries[0] !== 'object' ||
+    entries[0] === null ||
+    !Array.isArray(entries[0].files) ||
     !entries[0].filename ||
     path.basename(entries[0].filename) !== entries[0].filename
   )
@@ -745,4 +759,5 @@ export {
   preflight,
   publish,
   exportLinkedPackage,
+  packEntries,
 }
