@@ -46,7 +46,7 @@ export function githubRepository(input: string): string {
     !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repository)
   )
     throw new Error(
-      'Use a GitHub repository URL or owner/repo, for example https://github.com/pkarw/visits-example.',
+      'Use a GitHub repository URL or owner/repo, for example https://github.com/pkarw/marketing-consents.',
     )
   return repository
 }
@@ -60,7 +60,7 @@ export function npmPackageLocator(input: string): NpmPackageLocator | undefined 
     )
   if (!match?.groups || match.groups.name.length > 214)
     throw new Error(
-      'Use an npm package name, for example @piotrkarwatka/visits.',
+      'Use an npm package name, for example @piotrkarwatka/marketing-consents.',
     )
   return { packageName: match.groups.name, specifier }
 }
@@ -132,6 +132,8 @@ function npmRepository(
   try {
     metadata = JSON.parse(result.stdout)
   } catch {}
+  // npm 12 wraps every --json view result in an array.
+  if (Array.isArray(metadata) && metadata.length === 1) metadata = metadata[0]
   const url =
     typeof metadata === 'string'
       ? metadata
@@ -203,7 +205,7 @@ export function linkFromInput(
       previous.development.packageName !== manifest.name)
   )
     throw new Error(
-      `Module ${id} is already linked to ${previous.development.repository}. Keep or unlink that checkout before linking another repository. No files were changed.`,
+      `Module ${id} is already linked to ${previous.development.repository}. Run npx create-mercato-module unlink ${id} before linking another repository. No files were changed.`,
     )
   const settings: Settings = {
     packageName: manifest.name,

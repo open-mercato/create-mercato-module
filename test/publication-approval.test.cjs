@@ -64,6 +64,13 @@ test('generated workflow pins actions to commits and limits manual runs to the d
   assert.match(workflow, /if: github\.ref_type == 'tag' \|\| github\.ref_name == github\.event\.repository\.default_branch/)
 })
 
+test('generated workflow skips a version that is already on npm', () => {
+  const workflow = createPublishWorkflow('public')
+  assert.match(workflow, /id: published\n\s+run: \|\n\s+if npm view "\$\(node -p "require\('\.\/package\.json'\)\.name"\)@\$\(node -p "require\('\.\/package\.json'\)\.version"\)" version/)
+  assert.equal((workflow.match(/if: steps\.published\.outputs\.exists != 'true'/g) || []).length, 2, 'build and publish both skip')
+  assert.doesNotMatch(workflow, /\$\{\{ (?!secrets\.NPM_READ_TOKEN)/, 'run steps read no untrusted expressions')
+})
+
 test('a test registry is accepted only on this machine and receives its own token line', () => {
   assert.equal(resolveRegistry({}), 'https://registry.npmjs.org/')
   assert.equal(resolveRegistry({ MERCATO_NPM_REGISTRY: 'http://127.0.0.1:4874' }), 'http://127.0.0.1:4874/')

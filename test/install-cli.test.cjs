@@ -39,6 +39,8 @@ function fixture(context, options = {}) {
     `#!${process.execPath}\nconst fs=require('node:fs');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({command:'yarn',args})+'\\n');\n` + (options.blocked ? `const approvedFile=${JSON.stringify(path.join(root, 'approved.json'))};if(args[0]==='add'&&!fs.existsSync(approvedFile)){console.error("YN0080: Request to 'https://github.com/fixture-owner/visits-example.git' blocked by approvedGitRepositories");process.exit(1)}if(args[0]==='config'&&args[1]==='get')console.log(JSON.stringify(['https://github.com/open-mercato/*']));if(args[0]==='config'&&args[1]==='set')fs.writeFileSync(approvedFile,args.at(-1));\n` : ''),
     { mode: 0o755 },
   )
+  if (options.quarantined)
+    fs.appendFileSync(path.join(binary, 'yarn'), `const preapproved=${JSON.stringify(path.join(root, 'preapproved.json'))};const list=fs.existsSync(preapproved)?JSON.parse(fs.readFileSync(preapproved,'utf8')):['@open-mercato/*'];if(args[0]==='mercato'&&args[2]==='add'&&!list.includes('@fixture/visits')){console.log('YN0016: @fixture/visits@npm:0.0.2: All versions satisfying "0.0.2" are quarantined');process.exit(1)}if(args[0]==='config'&&args[1]==='get'){console.log(JSON.stringify(args[2]==='npmMinimalAgeGate'?7200:list));process.exit(0)}if(args[0]==='config'&&args[1]==='set'){fs.writeFileSync(preapproved,args.at(-1));process.exit(0)}if(args[0]==='npm'&&args[1]==='info'){console.log(JSON.stringify({time:{'0.0.2':new Date().toISOString()},'dist-tags':{latest:'0.0.2'}}));process.exit(0)}\n`)
   if (options.awaitRetryProgress)
     fs.appendFileSync(path.join(binary, 'yarn'), `if(args[0]==='add'){console.log('YARN_RETRY_PROGRESS');const started=Date.now();const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(progressAck)})){clearInterval(timer);process.exit(0)}if(Date.now()-started>3000){console.error('Retry progress was not forwarded while Yarn was running');process.exit(1)}},25)}\n`)
   fs.writeFileSync(
@@ -68,8 +70,8 @@ function fixture(context, options = {}) {
       .split('\n')
       .filter(Boolean)
       .map(JSON.parse)
-  const interactive = (answer) => new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['-e', `Object.defineProperty(process.stdin, 'isTTY', {value:true});require(${JSON.stringify(path.resolve(__dirname, '../dist/cli.js'))}).main(['install','fixture-owner/visits-example']).catch(error=>{console.error(error.message);process.exitCode=1})`], {
+  const interactive = (answer, args = ['install', 'fixture-owner/visits-example']) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', `Object.defineProperty(process.stdin, 'isTTY', {value:true});require(${JSON.stringify(path.resolve(__dirname, '../dist/cli.js'))}).main(${JSON.stringify(args)}).catch(error=>{console.error(error.message);process.exitCode=1})`], {
       cwd: app,
       env: { ...process.env, PATH: `${binary}${path.delimiter}${process.env.PATH}` },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -275,5 +277,25 @@ test('interactive installer writes Yarn approval only after an affirmative answe
       assert.equal(sets.length, 0)
       assert.match(result.output, /Yarn approvals were not changed/)
     }
+  }
+})
+
+test('install CLI explains Yarn age gate and preapproves the package only after approval', async (context) => {
+  const { cli, readCalls } = fixture(context, { quarantined: true })
+  const denied = cli(['install', '@fixture/visits@0.0.2'])
+  assert.equal(denied.status, 1, denied.output)
+  assert.match(denied.output, /⏳ Yarn in this app installs npm versions only 5 days after publication/)
+  assert.match(denied.output, /--preapprove-package/)
+  assert.ok(!readCalls().some(call => call.args[1] === 'set'))
+  const approved = cli(['install', '@fixture/visits@0.0.2', '--preapprove-package'])
+  assert.equal(approved.status, 0, approved.output)
+  assert.deepEqual(JSON.parse(readCalls().find(call => call.args[1] === 'set').args.at(-1)), ['@open-mercato/*', '@fixture/visits'])
+  assert.match(approved.output, /Installed @fixture\/visits/)
+  for (const answer of ['yes', 'no']) {
+    const { interactive, readCalls: calls } = fixture(context, { quarantined: true })
+    const result = await interactive(answer, ['install', '@fixture/visits'])
+    assert.match(result.output, /Add this package to Yarn's preapproved packages and retry\? \[y\/N\]/)
+    assert.equal(result.status, answer === 'yes' ? 0 : 1, result.output)
+    assert.equal(calls().filter(call => call.args[1] === 'set').length, answer === 'yes' ? 1 : 0)
   }
 })

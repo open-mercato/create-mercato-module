@@ -26,9 +26,9 @@ npm run test:release:local -- \
 docker rm -f mercato-e2e-registry mercato-e2e-db
 ```
 
-Use ports that are free on your machine, and a new results directory for every run. Stopping the containers deletes everything that was published and the database. Both addresses must be on this machine; the checks initialize the database from scratch, so never point them at one you use. Without `--database-url` the full-app step is skipped.
+Use ports that are free on your machine, and a new results directory for every run. Stopping the containers deletes everything that was published and the database. Both addresses must be on this machine; the checks initialize the database from scratch, so never point them at one you use. Without `--database-url` the full-app step is skipped. The checks also start a local Git server and app servers on free loopback ports; on a machine shared with other services, set `RELEASE_E2E_PORTS=51210-51239` (any range) to keep them inside it.
 
-CI passes an exact `create-mercato-app` version so a moving prerelease tag cannot expose a partially published framework set. Update that pin deliberately after confirming the scaffold and all of its exact Open Mercato dependencies are available together.
+CI runs two legs: an exact `create-mercato-app` version with the npm bundled with Node 24, and `create-mercato-app@latest` with `npm@latest`, which is what a new user gets. Update the exact pin deliberately after confirming the scaffold and all of its exact Open Mercato dependencies are available together; a failure only in the latest leg can be upstream drift.
 
 Fresh test apps also pin `packageManager` to `yarn@4.18.1`, which includes the
 [fix for the registry retry/cancellation crash](https://github.com/yarnpkg/berry/pull/7249)
@@ -39,10 +39,10 @@ unchanged. `--reuse-app` keeps that existing app's package manager.
 What a run does:
 
 1. Scaffolds a real app, installs it, creates a module with `init`, and adds a page, API, entity, translations, and an asset to it.
-2. Publishes that module twice with this tool (`publish --repo ... --yes`): the first run creates the repository, the second updates it. Each run really executes `npm publish`, `git commit`, and `git push`.
+2. Publishes that module twice with this tool (`publish --repo ... --yes`): the first run creates the repository, the second updates it. Each run really executes `npm publish`, `git commit`, and `git push`, and tags the release with its version.
 3. Confirms that a run without approval publishes nothing.
 4. Links by npm package name alone with a custom checkout folder, edits source through the app, and publishes a third version from the linked repository, preserving its documentation.
-5. Scaffolds two more fresh apps and installs the published module into one from the registry and into the other from the Git repository, then runs every check in the table below.
+5. Scaffolds two more fresh apps and installs the published module with `create-mercato-module install`, as a user would: into one from the registry, into the other with `owner/repo@0.0.3` from the Git repository, then runs every check in the table below. The registry lane first confirms that Yarn's release-age gate holds the minutes-old version back with the tool's explanation and leaves `.yarnrc.yml` unchanged, then installs with `--preapprove-package`. The Git lane approves the repository with `--approve-git-repository` and checks that the release tag's commit is pinned.
 6. Initializes the first of those apps against the database, starts it, and uses the module as a signed-in user: the module API refuses anonymous requests and answers the seeded admin, and `/backend/release_checks` renders the module page.
 
 How it stays local:
@@ -51,7 +51,7 @@ How it stays local:
 | --- | --- | --- |
 | npmjs.com | [Verdaccio](https://verdaccio.org/) in a container, configured by `verdaccio.yaml` | No uplink, accepts only the `@mercato-e2e` scope. The tool is pointed at it with `MERCATO_NPM_REGISTRY`, which accepts only addresses on this machine. |
 | GitHub API and `gh` | `gh-shim.mjs`, first on `PATH` | Answers from bare repositories in the results directory and refuses any other command. |
-| GitHub as a Git host | The same bare repositories, served on a loopback port | Yarn installs from `http://127.0.0.1:<port>/...` instead of `github:`. |
+| GitHub as a Git host | The same bare repositories, served on a loopback port | `install` adds the usual `github:` dependency. A Git `insteadOf` rule sends `https://github.com/` to the loopback server, and Yarn's `networkSettings` send its own requests to `github.com` to a closed loopback proxy and disable `api.github.com` and `codeload.github.com`. |
 
 Real npm and GitHub credentials are removed before local fixture commands run. Publication commands receive only the ephemeral token issued by the throwaway Verdaccio instance. The CI job has no repository secrets and a read-only GitHub token, so even a defect could not publish remotely.
 
@@ -85,7 +85,7 @@ node test/release-e2e/run.mts \
 
 Use a new results directory for every run. Apps and sanitized command logs remain there, including after a failure. `results.json` lists every command, outcome, and duration. No credential value is included in results.
 
-The default scaffold is `create-mercato-app@develop`, the same release channel used by the sandbox. Pin it for repeatable release evidence:
+The default scaffold is `create-mercato-app@latest`. Pin it for repeatable release evidence:
 
 ```bash
 node test/release-e2e/run.mts \

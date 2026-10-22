@@ -48,7 +48,27 @@ export function parseOptions(args: string[]): Options {
   if (lanes.some((lane) => !['npm', 'github'].includes(lane)) || new Set(lanes).size !== lanes.length) throw new Error('--lanes must be npm, github, or npm,github.')
   const ref = values.ref ?? version
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref)) throw new Error('--ref must be a Git tag, branch, or commit SHA.')
-  return { packageName, version, repository, ref, createApp: values['create-app'] ?? 'create-mercato-app@develop', results: path.resolve(values.results ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-e2e-'))), lanes, reuseApp: values['reuse-app'] ? path.resolve(values['reuse-app']) : undefined, registry: values.registry ? loopbackUrl(values.registry, '--registry') : undefined, gitUrl: values['git-url'] ? loopbackUrl(values['git-url'], '--git-url') : undefined }
+  return { packageName, version, repository, ref, createApp: values['create-app'] ?? 'create-mercato-app@latest', results: path.resolve(values.results ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-e2e-'))), lanes, reuseApp: values['reuse-app'] ? path.resolve(values['reuse-app']) : undefined, registry: values.registry ? loopbackUrl(values.registry, '--registry') : undefined, gitUrl: values['git-url'] ? loopbackUrl(values['git-url'], '--git-url') : undefined }
+}
+
+// A free loopback port. RELEASE_E2E_PORTS=first-last keeps every server the
+// checks start inside a range, for machines that share ports with other services.
+export async function freePort(range = process.env.RELEASE_E2E_PORTS): Promise<number> {
+  const bounds = range ? /^(\d+)-(\d+)$/.exec(range) : null
+  if (range && (!bounds || Number(bounds[1]) > Number(bounds[2]) || Number(bounds[1]) < 1024 || Number(bounds[2]) > 65535)) throw new Error('RELEASE_E2E_PORTS must be a range such as 51210-51239.')
+  const candidates = bounds ? Array.from({ length: Number(bounds[2]) - Number(bounds[1]) + 1 }, (_, index) => Number(bounds[1]) + index) : [0]
+  for (const candidate of candidates) {
+    const port = await new Promise<number | undefined>((resolve) => {
+      const server = net.createServer()
+      server.once('error', () => resolve(undefined))
+      server.listen(candidate, '127.0.0.1', () => {
+        const address = server.address()
+        server.close(() => resolve(address && typeof address !== 'string' ? address.port : undefined))
+      })
+    })
+    if (port) return port
+  }
+  throw new Error(`No free port${range ? ` in RELEASE_E2E_PORTS ${range}` : ''}.`)
 }
 
 export function redact(text: string, secrets: string[]): string {
@@ -112,7 +132,7 @@ export async function main(args: string[]): Promise<void> {
   const toolManifest = JSON.parse(fs.readFileSync(path.join(toolRoot, 'package.json'), 'utf8')) as { bin: Record<string, string> }
   const toolBin = path.join(toolRoot, toolManifest.bin['create-mercato-module'])
   let githubCommit = options.ref
-  async function command(lane: string, stage: string, executable: string, commandArgs: string[], cwd: string, commandEnvironment = environment): Promise<string> {
+  async function command(lane: string, stage: string, executable: string, commandArgs: string[], cwd: string, commandEnvironment = environment, expectFailure = false): Promise<string> {
     const started = Date.now()
     process.stdout.write(`\n🧪 ${lane}: ${stage}\n`)
     const logfile = path.join(options.results, `${lane}-${stage.replace(/[^a-z0-9-]/gi, '-')}.log`)
@@ -128,8 +148,9 @@ export async function main(args: string[]): Promise<void> {
         clearTimeout(timeout)
         const sanitized = redact(output, secrets)
         fs.writeFileSync(logfile, sanitized)
-        stages.push({ lane, stage, status: code === 0 ? 'passed' : 'failed', durationMs: Date.now() - started })
-        if (code !== 0) reject(new Error(`${lane}/${stage} exited ${code}. Diagnostics: ${logfile}\n${sanitized.slice(-4000)}`))
+        const passed = expectFailure ? code !== 0 : code === 0
+        stages.push({ lane, stage, status: passed ? 'passed' : 'failed', durationMs: Date.now() - started })
+        if (!passed) reject(new Error(`${lane}/${stage} exited ${code}${expectFailure ? ' but was expected to fail' : ''}. Diagnostics: ${logfile}\n${sanitized.slice(-4000)}`))
         else resolve(output)
       })
     })
@@ -144,15 +165,7 @@ export async function main(args: string[]): Promise<void> {
     fs.writeFileSync(path.join(directory, 'app/layout.jsx'), 'export default function Layout({children}) { return <html><body>{children}</body></html> }\n')
     fs.writeFileSync(path.join(directory, 'app/page.jsx'), `export { default } from ${JSON.stringify(`${moduleImport}/${fixtureContract.page}`)}\n`)
     fs.writeFileSync(path.join(directory, 'app/api/status/route.js'), `export { GET } from ${JSON.stringify(`${moduleImport}/${fixtureContract.api}`)}\n`)
-    const port = await new Promise<number>((resolve, reject) => {
-      const server = net.createServer()
-      server.once('error', reject)
-      server.listen(0, '127.0.0.1', () => {
-        const address = server.address()
-        if (!address || typeof address === 'string') { server.close(); reject(new Error('Cannot allocate Next smoke port')); return }
-        server.close(() => resolve(address.port))
-      })
-    })
+    const port = await freePort()
     const nextBin = createRequire(path.join(app, 'package.json')).resolve('next/dist/bin/next')
     const child = spawn(node, [nextBin, 'dev', directory, '--hostname', '127.0.0.1', '--port', String(port)], { cwd: app, env: { ...environment, NEXT_TELEMETRY_DISABLED: '1', NODE_ENV: 'development' }, stdio: ['ignore', 'pipe', 'pipe'] })
     let output = ''
@@ -195,7 +208,9 @@ export async function main(args: string[]): Promise<void> {
     if (options.lanes.includes('npm') && token) {
       await command('preflight', 'npm-auth', 'npm', ['whoami', ...(options.registry ? ['--registry', options.registry] : [])], toolRoot)
       const registryVersion = await command('preflight', 'npm-fixture-available', 'npm', ['view', `${options.packageName}@${options.version}`, 'version', '--json'], toolRoot)
-      assert.equal(JSON.parse(registryVersion.trim()), options.version, 'Wait until the registry exposes the exact fixture version before running release checks')
+      const viewed = JSON.parse(registryVersion.trim())
+      // npm 12 wraps --json view results in an array.
+      assert.equal(Array.isArray(viewed) ? viewed[0] : viewed, options.version, 'Wait until the registry exposes the exact fixture version before running release checks')
     }
     if (options.lanes.includes('github') && options.gitUrl) {
       githubCommit = (await command('preflight', 'git-fixture-available', 'git', ['ls-remote', options.gitUrl, options.ref], toolRoot)).trim().split(/\s+/)[0] ?? ''
@@ -215,7 +230,6 @@ export async function main(args: string[]): Promise<void> {
       const yarnConfig = path.join(app, '.yarnrc.yml')
       const originalConfig = fs.readFileSync(yarnConfig, 'utf8')
       try {
-        await command(lane, 'approve-fixture-age', yarn, ['config', 'set', 'npmPreapprovedPackages', '--json', JSON.stringify(['@open-mercato/*', options.packageName])], app)
         if (options.registry) {
           await command(lane, 'allow-local-registry', yarn, ['config', 'set', 'unsafeHttpWhitelist', '--json', JSON.stringify([new URL(options.registry).hostname])], app)
           await command(lane, 'use-local-registry', yarn, ['config', 'set', 'npmScopes', '--json', JSON.stringify({ [scope.slice(1)]: { npmRegistryServer: options.registry.replace(/\/$/, '') } })], app)
@@ -250,12 +264,30 @@ export async function main(args: string[]): Promise<void> {
         assert.ok(fs.existsSync(path.join(app, 'src/modules', localId, 'index.ts')))
         const registrationsBeforeInstall = fs.readFileSync(path.join(app, 'src/modules.ts'), 'utf8')
         assert.match(registrationsBeforeInstall, /local_release_checks/)
-        if (lane === 'npm') await command(lane, 'install-module-from-npm', node, [toolBin, 'install', `${options.packageName}@${options.version}`], app)
-        else if (!options.gitUrl) await command(lane, 'install-module-from-github', node, [toolBin, 'install', `https://github.com/${options.repository}.git`, '--ref', githubCommit], app)
+        if (lane === 'npm') {
+          const npmLocator = `${options.packageName}@${options.version}`
+          // A local fixture was published minutes ago, so the app's Yarn age gate
+          // holds it back exactly as it does for a user right after publish.
+          if (options.registry) {
+            const before = fs.readFileSync(yarnConfig, 'utf8')
+            const held = await command(lane, 'install-refused-by-age-gate', node, [toolBin, 'install', npmLocator], app, environment, true)
+            assert.match(held, /⏳ Yarn in this app installs npm versions only \d+ \w+ after publication \(npmMinimalAgeGate\)/, 'install must explain the age gate')
+            assert.match(held, /--preapprove-package/)
+            assert.equal(fs.readFileSync(yarnConfig, 'utf8'), before, 'an unapproved install must not change Yarn configuration')
+          }
+          const installed = await command(lane, 'install-module-from-npm', node, [toolBin, 'install', npmLocator, '--preapprove-package'], app)
+          if (options.registry) assert.match(installed, new RegExp(`Added ${options.packageName.replace('/', '\\/')} to this app's npmPreapprovedPackages`))
+        } else if (!options.gitUrl) await command(lane, 'install-module-from-github', node, [toolBin, 'install', `https://github.com/${options.repository}.git`, '--ref', githubCommit], app)
         else {
-          await command(lane, 'approve-local-git', yarn, ['config', 'set', 'approvedGitRepositories', '--json', JSON.stringify([`${new URL(options.gitUrl).origin}/**`])], app)
-          await command(lane, 'install-module-from-github', yarn, ['add', `${options.packageName}@${options.gitUrl}#commit=${githubCommit}`], app, gitPackageEnvironment(environment))
-          await command(lane, 'enable-github-module', yarn, ['mercato', 'module', 'enable', options.packageName, '--allow-third-party'], app)
+          // The user path: owner/repo@version through install. Git is redirected to
+          // the local server by insteadOf; Yarn's own HTTP requests to GitHub go to a
+          // closed loopback port (enableNetwork: false would also refuse the Git URL).
+          const closedProxy = `http://127.0.0.1:${await freePort()}`
+          await command(lane, 'block-github-network', yarn, ['config', 'set', 'networkSettings', '--json', JSON.stringify({ 'github.com': { httpProxy: closedProxy, httpsProxy: closedProxy }, 'api.github.com': { enableNetwork: false }, 'codeload.github.com': { enableNetwork: false } })], app)
+          const gitEnvironment = { ...gitPackageEnvironment(environment), GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: `url.${new URL(options.gitUrl).origin}/.insteadOf`, GIT_CONFIG_VALUE_0: 'https://github.com/' }
+          await command(lane, 'install-module-from-github', node, [toolBin, 'install', `${options.repository}@${options.ref}`, '--approve-git-repository'], app, gitEnvironment)
+          const dependency = (JSON.parse(fs.readFileSync(path.join(app, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> }).dependencies?.[options.packageName]
+          assert.equal(dependency, `github:${options.repository}#${githubCommit}`, 'install must pin the commit of the release tag')
         }
         await command(lane, 'regenerate-app', yarn, ['generate'], app)
         const packageManifest = appRequire(`${options.packageName}/package.json`) as { version: string }

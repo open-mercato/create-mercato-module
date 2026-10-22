@@ -31,6 +31,21 @@ export interface PublishOptions {
   expectedHead?: string | null
 }
 
+export interface RepositoryRelease {
+  commit: string
+  // This publication created the GitHub repository.
+  created: boolean
+}
+
+export interface PublishResult {
+  // The release commit pushed to the dedicated repository.
+  commit?: string
+  // Git tag that lets `install owner/repo@<version>` select this release.
+  tag?: string
+  // Set when the release went out but its tag could not be created.
+  tagWarning?: string
+}
+
 const exportWorkspaceAge = 15 * 60 * 1000
 // Marks which side a release commit came from, so any machine can tell.
 const sourceTrailer = 'Mercato-Source:'
@@ -71,6 +86,29 @@ function exportPackage(
   return packPrepared(result, workspace)
 }
 
+interface PackEntry {
+  filename: string
+  integrity: string
+  files: { path: string }[]
+}
+
+// npm 11 and older print an array of packed packages; npm 12 prints an object
+// keyed by package name.
+function packEntries(stdout: string): PackEntry[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(stdout)
+  } catch {
+    throw new Error(
+      'npm pack returned an unreadable file list. Check your npm version and retry.',
+    )
+  }
+  if (Array.isArray(parsed)) return parsed
+  if (typeof parsed === 'object' && parsed !== null)
+    return Object.values(parsed)
+  return []
+}
+
 function packPrepared(
   result:
     | ExportedPackage
@@ -83,21 +121,12 @@ function packPrepared(
     result.destination,
     { capture: true, timeout: 600_000 },
   )
-  let entries: {
-    filename: string
-    integrity: string
-    files: { path: string }[]
-  }[]
-  try {
-    entries = JSON.parse(packed.stdout)
-  } catch {
-    throw new Error(
-      'npm pack returned an unreadable file list. Check your npm version and retry.',
-    )
-  }
+  const entries = packEntries(packed.stdout)
   if (
-    !Array.isArray(entries) ||
     entries.length !== 1 ||
+    typeof entries[0] !== 'object' ||
+    entries[0] === null ||
+    !Array.isArray(entries[0].files) ||
     !entries[0].filename ||
     path.basename(entries[0].filename) !== entries[0].filename
   )
@@ -129,7 +158,7 @@ function exportLinkedPackage(
     metadata.packageName !== settings.packageName
   )
     throw new Error(
-      'The publish settings must match the linked module repository and npm package. Use the saved settings or unlink development first.',
+      `The publish settings must match the linked module repository and npm package. Use the saved settings, or run npx create-mercato-module unlink ${id} first.`,
     )
   const source = linkedModuleDirectory(app, id, metadata)
   const checkout = path.join(app.directory, metadata.checkoutPath)
@@ -256,9 +285,14 @@ function assertLinkedRepository(
     throw new Error(
       'The linked module must be its own Git repository. The app repository was left unchanged.',
     )
-  const remote = execute('git', ['remote', 'get-url', 'origin'], checkout, {
-    capture: true,
-  }).stdout.trim()
+  // The configured URL, not `git remote get-url`: that applies insteadOf
+  // rewrites (mirrors, proxies) and would no longer name the GitHub repository.
+  const remote = execute(
+    'git',
+    ['config', '--get', 'remote.origin.url'],
+    checkout,
+    { capture: true },
+  ).stdout.trim()
   const identity = remote
     .replace(/^git@github\.com:/, '')
     .replace(/^(?:git\+)?https:\/\/github\.com\//, '')
@@ -283,7 +317,7 @@ function publishLinkedRepository(
   prepared: ExportedPackage,
   settings: Settings,
   execute: Executor,
-): void {
+): string {
   const checkout = prepared.linkedCheckout!
   assertLinkedRepository(checkout, settings, execute)
   const id = prepared.manifest.mercatoModule.id
@@ -358,6 +392,16 @@ function publishLinkedRepository(
       checkout,
     )
   execute('git', ['push', '-u', 'origin', 'HEAD'], checkout)
+  return headCommit(checkout, execute)
+}
+
+function headCommit(checkout: string, execute: Executor): string {
+  const commit = execute('git', ['rev-parse', 'HEAD'], checkout, {
+    capture: true,
+  }).stdout.trim()
+  if (!/^[0-9a-f]{40,64}$/.test(commit))
+    throw new Error('Cannot read the release commit after pushing it.')
+  return commit
 }
 
 function inspectRepository(
@@ -492,9 +536,12 @@ function publishRepository(
   settings: Settings,
   execute: Executor = run,
   options: PublishOptions = {},
-) {
+): RepositoryRelease {
   if (prepared.linkedCheckout)
-    return publishLinkedRepository(prepared, settings, execute)
+    return {
+      commit: publishLinkedRepository(prepared, settings, execute),
+      created: false,
+    }
   const state = githubState(settings.repository!, prepared.workspace, execute)
   if (state === 'missing')
     execute(
@@ -597,7 +644,52 @@ function publishRepository(
     )
   }
   execute('git', ['push', '-u', 'origin', 'HEAD'], checkout)
+  const commit = headCommit(checkout, execute)
   fs.rmSync(checkout, { recursive: true, force: true })
+  return { commit, created: state === 'missing' }
+}
+
+// Tags the release so `install owner/repo@<version>` resolves it. The tag has
+// no `v` prefix: the generated publish.yml publishes on `v*` tags, and this
+// version is already on npm. Tagging is best effort; npm already has the release.
+function tagRelease(
+  repository: string,
+  commit: string,
+  version: string,
+  cwd: string,
+  execute: Executor = run,
+): Pick<PublishResult, 'tag' | 'tagWarning'> {
+  const create = `gh api --method POST repos/${repository}/git/refs -f ref=refs/tags/${version} -f sha=${commit}`
+  const warning = (reason: string) => ({
+    tagWarning: `The release is published, but ${repository} has no ${version} tag (${reason}). install ${repository}@${version} needs it; create it with: ${create}`,
+  })
+  let result: ReturnType<Executor>
+  try {
+    result = execute(
+      'gh',
+      [
+        'api',
+        '--method',
+        'POST',
+        `repos/${repository}/git/refs`,
+        '-f',
+        `ref=refs/tags/${version}`,
+        '-f',
+        `sha=${commit}`,
+      ],
+      cwd,
+      { capture: true, allowFailure: true },
+    )
+  } catch {
+    // A timeout or a missing gh must not turn a published release into a failure.
+    return warning('gh did not complete the request')
+  }
+  if (result.status === 0) return { tag: version }
+  return warning(
+    /Reference already exists/i.test(result.stderr || '')
+      ? `the tag ${version} already exists`
+      : 'GitHub refused the request',
+  )
 }
 
 function ensureAuthor(checkout: string, execute: Executor): void {
@@ -703,34 +795,57 @@ function publish(
   settings: Settings,
   execute: Executor = run,
   options: PublishOptions = {},
-) {
+): PublishResult {
   const npm = createNpmRunner(
     settings.auth || 'auto',
     execute,
     process.env,
     settings.packageName,
   )
+  let release: RepositoryRelease | undefined
   try {
     preflight(prepared, settings, npm.execute, npm.mode)
+    // GitHub goes first: a retry after an npm failure finds the release commit
+    // and adds no second one, while a published npm version can never be redone.
     if (settings.repository)
-      publishRepository(prepared, settings, execute, options)
-    npm.execute(
-      'npm',
-      [
-        'publish',
-        prepared.archive,
-        '--access',
-        settings.access,
-        '--ignore-scripts',
-        ...((settings.tag ||
-          (settings.version.includes('-') ? 'next' : 'latest')) !== 'latest'
-          ? ['--tag', settings.tag || 'next']
-          : []),
-      ],
-      prepared.destination,
-    )
+      release = publishRepository(prepared, settings, execute, options)
+    try {
+      npm.execute(
+        'npm',
+        [
+          'publish',
+          prepared.archive,
+          '--access',
+          settings.access,
+          '--ignore-scripts',
+          ...((settings.tag ||
+            (settings.version.includes('-') ? 'next' : 'latest')) !== 'latest'
+            ? ['--tag', settings.tag || 'next']
+            : []),
+        ],
+        prepared.destination,
+      )
+    } catch (error) {
+      if (!release) throw error
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(
+        `${message}\n\nnpm did not publish ${settings.packageName}@${settings.version}, but GitHub ${release.created ? `repository ${settings.repository} was created (${settings.access === 'public' ? 'PUBLIC' : 'private'}) and` : settings.repository} already has its release commit ${release.commit.slice(0, 12)}. Fix the npm error, then run publish again with the same version: the repository already holds this release, so no second commit is added unless the module changed.`,
+        { cause: error },
+      )
+    }
   } finally {
     npm.close()
+  }
+  if (!release) return {}
+  return {
+    commit: release.commit,
+    ...tagRelease(
+      settings.repository!,
+      release.commit,
+      settings.version,
+      prepared.destination,
+      execute,
+    ),
   }
 }
 
@@ -745,4 +860,6 @@ export {
   preflight,
   publish,
   exportLinkedPackage,
+  packEntries,
+  tagRelease,
 }

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Publish and `link @scope/package` work with npm 12, which prints `npm pack --json` as an object keyed by package name and wraps `npm view --json` results in an array.
+- `install` of an npm module that Yarn holds back with its release-age gate (`npmMinimalAgeGate`, 5 days in apps from create-mercato-app) now explains the wait instead of a bare `yarn failed`. It asks before adding only that package to the app's `npmPreapprovedPackages`; noninteractive callers pass `--preapprove-package`. The message after publish and generated module READMEs say the same and use `npx create-mercato-module install` throughout.
+- `publish` tags each release commit with its bare version (`1.2.3`) once npm accepts it, so `install owner/repo@1.2.3` works for repositories released by this tool. The bare tag does not start the generated `publish.yml` (`v*`). Newly generated workflows also skip publication when the version is already on npm; existing repositories keep their workflow until the next export from the app.
+- When npm rejects a release after the GitHub push, the error names the repository, says whether this run created it, and gives the pushed commit. The summary says a new repository is created before npm publication.
+- New `unlink <module_id>` command turns a linked module back into an ordinary local module and keeps the checkout and backup. Messages that mentioned unlinking now name it.
+- `install` warns once when a module's `@open-mercato/*` peers differ from the app's framework versions. Published peers stay exact.
+- **Exit code:** cancelling the publish wizard by not retyping the package name now exits with code 1 instead of 0, so wrapping scripts can tell a cancellation from a release.
+- SSH locators such as `ssh://git@github.com/owner/repo` no longer read `git@…` as a Git ref, and linked publish compares the configured origin URL, so `insteadOf` rewrites no longer make a valid checkout look foreign.
+- The `pkarw/visits-example` example, which no longer exists, is replaced by `pkarw/marketing-consents`.
+
 ## 0.5.1
 
 - Show live Yarn progress after approving a GitHub repository and allow the retry to finish before enabling the module. The retry no longer inherits the short timeout used for captured inspection commands, which could interrupt a slow installation and require another invocation.
