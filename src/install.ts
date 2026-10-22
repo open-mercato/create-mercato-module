@@ -116,6 +116,24 @@ function mercatoArguments(
   return args
 }
 
+// The ref suffix of a GitHub locator: `#ref` (always exact) or `@ref`. URL
+// prefixes are removed first, so the `git@` user of an SSH URL is never a ref.
+export function locatorRefOf(input: string): { ref?: string; exact: boolean } {
+  const locator = input
+    .trim()
+    .replace(/^(?:git\+)?ssh:\/\/(?:[^@/]+@)?github\.com\//i, '')
+    .replace(/^git@github\.com:/i, '')
+    .replace(/^(?:(?:git\+)?https?:\/\/github\.com\/)+/i, '')
+    .replace(/^github:/i, '')
+    .replace(/^github\.com\//i, '')
+  const hashIndex = locator.indexOf('#')
+  const refIndex = hashIndex >= 0 ? hashIndex : locator.lastIndexOf('@')
+  const ref = refIndex >= 0 ? locator.slice(refIndex + 1) : undefined
+  if (hashIndex !== locator.lastIndexOf('#') || ref === '')
+    throw new Error('Use one non-empty Git ref after #. No files were changed.')
+  return { ref, exact: hashIndex >= 0 }
+}
+
 // The underlying command already printed its own error; this adds what the
 // installer knows about the state it left and about unmet requirements.
 function withContext(error: unknown, ...context: string[]): Error {
@@ -169,13 +187,7 @@ export function installFromInput(
   }
 
   const parsed = parseModuleLocator(input)
-  const hashIndex = input.indexOf('#')
-  const atIndex = input.lastIndexOf('@')
-  const refIndex =
-    hashIndex >= 0 ? hashIndex : atIndex > input.indexOf('/') ? atIndex : -1
-  const locatorRef = refIndex >= 0 ? input.slice(refIndex + 1) : undefined
-  if (hashIndex !== input.lastIndexOf('#') || locatorRef === '')
-    throw new Error('Use one non-empty Git ref after #. No files were changed.')
+  const { ref: locatorRef, exact } = locatorRefOf(input)
   if (locatorRef && options.ref && locatorRef !== options.ref)
     throw new Error(
       'The locator ref does not match --ref. No files were changed.',
@@ -184,7 +196,7 @@ export function installFromInput(
     parsed?.kind === 'github' ? parsed.identity.slice('github:'.length) : input
   const repository = githubRepositoryFromInput(app, repositoryInput, execute)
   const versionTag =
-    hashIndex < 0 &&
+    !exact &&
     !options.ref &&
     locatorRef &&
     /^\d+\.\d+\.\d+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?$/.test(locatorRef)

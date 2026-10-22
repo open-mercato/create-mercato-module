@@ -1,6 +1,6 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { installFromInput, GitRepositoryApprovalRequired } = require('../dist/install.js')
+const { installFromInput, GitRepositoryApprovalRequired, locatorRefOf } = require('../dist/install.js')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -640,6 +640,27 @@ test('all canonical GitHub installation forms resolve the same repository and se
   }
   const result = installFromInput(app, 'github:visits-example', {}, executor([]))
   assert.equal(result.repository, 'fixture-owner/visits-example')
+})
+
+test('SSH locators never read the git@ user as a ref', () => {
+  for (const [input, ref] of [
+    ['ssh://git@github.com/fixture-owner/visits-example', 'main'],
+    ['git+ssh://git@github.com/fixture-owner/visits-example.git', 'main'],
+    ['git@github.com:fixture-owner/visits-example.git', 'main'],
+    ['ssh://git@github.com/fixture-owner/visits-example.git@release-2', 'release-2'],
+    ['ssh://git@github.com/fixture-owner/visits-example#release-2', 'release-2'],
+  ]) {
+    const calls = []
+    assert.equal(installFromInput(app, input, {}, executor(calls)).repository, 'fixture-owner/visits-example', input)
+    const lookups = calls.filter(call => call.args[1]?.includes('/commits/')).map(call => call.args[1])
+    assert.deepEqual(lookups, [`repos/fixture-owner/visits-example/commits/${ref}`], input)
+  }
+  assert.deepEqual(locatorRefOf('ssh://git@github.com/owner/repo@1.2.3'), { ref: '1.2.3', exact: false })
+  assert.deepEqual(locatorRefOf('owner/repo#1.2.3'), { ref: '1.2.3', exact: true })
+  assert.deepEqual(locatorRefOf('visits@1.2.3'), { ref: '1.2.3', exact: false })
+  assert.deepEqual(locatorRefOf('https://github.com/owner/repo.git'), { ref: undefined, exact: false })
+  assert.throws(() => locatorRefOf('owner/repo#a#b'), /one non-empty Git ref/)
+  assert.throws(() => locatorRefOf('ssh://git@github.com/owner/repo@'), /one non-empty Git ref/)
 })
 
 test('package metadata locator falls back only for dedicated packages and preserves npm publisher', (context) => {
