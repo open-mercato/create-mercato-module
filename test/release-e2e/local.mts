@@ -171,6 +171,17 @@ export async function main(args: string[]): Promise<void> {
     }
   }
 
+  // Yarn caches registry metadata per host name, not per port, so a previous run
+  // on another port would hand out its tarball URLs. Forget only the throwaway
+  // fixture scope on loopback hosts; the rest of the user's Yarn cache stays.
+  const globalFolder = (await command('yarn-global-folder', yarn, ['config', 'get', 'globalFolder'], options.results)).trim()
+  const metadata = path.join(globalFolder, 'metadata/npm')
+  if (path.isAbsolute(globalFolder) && fs.existsSync(metadata))
+    for (const hash of fs.readdirSync(metadata))
+      for (const host of ['127.0.0.1', 'localhost']) {
+        const directory = path.join(metadata, hash, host)
+        if (fs.existsSync(directory)) for (const file of fs.readdirSync(directory)) if (file.startsWith(`${packageName.split('/')[0]}-`)) fs.rmSync(path.join(directory, file), { force: true })
+      }
   let server: Awaited<ReturnType<typeof serveRepositories>> | undefined
   const originalPath = process.env.PATH
   try {
