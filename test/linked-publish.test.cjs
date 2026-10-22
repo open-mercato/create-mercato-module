@@ -86,6 +86,13 @@ test('linked publication rejects wrong remote and mismatched package before pack
   assert.throws(() => exportLinkedPackage(app, 'visits', settings, metadata), /origin does not match/)
 })
 
+test('linked publication compares the configured origin, not a URL rewritten by insteadOf', context => {
+  const { app, settings, metadata, checkout } = fixture(context)
+  run('git', ['config', 'url.http://mirror.invalid/.insteadOf', 'https://github.com/'], checkout)
+  assert.match(run('git', ['remote', 'get-url', 'origin'], checkout, { capture: true }).stdout, /mirror\.invalid/)
+  assert.equal(exportLinkedPackage(app, 'visits', settings, metadata).linkedBranch, 'main')
+})
+
 test('linked publication refuses unrelated staged files without modifying working tree', context => {
   const { app, settings, metadata, checkout } = fixture(context)
   fs.writeFileSync(path.join(checkout, 'unrelated.txt'), 'keep staged\n')

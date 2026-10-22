@@ -270,9 +270,14 @@ function assertLinkedRepository(
     throw new Error(
       'The linked module must be its own Git repository. The app repository was left unchanged.',
     )
-  const remote = execute('git', ['remote', 'get-url', 'origin'], checkout, {
-    capture: true,
-  }).stdout.trim()
+  // The configured URL, not `git remote get-url`: that applies insteadOf
+  // rewrites (mirrors, proxies) and would no longer name the GitHub repository.
+  const remote = execute(
+    'git',
+    ['config', '--get', 'remote.origin.url'],
+    checkout,
+    { capture: true },
+  ).stdout.trim()
   const identity = remote
     .replace(/^git@github\.com:/, '')
     .replace(/^(?:git\+)?https:\/\/github\.com\//, '')
