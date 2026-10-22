@@ -79,6 +79,12 @@ Once npm makes the published version available, run inside the receiving app:
 npx create-mercato-module install @your-name/mercato-visits
 ```
 
+Apps created by `create-mercato-app` install npm versions only 5 days after
+publication (Yarn `npmMinimalAgeGate`). To install a new version sooner, add
+`--preapprove-package`: it adds only this package to the app's
+`npmPreapprovedPackages`. Without the option, `install` explains the wait and,
+in a terminal, asks before changing anything.
+
 `install` delegates registration and generation to Open Mercato, and also
 accepts a dedicated GitHub repository when the package is not on npm:
 
@@ -95,7 +101,8 @@ to choose one module from a multi-module package. GitHub installs use the
 current default-branch head unless `owner/repo@version-or-ref`, `owner/repo#ref`,
 or `--ref <tag-or-commit>` selects another ref. Like npm's `package@1.2.3`,
 `owner/repo@1.2.3` selects a version: it tries the exact `1.2.3` ref first,
-then `v1.2.3` only if the exact ref is missing. Prereleases such as
+then `v1.2.3` only if the exact ref is missing. `publish` tags every release
+with its bare version, so this works for repositories released by this tool. Prereleases such as
 `@1.2.3-beta.1` follow the same rule. `#ref` and `--ref` always select an exact
 Git ref. The resolved full commit is pinned in every case.
 
@@ -139,6 +146,8 @@ npx create-mercato-module publish visits
 ```
 
 Publication includes your linked edits, preserves repository customizations, and suggests the next patch version. `link visits` still works when the repository is saved. For a new local module, publish it with `publish visits --repo owner/repo` before linking it.
+
+To make it an ordinary local module again, run `npx create-mercato-module unlink visits`: it copies the checkout's current source into `src/modules/visits` and keeps the checkout and the earlier backup.
 
 This link is local: a fresh clone of the whole app needs the module source restored or linked again. See [repository development and PR workflow](docs/guide.md#develop-in-the-dedicated-repository-without-leaving-your-app) for details.
 

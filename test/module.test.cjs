@@ -448,6 +448,17 @@ test('releases are tagged with the bare version so the generated v* workflow doe
   assert.match(tagRelease('fixture/visits', sha, '1.2.3', '/tmp', () => ({ status: 1, stdout: '', stderr: 'HTTP 403' })).tagWarning, /GitHub refused the request.*gh api --method POST/)
 })
 
+test('generated module README uses the tool install command and explains the Yarn age gate', (context) => {
+  const { app, destination } = fixture(context)
+  preparePackage(app, 'visits', { ...settings, repository: 'fixture/visits', version: '0.2.0' }, destination)
+  const readme = fs.readFileSync(path.join(destination, 'README.md'), 'utf8')
+  assert.match(readme, /npx create-mercato-module install @fixture\/visits\n/)
+  assert.match(readme, /npx create-mercato-module install fixture\/visits@0\.2\.0/)
+  assert.match(readme, /5 days after publication \(Yarn `npmMinimalAgeGate`\).*`--preapprove-package`/)
+  assert.match(readme, /tagged <version> without the v, so they do not start this workflow/)
+  assert.doesNotMatch(readme, /yarn mercato module add/)
+})
+
 test('publication preferences persist per module without credentials', (context) => {
   const { app } = fixture(context)
   saveConfig(app, 'visits', settings, true)

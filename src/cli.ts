@@ -2,6 +2,7 @@ import type { Settings, SavedSettings } from './types.js'
 import { createInterface } from 'node:readline/promises'
 import { findApp, validateId, run } from './common.js'
 import { scaffold } from './scaffold.js'
+import { ageGateNote } from './package.js'
 import { validateSettings } from './package.js'
 import {
   exportPackage,
@@ -467,7 +468,7 @@ async function main(argv = process.argv.slice(2)) {
       console.log(`\n🏷️ Tagged ${settings.repository} ${released.tag}.`)
     if (released.tagWarning) console.log(`\n⚠️ ${released.tagWarning}`)
     console.log(
-      `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  yarn mercato module add ${settings.packageName}@${settings.version} --allow-third-party`,
+      `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  npx create-mercato-module install ${settings.packageName}@${settings.version}${released.tag ? `\n  npx create-mercato-module install ${settings.repository}@${released.tag}` : ''}\n⏳ ${ageGateNote}`,
     )
   } finally {
     prompt?.close()
