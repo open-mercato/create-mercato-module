@@ -74,6 +74,8 @@ Defects 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 and 13 from the end-to-end report (th
 
 ## Progress
 
+PR: #12
+
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
 ### Phase 1: Publish correctness
@@ -104,8 +106,8 @@ Defects 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 and 13 from the end-to-end report (th
 - [x] 5.1 Add an npm 12 CI leg. — fe9281a
 - [x] 5.2 Run release checks on the current scaffold with the latest npm. — fe9281a
 - [x] 5.3 Route both harness lanes through `install`, add the quarantine negative case and the tag check. — fe9281a, 3309984
-- [ ] 5.4 Run the local release checks on this server.
+- [x] 5.4 Run the local release checks on this server. — 047f1c2 (passed on the third run after two harness fixes)
 
 ### Phase 6: Validation
 
-- [ ] 6.1 Run lint, typecheck, test, build and `npm pack --dry-run`.
+- [x] 6.1 Run lint, typecheck, test, build and `npm pack --dry-run`. — 047f1c2
