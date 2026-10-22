@@ -18,9 +18,9 @@
 Run inside an Open Mercato app, including a fresh app without the module:
 
 ```bash
-npx create-mercato-module link pkarw/visits-example
-npx create-mercato-module link https://github.com/pkarw/visits-example.git
-npx create-mercato-module link @piotrkarwatka/visits
+npx create-mercato-module link pkarw/marketing-consents
+npx create-mercato-module link https://github.com/pkarw/marketing-consents.git
+npx create-mercato-module link @piotrkarwatka/marketing-consents
 ```
 
 `link` reads the npm package name and module ID from the repository. The npm form first looks up the package's `repository` metadata on npm; no npm publication or login is required for a public package. Scoped package names use npm discovery; use `npm:package-name` for an unscoped npm package. A bare repository name uses your authenticated GitHub account unless an unsaved local module has the same name; that legacy form asks for the module's dedicated repository instead. Use `owner/repository` to remove the ambiguity. HTTPS, SSH, `github:owner/repo`, trailing slashes, and `.git` URLs are accepted. Even an accidentally repeated `https://github.com/` prefix is normalized.
@@ -28,10 +28,10 @@ npx create-mercato-module link @piotrkarwatka/visits
 To choose the checkout folder, add a local name:
 
 ```bash
-npx create-mercato-module link pkarw/visits-example my-visits
+npx create-mercato-module link pkarw/marketing-consents my-consents
 ```
 
-This uses `.mercato/module-repos/my-visits` while keeping the repository's module ID (`visits`) and its routes and imports. Names may contain letters, numbers, hyphens and underscores.
+This uses `.mercato/module-repos/my-consents` while keeping the repository's module ID (`marketing_consents`) and its routes and imports. Names may contain letters, numbers, hyphens and underscores.
 
 A dedicated module repository must have a root `package.json` with `name` and `mercatoModule: { id, formatVersion: 1 }`, plus `src/modules/<id>/index.ts`. npm packages without a dedicated GitHub repository, monorepo packages, empty repositories, and unrelated projects produce actionable errors before app files change. GitHub authentication uses `gh auth login`.
 

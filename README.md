@@ -116,10 +116,10 @@ Keep developing locally and run the same command for later releases. The app can
 Run inside any Open Mercato app. Give `link` a repository or an npm package:
 
 ```bash
-npx create-mercato-module link pkarw/visits-example
+npx create-mercato-module link pkarw/marketing-consents
 # These work too:
-npx create-mercato-module link https://github.com/pkarw/visits-example.git
-npx create-mercato-module link @piotrkarwatka/visits
+npx create-mercato-module link https://github.com/pkarw/marketing-consents.git
+npx create-mercato-module link @piotrkarwatka/marketing-consents
 ```
 
 The npm form discovers the GitHub repository from the package's npm metadata. The package name and module ID come from the repository; no npm package name prompt or prior `init` is needed. A bare repository name uses your authenticated GitHub account unless an unsaved local module has the same name; in that legacy case, the command asks for its dedicated repository. Use `owner/repository` to remove the ambiguity. If the package has no dedicated module repository, the command explains how to fix it.
@@ -127,10 +127,10 @@ The npm form discovers the GitHub repository from the package's npm metadata. Th
 Optionally name the local checkout folder:
 
 ```bash
-npx create-mercato-module link pkarw/visits-example my-visits
+npx create-mercato-module link pkarw/marketing-consents my-consents
 ```
 
-The tool clones under `.mercato/module-repos/my-visits` (default: the module ID), links `src/modules/visits`, registers it as `@app`, and runs generation. Existing local source is backed up. The local folder name does not change the module ID, routes, or imports.
+The tool clones under `.mercato/module-repos/my-consents` (default: the module ID), links `src/modules/marketing_consents`, registers it as `@app`, and runs generation. Existing local source is backed up. The local folder name does not change the module ID, routes, or imports.
 
 Edit through the app, then release from the linked repository using the saved package and repository settings:
 
