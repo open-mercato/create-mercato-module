@@ -10,9 +10,9 @@ import {
   inspectRepository,
   publicationRisks,
 } from './publish.js'
-import { loadConfig, saveConfig } from './config.js'
+import { loadConfig, saveConfig, removeDevelopment } from './config.js'
 import { isUnconfiguredLocalModule, linkFromInput } from './link.js'
-import { validateCheckoutName } from './development.js'
+import { validateCheckoutName, unlinkDevelopment } from './development.js'
 import { checkAuthentication, resolveRegistry } from './npm-auth.js'
 import {
   installFromInput,
@@ -31,6 +31,7 @@ const help = `Create and publish one module from an existing Open Mercato app.
   npx create-mercato-module link <repo-or-npm-package> [local-name]
   npx create-mercato-module link pkarw/visits-example
   npx create-mercato-module link @piotrkarwatka/visits
+  npx create-mercato-module unlink visits
 
 Existing modules can be published directly; init is optional.
 Settings are saved per module in .mercato/module-tool.json.
@@ -59,6 +60,10 @@ Link options:
   --package @your-name/visits  optional package identity check
   --repo your-name/visits     repository override for link <module_id>
   --no-generate              link without running yarn generate
+
+Unlink:
+  Makes a linked module local again: copies the checkout's current source into
+  src/modules/<module_id> and forgets the link. The checkout and backup are kept.
 
 Install options:
   Repository URL, owner/repo, or repo name (your GitHub account).
@@ -101,9 +106,9 @@ function parse(argv: string[]): ParsedArguments {
     return { help: true }
   const [command, ...rest] = argv
   const positional: string[] = []
-  if (!['init', 'publish', 'install', 'link'].includes(command))
+  if (!['init', 'publish', 'install', 'link', 'unlink'].includes(command))
     throw new Error(
-      'Choose init, publish, install, or link. Run with --help for examples.',
+      'Choose init, publish, install, link, or unlink. Run with --help for examples.',
     )
   const flags: Flags = {}
   const booleans =
@@ -119,7 +124,9 @@ function parse(argv: string[]): ParsedArguments {
         ]
       : command === 'install'
         ? ['eject', 'approve-git-repository', 'preapprove-package']
-        : ['no-generate']
+        : command === 'unlink'
+          ? []
+          : ['no-generate']
   const values =
     command === 'publish'
       ? ['package', 'version', 'repo', 'access', 'auth', 'tag']
@@ -264,6 +271,20 @@ async function main(argv = process.argv.slice(2)) {
     } finally {
       prompt?.close()
     }
+  }
+  if (args.command === 'unlink') {
+    const development = loadConfig(app).modules[args.id]?.development
+    if (!development)
+      throw new Error(
+        `Module ${args.id} is not linked to a repository checkout. No files were changed.`,
+      )
+    unlinkDevelopment(app, args.id, development, () =>
+      removeDevelopment(app, args.id),
+    )
+    console.log(
+      `\n✅ src/modules/${args.id} is a local module again, copied from ${development.checkoutPath}.\n📁 Kept: ${development.checkoutPath}${development.backupPath ? ` and the source from before linking, ${development.backupPath}` : ''}. Delete them once you no longer need them.\n🧩 src/modules.ts is unchanged.\n\nNext release from the app: npx create-mercato-module publish ${args.id}`,
+    )
+    return
   }
   if (args.command === 'install') {
     let input = args.id

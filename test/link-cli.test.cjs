@@ -10,6 +10,7 @@ const { preparePackage } = require('../dist/package.js')
 const { parse } = require('../dist/cli.js')
 const { githubRepository } = require('../dist/link.js')
 const { loadConfig } = require('../dist/config.js')
+const { unlinkDevelopment } = require('../dist/development.js')
 
 // All fixtures are created locally. Only gh's transport and npm's metadata /
 // submission are replaced; cloning, editing, packing, commits and pushes are real.
@@ -306,3 +307,45 @@ for (const token of ['', 'private-registry-fixture-token']) {
     if (token) assert.ok(requests.every(request => request.authorization === `Bearer ${token}`))
   })
 }
+
+test('unlink makes a linked module local again from the checkout and keeps checkout and backup', context => {
+  const { app, cli } = fixture(context, { localSource: true, registration: "export const enabledModules = [{ id: 'visits', from: '@app' }]\n" })
+  assert.equal(cli(['link', 'visits', '--repo', 'release-checks/visits-example', '--no-generate']).status, 0)
+  const { development } = loadConfig(app).modules.visits
+  fs.writeFileSync(path.join(app.directory, 'src/modules/visits/linked-edit.ts'), 'export const edit = true\n')
+  const unlinked = cli(['unlink', 'visits'])
+  assert.equal(unlinked.status, 0, unlinked.output)
+  assert.match(unlinked.output, /src\/modules\/visits is a local module again/)
+  const moduleDirectory = path.join(app.directory, 'src/modules/visits')
+  assert.ok(fs.lstatSync(moduleDirectory).isDirectory() && !fs.lstatSync(moduleDirectory).isSymbolicLink())
+  assert.equal(fs.readFileSync(path.join(moduleDirectory, 'linked-edit.ts'), 'utf8'), 'export const edit = true\n')
+  assert.ok(fs.existsSync(path.join(app.directory, development.checkoutPath, 'src/modules/visits/linked-edit.ts')), 'the checkout stays')
+  assert.ok(fs.existsSync(path.join(app.directory, development.backupPath, 'index.ts')), 'the pre-link backup stays')
+  const saved = loadConfig(app).modules.visits
+  assert.equal(saved.development, undefined)
+  assert.equal(saved.repository, 'release-checks/visits-example')
+  assert.equal(saved.packageName, '@fixture/visits')
+  assert.equal(fs.readdirSync(path.join(app.directory, '.mercato')).filter(name => name.startsWith('.unlink-')).length, 0)
+  const again = cli(['unlink', 'visits'])
+  assert.equal(again.status, 1)
+  assert.match(again.output, /not linked to a repository checkout/)
+})
+
+test('unlink restores the link when saving settings fails', context => {
+  const { app, cli } = fixture(context)
+  assert.equal(cli(['link', 'release-checks/visits-example', '--no-generate']).status, 0)
+  const { development } = loadConfig(app).modules.visits
+  const link = path.join(app.directory, 'src/modules/visits')
+  const target = fs.readlinkSync(link)
+  assert.throws(() => unlinkDevelopment(app, 'visits', development, () => { throw new Error('disk full') }), /disk full/)
+  assert.equal(fs.readlinkSync(link), target)
+  assert.ok(loadConfig(app).modules.visits.development)
+})
+
+test('a publish that disagrees with the link points to unlink', context => {
+  const { cli } = fixture(context)
+  assert.equal(cli(['link', 'release-checks/visits-example', '--no-generate']).status, 0)
+  const result = cli(['publish', 'visits', '--package', '@fixture/other', '--dry-run'])
+  assert.equal(result.status, 1)
+  assert.match(result.output, /run npx create-mercato-module unlink visits first/)
+})

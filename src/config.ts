@@ -190,3 +190,15 @@ export function saveDevelopment(
   })
   writeConfig(app, config)
 }
+
+export function removeDevelopment(app: App, id: string): void {
+  validateId(id)
+  const config = loadConfig(app)
+  const previous = config.modules[id]
+  if (!previous?.development)
+    throw new Error(`Module ${id} has no development link to remove.`)
+  const settings: Partial<SavedSettings> = { ...previous }
+  delete settings.development
+  config.modules[id] = settingsFrom(settings)
+  writeConfig(app, config)
+}

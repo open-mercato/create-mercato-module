@@ -205,7 +205,7 @@ export function linkFromInput(
       previous.development.packageName !== manifest.name)
   )
     throw new Error(
-      `Module ${id} is already linked to ${previous.development.repository}. Keep or unlink that checkout before linking another repository. No files were changed.`,
+      `Module ${id} is already linked to ${previous.development.repository}. Run npx create-mercato-module unlink ${id} before linking another repository. No files were changed.`,
     )
   const settings: Settings = {
     packageName: manifest.name,

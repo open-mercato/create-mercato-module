@@ -158,7 +158,7 @@ function exportLinkedPackage(
     metadata.packageName !== settings.packageName
   )
     throw new Error(
-      'The publish settings must match the linked module repository and npm package. Use the saved settings or unlink development first.',
+      `The publish settings must match the linked module repository and npm package. Use the saved settings, or run npx create-mercato-module unlink ${id} first.`,
     )
   const source = linkedModuleDirectory(app, id, metadata)
   const checkout = path.join(app.directory, metadata.checkoutPath)
