@@ -92,7 +92,7 @@ Defects 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 and 13 from the end-to-end report (th
 
 ### Phase 3: Link
 
-- [ ] 3.1 Add `unlink <module_id>` and point the messages to it.
+- [x] 3.1 Add `unlink <module_id>` and point the messages to it. — f16cc9c
 
 ### Phase 4: Docs and messages
 
