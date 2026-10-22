@@ -420,8 +420,8 @@ async function main(argv = process.argv.slice(2)) {
       : !repository
         ? settings.repository
         : repository.state === 'missing'
-          ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created before npm publication; it stays if npm rejects the package)`
-          : `${settings.repository} (existing ${repository.private ? 'private' : 'PUBLIC'} repository)`
+          ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created before npm publication; it stays if npm rejects the package; tagged ${settings.version} once npm accepts it)`
+          : `${settings.repository} (existing ${repository.private ? 'private' : 'PUBLIC'} repository; tagged ${settings.version} once npm accepts it)`
     console.log(
       `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
     )

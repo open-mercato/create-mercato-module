@@ -659,28 +659,37 @@ function tagRelease(
   cwd: string,
   execute: Executor = run,
 ): Pick<PublishResult, 'tag' | 'tagWarning'> {
-  const result = execute(
-    'gh',
-    [
-      'api',
-      '--method',
-      'POST',
-      `repos/${repository}/git/refs`,
-      '-f',
-      `ref=refs/tags/${version}`,
-      '-f',
-      `sha=${commit}`,
-    ],
-    cwd,
-    { capture: true, allowFailure: true },
-  )
-  if (result.status === 0) return { tag: version }
-  const reason = /HTTP 422/.test(result.stderr || '')
-    ? `the tag ${version} already exists`
-    : 'GitHub refused the request'
-  return {
-    tagWarning: `The release is published, but ${repository} has no ${version} tag (${reason}). install ${repository}@${version} needs it; create it with: gh api --method POST repos/${repository}/git/refs -f ref=refs/tags/${version} -f sha=${commit}`,
+  const create = `gh api --method POST repos/${repository}/git/refs -f ref=refs/tags/${version} -f sha=${commit}`
+  const warning = (reason: string) => ({
+    tagWarning: `The release is published, but ${repository} has no ${version} tag (${reason}). install ${repository}@${version} needs it; create it with: ${create}`,
+  })
+  let result: ReturnType<Executor>
+  try {
+    result = execute(
+      'gh',
+      [
+        'api',
+        '--method',
+        'POST',
+        `repos/${repository}/git/refs`,
+        '-f',
+        `ref=refs/tags/${version}`,
+        '-f',
+        `sha=${commit}`,
+      ],
+      cwd,
+      { capture: true, allowFailure: true },
+    )
+  } catch {
+    // A timeout or a missing gh must not turn a published release into a failure.
+    return warning('gh did not complete the request')
   }
+  if (result.status === 0) return { tag: version }
+  return warning(
+    /Reference already exists/i.test(result.stderr || '')
+      ? `the tag ${version} already exists`
+      : 'GitHub refused the request',
+  )
 }
 
 function ensureAuthor(checkout: string, execute: Executor): void {

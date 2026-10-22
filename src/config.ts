@@ -199,6 +199,9 @@ export function removeDevelopment(app: App, id: string): void {
     throw new Error(`Module ${id} has no development link to remove.`)
   const settings: Partial<SavedSettings> = { ...previous }
   delete settings.development
+  // link saved the repository's released version; without it the next publish
+  // from the app would propose that same, already published version.
+  settings.lastPublishedVersion ??= previous.version
   config.modules[id] = settingsFrom(settings)
   writeConfig(app, config)
 }

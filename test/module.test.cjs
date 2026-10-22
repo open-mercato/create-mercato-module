@@ -446,6 +446,8 @@ test('releases are tagged with the bare version so the generated v* workflow doe
   const existing = tagRelease('fixture/visits', sha, '1.2.3', '/tmp', () => ({ status: 1, stdout: '', stderr: 'gh: Reference already exists (HTTP 422)' }))
   assert.match(existing.tagWarning, /release is published, but fixture\/visits has no 1\.2\.3 tag \(the tag 1\.2\.3 already exists\)/)
   assert.match(tagRelease('fixture/visits', sha, '1.2.3', '/tmp', () => ({ status: 1, stdout: '', stderr: 'HTTP 403' })).tagWarning, /GitHub refused the request.*gh api --method POST/)
+  assert.match(tagRelease('fixture/visits', sha, '1.2.3', '/tmp', () => ({ status: 1, stdout: '', stderr: 'gh: Object does not exist (HTTP 422)' })).tagWarning, /GitHub refused the request/)
+  assert.match(tagRelease('fixture/visits', sha, '1.2.3', '/tmp', () => { throw new Error('gh api did not finish in time') }).tagWarning, /gh did not complete the request/, 'a published release never fails on its tag')
 })
 
 test('generated module README uses the tool install command and explains the Yarn age gate', (context) => {
