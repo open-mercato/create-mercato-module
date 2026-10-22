@@ -26,7 +26,7 @@ npm run test:release:local -- \
 docker rm -f mercato-e2e-registry mercato-e2e-db
 ```
 
-Use ports that are free on your machine, and a new results directory for every run. Stopping the containers deletes everything that was published and the database. Both addresses must be on this machine; the checks initialize the database from scratch, so never point them at one you use. Without `--database-url` the full-app step is skipped.
+Use ports that are free on your machine, and a new results directory for every run. Stopping the containers deletes everything that was published and the database. Both addresses must be on this machine; the checks initialize the database from scratch, so never point them at one you use. Without `--database-url` the full-app step is skipped. The checks also start a local Git server and app servers on free loopback ports; on a machine shared with other services, set `RELEASE_E2E_PORTS=51210-51239` (any range) to keep them inside it.
 
 CI runs two legs: an exact `create-mercato-app` version with the npm bundled with Node 24, and `create-mercato-app@latest` with `npm@latest`, which is what a new user gets. Update the exact pin deliberately after confirming the scaffold and all of its exact Open Mercato dependencies are available together; a failure only in the latest leg can be upstream drift.
 

@@ -105,3 +105,12 @@ test('release fixture writer creates portable module source and refuses to repla
   assert.match(migration, /drop table if exists "release_checks"/)
   assert.throws(() => writeFixture(directory), /already exists/)
 })
+
+test('release harness keeps its servers inside RELEASE_E2E_PORTS', async () => {
+  const { freePort } = await import('./release-e2e/run.mts')
+  const port = await freePort('51290-51299')
+  assert.ok(port >= 51290 && port <= 51299)
+  assert.ok((await freePort(undefined)) > 0)
+  await assert.rejects(() => freePort('80-90'), /RELEASE_E2E_PORTS/)
+  await assert.rejects(() => freePort('51299-51290'), /RELEASE_E2E_PORTS/)
+})

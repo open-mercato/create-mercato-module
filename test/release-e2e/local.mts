@@ -5,14 +5,13 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import http from 'node:http'
-import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { writeFixture, fixtureContract } from './fixture.mts'
-import { main as runLanes, redact, pinFixtureYarn } from './run.mts'
+import { main as runLanes, redact, pinFixtureYarn, freePort } from './run.mts'
 
 const packageName = '@mercato-e2e/release-checks'
 const repository = 'mercato-e2e/release-checks'
@@ -41,7 +40,8 @@ export function parseLocalOptions(args: string[]): Options {
 }
 
 // Serves the bare repositories over loopback HTTP so Yarn can install from them.
-function serveRepositories(root: string): Promise<{ url: string; close: () => Promise<void> }> {
+async function serveRepositories(root: string): Promise<{ url: string; close: () => Promise<void> }> {
+  const port = await freePort()
   const server = http.createServer((request, response) => {
     const file = path.join(root, decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname))
     if (request.method !== 'GET' || !file.startsWith(root + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { response.writeHead(404).end(); return }
@@ -50,7 +50,7 @@ function serveRepositories(root: string): Promise<{ url: string; close: () => Pr
   })
   return new Promise((resolve, reject) => {
     server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(port, '127.0.0.1', () => {
       const address = server.address()
       if (!address || typeof address === 'string') { reject(new Error('Cannot start the local Git server')); return }
       resolve({ url: `http://127.0.0.1:${address.port}/`, close: () => new Promise((done) => server.close(() => done())) })
@@ -107,14 +107,10 @@ export async function main(args: string[]): Promise<void> {
   // Starts the consumer app itself, with its database, and uses the installed module the way a
   // signed-in user would: the API must refuse anonymous calls and the backend page must render.
   async function fullAppCheck(app: string, databaseUrl: string): Promise<void> {
-    const port = await new Promise<number>((resolve, reject) => {
-      const probe = net.createServer()
-      probe.once('error', reject)
-      probe.listen(0, '127.0.0.1', () => { const address = probe.address(); probe.close(() => (address && typeof address !== 'string' ? resolve(address.port) : reject(new Error('Cannot allocate an app port')))) })
-    })
+    const port = await freePort()
     const baseUrl = `http://127.0.0.1:${port}`
     const saved = { ...environment }
-    Object.assign(environment, { DATABASE_URL: databaseUrl, PORT: String(port), APP_URL: baseUrl, NEXT_PUBLIC_APP_URL: baseUrl, NEXT_TELEMETRY_DISABLED: '1', OM_INIT_ADMIN_PASSWORD: 'secret', OM_INIT_EMPLOYEE_PASSWORD: 'secret', AUTO_SPAWN_WORKERS: 'false', AUTO_SPAWN_SCHEDULER: 'false' })
+    Object.assign(environment, { DATABASE_URL: databaseUrl, PORT: String(port), APP_URL: baseUrl, NEXT_PUBLIC_APP_URL: baseUrl, INTERNAL_APP_ORIGIN: baseUrl, NEXT_TELEMETRY_DISABLED: '1', OM_INIT_ADMIN_PASSWORD: 'secret', OM_INIT_EMPLOYEE_PASSWORD: 'secret', AUTO_SPAWN_WORKERS: 'false', AUTO_SPAWN_SCHEDULER: 'false' })
     for (const name of ['NPM_TOKEN', 'MERCATO_NPM_REGISTRY']) delete environment[name]
     const started = Date.now()
     let output = ''

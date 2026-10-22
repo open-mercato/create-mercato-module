@@ -51,6 +51,26 @@ export function parseOptions(args: string[]): Options {
   return { packageName, version, repository, ref, createApp: values['create-app'] ?? 'create-mercato-app@latest', results: path.resolve(values.results ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-e2e-'))), lanes, reuseApp: values['reuse-app'] ? path.resolve(values['reuse-app']) : undefined, registry: values.registry ? loopbackUrl(values.registry, '--registry') : undefined, gitUrl: values['git-url'] ? loopbackUrl(values['git-url'], '--git-url') : undefined }
 }
 
+// A free loopback port. RELEASE_E2E_PORTS=first-last keeps every server the
+// checks start inside a range, for machines that share ports with other services.
+export async function freePort(range = process.env.RELEASE_E2E_PORTS): Promise<number> {
+  const bounds = range ? /^(\d+)-(\d+)$/.exec(range) : null
+  if (range && (!bounds || Number(bounds[1]) > Number(bounds[2]) || Number(bounds[1]) < 1024 || Number(bounds[2]) > 65535)) throw new Error('RELEASE_E2E_PORTS must be a range such as 51210-51239.')
+  const candidates = bounds ? Array.from({ length: Number(bounds[2]) - Number(bounds[1]) + 1 }, (_, index) => Number(bounds[1]) + index) : [0]
+  for (const candidate of candidates) {
+    const port = await new Promise<number | undefined>((resolve) => {
+      const server = net.createServer()
+      server.once('error', () => resolve(undefined))
+      server.listen(candidate, '127.0.0.1', () => {
+        const address = server.address()
+        server.close(() => resolve(address && typeof address !== 'string' ? address.port : undefined))
+      })
+    })
+    if (port) return port
+  }
+  throw new Error(`No free port${range ? ` in RELEASE_E2E_PORTS ${range}` : ''}.`)
+}
+
 export function redact(text: string, secrets: string[]): string {
   let sanitized = text.replace(/(https?:\/\/)[^\s/@]+(?::[^\s/@]*)?@/g, '$1[REDACTED]@').replace(/(?:npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, '[REDACTED]')
   for (const secret of secrets) if (secret.length >= 6) sanitized = sanitized.split(secret).join('[REDACTED]')
@@ -145,15 +165,7 @@ export async function main(args: string[]): Promise<void> {
     fs.writeFileSync(path.join(directory, 'app/layout.jsx'), 'export default function Layout({children}) { return <html><body>{children}</body></html> }\n')
     fs.writeFileSync(path.join(directory, 'app/page.jsx'), `export { default } from ${JSON.stringify(`${moduleImport}/${fixtureContract.page}`)}\n`)
     fs.writeFileSync(path.join(directory, 'app/api/status/route.js'), `export { GET } from ${JSON.stringify(`${moduleImport}/${fixtureContract.api}`)}\n`)
-    const port = await new Promise<number>((resolve, reject) => {
-      const server = net.createServer()
-      server.once('error', reject)
-      server.listen(0, '127.0.0.1', () => {
-        const address = server.address()
-        if (!address || typeof address === 'string') { server.close(); reject(new Error('Cannot allocate Next smoke port')); return }
-        server.close(() => resolve(address.port))
-      })
-    })
+    const port = await freePort()
     const nextBin = createRequire(path.join(app, 'package.json')).resolve('next/dist/bin/next')
     const child = spawn(node, [nextBin, 'dev', directory, '--hostname', '127.0.0.1', '--port', String(port)], { cwd: app, env: { ...environment, NEXT_TELEMETRY_DISABLED: '1', NODE_ENV: 'development' }, stdio: ['ignore', 'pipe', 'pipe'] })
     let output = ''
