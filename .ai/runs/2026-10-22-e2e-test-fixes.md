@@ -96,8 +96,8 @@ Defects 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 and 13 from the end-to-end report (th
 
 ### Phase 4: Docs and messages
 
-- [ ] 4.1 Use one install command and one quarantine note everywhere.
-- [ ] 4.2 Replace the missing example repository.
+- [x] 4.1 Use one install command and one quarantine note everywhere. — b3e5468
+- [x] 4.2 Replace the missing example repository. — 47a23ca
 
 ### Phase 5: CI and release checks
 
