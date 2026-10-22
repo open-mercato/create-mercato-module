@@ -101,9 +101,9 @@ Defects 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 and 13 from the end-to-end report (th
 
 ### Phase 5: CI and release checks
 
-- [ ] 5.1 Add an npm 12 CI leg.
-- [ ] 5.2 Run release checks on the current scaffold with the latest npm.
-- [ ] 5.3 Route both harness lanes through `install`, add the quarantine negative case and the tag check.
+- [x] 5.1 Add an npm 12 CI leg. — fe9281a
+- [x] 5.2 Run release checks on the current scaffold with the latest npm. — fe9281a
+- [x] 5.3 Route both harness lanes through `install`, add the quarantine negative case and the tag check. — fe9281a, 3309984
 - [ ] 5.4 Run the local release checks on this server.
 
 ### Phase 6: Validation
