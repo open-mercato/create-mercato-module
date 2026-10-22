@@ -35,8 +35,8 @@ jobs:
 
   # Runs every unit test, including the ones that need a built Open Mercato
   # checkout: real module discovery, eject, linked development and a Next.js
-  # dev server. The checkout follows the develop branch, like the scaffold
-  # used by the release checks.
+  # dev server. The checkout follows main, the framework's trunk since the
+  # develop branch was retired (open-mercato/open-mercato#7752).
   framework-tests:
     name: Tests against Open Mercato
     runs-on: ubuntu-latest
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: open-mercato/open-mercato
-          ref: develop
+          ref: main
           path: open-mercato
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
