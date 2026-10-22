@@ -16,12 +16,25 @@ export interface InstallOptions {
   ref?: string
   warn?: (message: string) => void
   approveGitRepository?: boolean
+  preapprovePackage?: boolean
 }
 
 export class GitRepositoryApprovalRequired extends Error {
   constructor(readonly repository: string, cause?: unknown) {
     super(`🔒 Yarn blocked this repository because it is not in approvedGitRepositories.\n\n🐙 Repository: https://github.com/${repository}.git\n📝 Approval adds only this exact URL to this app's Yarn configuration and retries installation. Existing approvals are preserved.\n\nApprove interactively or pass --approve-git-repository for this installation.`, { cause })
     this.name = 'GitRepositoryApprovalRequired'
+  }
+}
+
+export class PackageQuarantined extends Error {
+  constructor(
+    readonly packageName: string,
+    version: string,
+    wait: string,
+    cause?: unknown,
+  ) {
+    super(`⏳ Yarn in this app installs npm versions only ${wait} after publication (npmMinimalAgeGate), and ${packageName}@${version} is newer.\n\n📝 Preapproval adds only ${packageName} to this app's npmPreapprovedPackages and retries installation; existing entries are kept, and later versions of ${packageName} install without the wait.\n\nApprove interactively, pass --preapprove-package for this installation, or wait until the version is ${wait} old.`, { cause })
+    this.name = 'PackageQuarantined'
   }
 }
 
@@ -92,6 +105,73 @@ function repositoryCommit(
       `🐙 Cannot resolve ${repository}'s ${requestedRef ? `ref ${requestedRef}${versionTag ? ` or tag ${versionTag}` : ''}` : 'default branch'} to a commit. Check the ref, gh auth status, and network access, then retry. No files were changed.`,
     )
   return commit
+}
+
+function yarnJson(
+  app: App,
+  args: string[],
+  execute: Executor,
+): unknown {
+  const result = execute('yarn', args, app.directory, {
+    capture: true,
+    allowFailure: true,
+  })
+  if (result.status !== 0) return undefined
+  try {
+    return JSON.parse(result.stdout)
+  } catch {
+    return undefined
+  }
+}
+
+function stringList(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+    ? value
+    : undefined
+}
+
+// Yarn matches preapproval entries as globs on the package name.
+function preapproved(patterns: string[], packageName: string): boolean {
+  return patterns.some((pattern) =>
+    new RegExp(
+      `^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`,
+    ).test(packageName),
+  )
+}
+
+function waitLabel(minutes: number): string {
+  if (minutes % 1440 === 0) return `${minutes / 1440} day${minutes === 1440 ? '' : 's'}`
+  if (minutes % 60 === 0) return `${minutes / 60} hour${minutes === 60 ? '' : 's'}`
+  return `${minutes} minutes`
+}
+
+// Explains a failed npm installation when Yarn's release-age gate held back the
+// requested version. Anything it cannot confirm leaves the original error alone.
+function quarantine(
+  app: App,
+  packageName: string,
+  specifier: string,
+  execute: Executor,
+  cause: unknown,
+): PackageQuarantined | undefined {
+  const gate = yarnJson(app, ['config', 'get', 'npmMinimalAgeGate', '--json'], execute)
+  if (typeof gate !== 'number' || !(gate > 0)) return undefined
+  const approved = stringList(
+    yarnJson(app, ['config', 'get', 'npmPreapprovedPackages', '--json'], execute),
+  )
+  if (!approved || preapproved(approved, packageName)) return undefined
+  const info = yarnJson(
+    app,
+    ['npm', 'info', packageName, '--fields', 'time,dist-tags', '--json'],
+    execute,
+  ) as { time?: Record<string, string>; 'dist-tags'?: Record<string, string> } | undefined
+  const requested = specifier.slice(packageName.length + 1)
+  const version = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(requested)
+    ? requested
+    : info?.['dist-tags']?.[requested || 'latest']
+  const published = version ? Date.parse(info?.time?.[version] ?? '') : NaN
+  if (!version || !(Date.now() - published < gate * 60_000)) return undefined
+  return new PackageQuarantined(packageName, version, waitLabel(gate), cause)
 }
 
 function assertPackageName(packageName: string): string {
@@ -166,15 +246,38 @@ export function installFromInput(
       )
     // Open Mercato installs and enables in one step, so requirements can
     // only be read once the package is on disk.
-    try {
+    const add = () =>
       execute(
         'yarn',
         mercatoArguments('add', npm.specifier, options),
         app.directory,
       )
+    try {
+      try {
+        add()
+      } catch (error) {
+        const held = quarantine(app, npm.packageName, npm.specifier, execute, error)
+        if (!held) throw error
+        if (!options.preapprovePackage) throw held
+        const approved = stringList(
+          yarnJson(app, ['config', 'get', 'npmPreapprovedPackages', '--json'], execute),
+        )
+        if (!approved)
+          throw new Error(
+            'Cannot read npmPreapprovedPackages safely. Yarn configuration was not changed.',
+            { cause: error },
+          )
+        execute(
+          'yarn',
+          ['config', 'set', 'npmPreapprovedPackages', '--json', JSON.stringify([...approved, npm.packageName])],
+          app.directory,
+        )
+        warn(`✅ Added ${npm.packageName} to this app's npmPreapprovedPackages. Retrying installation.`)
+        add()
+      }
     } catch (error) {
       const required = missing(npm.packageName)
-      if (!required.length) throw error
+      if (!required.length || error instanceof PackageQuarantined) throw error
       throw withContext(error, requirementsWarning(npm.packageName, required))
     }
     const required = missing(npm.packageName)

@@ -1,6 +1,6 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { installFromInput, GitRepositoryApprovalRequired, locatorRefOf } = require('../dist/install.js')
+const { installFromInput, GitRepositoryApprovalRequired, PackageQuarantined, locatorRefOf } = require('../dist/install.js')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -149,6 +149,58 @@ test('approval never handles another repository, unrelated failures or unreadabl
     }
     assert.throws(() => installFromInput(app, 'fixture-owner/visits-example', { approveGitRepository: true }, execute))
     assert.ok(!calls.some(call => call.args[0] === 'config' && call.args[1] === 'set'))
+  }
+})
+
+// Yarn 4.17 with create-mercato-app's npmMinimalAgeGate: 5d (reported in minutes).
+function ageGateExecutor(calls, { gate = 7200, approved = ['@open-mercato/*'], publishedDaysAgo = 0 } = {}) {
+  let list = approved
+  const published = new Date(Date.now() - publishedDaysAgo * 86_400_000).toISOString()
+  return (command, args) => {
+    calls.push({ command, args })
+    if (args[0] === 'mercato' && args[2] === 'add') {
+      if (list.includes('@fixture/visits')) return { status: 0, stdout: '', stderr: '' }
+      throw new Error('yarn failed (exit 1). Fix the reported error and retry.')
+    }
+    if (args[0] === 'config' && args[1] === 'get') return { status: 0, stdout: JSON.stringify(args[2] === 'npmMinimalAgeGate' ? gate : list), stderr: '' }
+    if (args[0] === 'config' && args[1] === 'set') { list = JSON.parse(args.at(-1)); return { status: 0, stdout: '', stderr: '' } }
+    if (args[0] === 'npm' && args[1] === 'info')
+      return { status: 0, stdout: JSON.stringify({ time: { '0.0.1': '2020-01-01T00:00:00.000Z', '0.0.2': published, '0.0.3-beta.1': published }, 'dist-tags': { latest: '0.0.2', beta: '0.0.3-beta.1' } }), stderr: '' }
+    return { status: 0, stdout: '', stderr: '' }
+  }
+}
+
+test('a version held back by Yarn age gate explains the wait and preapproves only that package', () => {
+  for (const input of ['@fixture/visits', '@fixture/visits@0.0.2', '@fixture/visits@beta']) {
+    const calls = []
+    assert.throws(() => installFromInput(app, input, { warn() {} }, ageGateExecutor(calls)), (error) => {
+      assert.ok(error instanceof PackageQuarantined, input)
+      assert.match(error.message, /only 5 days after publication \(npmMinimalAgeGate\), and @fixture\/visits@0\.0\.[23]/)
+      assert.match(error.message, /pass --preapprove-package/)
+      return true
+    })
+    assert.ok(!calls.some(call => call.args[1] === 'set'), 'nothing changes without approval')
+  }
+  const calls = []
+  const warnings = []
+  const installed = installFromInput(app, '@fixture/visits', { preapprovePackage: true, warn: message => warnings.push(message) }, ageGateExecutor(calls))
+  assert.equal(installed.packageName, '@fixture/visits')
+  assert.deepEqual(calls.find(call => call.args[1] === 'set').args, ['config', 'set', 'npmPreapprovedPackages', '--json', JSON.stringify(['@open-mercato/*', '@fixture/visits'])])
+  assert.equal(calls.filter(call => call.args[2] === 'add').length, 2)
+  assert.match(warnings.join('\n'), /Added @fixture\/visits to this app's npmPreapprovedPackages/)
+  assert.match(new PackageQuarantined('@x/y', '1.0.0', '1 day').message, /only 1 day after publication/)
+})
+
+test('other npm installation failures keep their own error', () => {
+  for (const options of [{ gate: 0 }, { approved: ['@open-mercato/*', '@fixture/*'] }, { publishedDaysAgo: 6 }]) {
+    const calls = []
+    const execute = ageGateExecutor(calls, options)
+    const failing = (command, args, cwd, runOptions) => {
+      if (args[2] === 'add') { calls.push({ command, args }); throw new Error('yarn failed (exit 1). Fix the reported error and retry.') }
+      return execute(command, args, cwd, runOptions)
+    }
+    assert.throws(() => installFromInput(app, '@fixture/visits', { preapprovePackage: true }, failing), (error) => !(error instanceof PackageQuarantined) && /yarn failed/.test(error.message), JSON.stringify(options))
+    assert.ok(!calls.some(call => call.args[1] === 'set'), JSON.stringify(options))
   }
 })
 
