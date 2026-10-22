@@ -86,9 +86,9 @@ Defects 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 and 13 from the end-to-end report (th
 
 ### Phase 2: Install
 
-- [ ] 2.1 Parse refs of `ssh://` and `git+ssh://` locators correctly.
-- [ ] 2.2 Detect Yarn quarantine and offer `--preapprove-package`.
-- [ ] 2.3 Warn when the module's framework peers do not match the app.
+- [x] 2.1 Parse refs of `ssh://` and `git+ssh://` locators correctly. — 6153cc5
+- [x] 2.2 Detect Yarn quarantine and offer `--preapprove-package`. — 771cad9
+- [x] 2.3 Warn when the module's framework peers do not match the app. — c0706cd
 
 ### Phase 3: Link
 
