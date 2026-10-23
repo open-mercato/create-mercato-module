@@ -43,6 +43,7 @@ test('linked publication releases app edits, preserves repository customization 
   const version = { ...settings, version: '0.1.1' }
   const manifest = readJson(path.join(checkout, 'package.json'))
   manifest.author = 'Module author'
+  manifest.keywords = ['visits', 'open-mercato']
   manifest.scripts.check = 'echo custom-check'
   writeJson(path.join(checkout, 'package.json'), manifest)
   fs.writeFileSync(path.join(checkout, 'README.md'), '# Custom module documentation\n')
@@ -59,6 +60,7 @@ test('linked publication releases app edits, preserves repository customization 
   const prepared = exportLinkedPackage(app, 'visits', version, metadata)
   assert.equal(fs.readFileSync(path.join(checkout, 'package.json'), 'utf8'), originalManifest, 'export must not change checkout version')
   assert.equal(prepared.manifest.author, 'Module author')
+  assert.deepEqual(prepared.manifest.keywords, ['open-mercato', 'open-mercato-module', 'visits'], 'repository keywords stay; catalog keywords are added once')
   assert.equal(prepared.manifest.scripts.check, 'echo custom-check')
   assert.equal(prepared.manifest.version, '0.1.1')
   assert.equal(fs.readFileSync(path.join(prepared.destination, 'README.md'), 'utf8'), '# Custom module documentation\n')

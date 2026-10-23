@@ -1,0 +1,301 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modules.openmercato.com/schema/descriptor-1.json",
+  "type": "object",
+  "properties": {
+    "npm": {
+      "type": "string",
+      "maxLength": 214,
+      "pattern": "^(?:@[a-z0-9-~][a-z0-9-._~]*\\/)?[a-z0-9-~][a-z0-9-._~]*$"
+    },
+    "github": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/[A-Za-z0-9._-]{1,100}$"
+    },
+    "repo": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]+\\/[A-Za-z0-9._-]+(#[A-Za-z0-9._\\/-]+)?$"
+    },
+    "module": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "kind": {
+      "default": "module",
+      "type": "string",
+      "enum": [
+        "module",
+        "provider",
+        "library",
+        "tool"
+      ]
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "crm-sales",
+        "catalog-pricing",
+        "orders-checkout",
+        "warehouse-shipping",
+        "payments-finance",
+        "marketing-loyalty",
+        "communication",
+        "integrations-sync",
+        "ai-automation",
+        "search-analytics",
+        "auth-security",
+        "content-portal",
+        "localization-compliance",
+        "storage-infrastructure",
+        "devtools",
+        "operations"
+      ]
+    },
+    "tags": {
+      "default": [],
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{2,24}$"
+      }
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 140
+    },
+    "whenToUse": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "whenNotToUse": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "providers": {
+      "default": [],
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]{2,32}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "extends": {
+      "type": "string",
+      "pattern": "^(npm:(?:@[a-z0-9-~][a-z0-9-._~]*\\/)?[a-z0-9-~][a-z0-9-._~]*|github:[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100})$"
+    },
+    "links": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "docs": {
+          "type": "string",
+          "maxLength": 300,
+          "format": "starts_with",
+          "pattern": "^https:\\/\\/.*"
+        },
+        "support": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 300,
+              "format": "starts_with",
+              "pattern": "^https:\\/\\/.*"
+            },
+            {
+              "type": "string",
+              "pattern": "^mailto:[^\\s]+$"
+            }
+          ]
+        },
+        "demo": {
+          "type": "string",
+          "maxLength": 300,
+          "format": "starts_with",
+          "pattern": "^https:\\/\\/.*"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pricing": {
+      "default": "free",
+      "type": "string",
+      "enum": [
+        "free",
+        "paid",
+        "contact"
+      ]
+    },
+    "smoke": {
+      "type": "object",
+      "properties": {
+        "paths": {
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^\\/(backend|api)\\/[a-zA-Z0-9/_\\-.]+$"
+          }
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "additionalProperties": false
+    },
+    "scriptsRequired": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "declares": {
+      "type": "object",
+      "properties": {
+        "hosts": {
+          "default": [],
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 253,
+            "pattern": "^(\\*\\.)?([a-z0-9-]{1,63}\\.)+[a-z]{2,63}$"
+          }
+        },
+        "env": {
+          "default": [],
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "default": "active",
+      "type": "string",
+      "enum": [
+        "active",
+        "hold",
+        "unmaintained",
+        "delisted"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "alternatives": {
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(npm:(?:@[a-z0-9-~][a-z0-9-._~]*\\/)?[a-z0-9-~][a-z0-9-._~]*|github:[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100})$"
+      }
+    },
+    "replaces": {
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^core:[a-z][a-z0-9_]*$"
+      }
+    },
+    "renamedFrom": {
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(npm:(?:@[a-z0-9-~][a-z0-9-._~]*\\/)?[a-z0-9-~][a-z0-9-._~]*|github:[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100})$"
+      }
+    },
+    "supersededBy": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^(npm:(?:@[a-z0-9-~][a-z0-9-._~]*\\/)?[a-z0-9-~][a-z0-9-._~]*|github:[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100})$"
+        },
+        {
+          "type": "string",
+          "pattern": "^core:[a-z][a-z0-9_]*$"
+        }
+      ]
+    },
+    "enterprise": {
+      "type": "object",
+      "properties": {
+        "offerUrl": {
+          "type": "string",
+          "maxLength": 300,
+          "format": "starts_with",
+          "pattern": "^https:\\/\\/.*"
+        },
+        "modules": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          }
+        }
+      },
+      "required": [
+        "offerUrl",
+        "modules"
+      ],
+      "additionalProperties": false
+    },
+    "featured": {
+      "default": false,
+      "type": "boolean"
+    },
+    "aliases": {
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40
+      }
+    }
+  },
+  "required": [
+    "category",
+    "summary",
+    "whenToUse"
+  ],
+  "additionalProperties": false
+}

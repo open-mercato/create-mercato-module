@@ -162,6 +162,7 @@ test('publication needs the package name retyped interactively and explicit appr
   const confirmed = cli(arguments_)
   assert.equal(confirmed.status, 0, confirmed.output)
   assert.match(confirmed.output, /Submitted @fixture\/visits@0\.1\.0/)
+  assert.match(confirmed.output, /Add it to the catalog: https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits/)
   assert.equal(JSON.parse(fs.readFileSync(process.env.FIXTURE_REGISTRY, 'utf8'))[0], 'publish')
   assert.equal(loadConfig(app).modules.visits.lastPublishedVersion, '0.1.0')
   delete process.env.FIXTURE_CONFIRMATION
