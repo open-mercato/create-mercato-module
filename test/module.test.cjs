@@ -45,11 +45,12 @@ test('init registers and localizes a working page; refuses duplicate modules wit
   const before = fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8')
   assert.match(before, /id: 'visits', from: '@app'/)
   assert.match(fs.readFileSync(path.join(directory, 'backend/visits/page.meta.ts'), 'utf8'), /requireAuth: true/)
+  assert.match(fs.readFileSync(path.join(directory, 'index.ts'), 'utf8'), /version: '0\.1\.0',\n {2}description: '',\n {2}license: '',\n/)
   assert.equal(readJson(path.join(directory, 'i18n/en.json'))['visits.title'], 'Visits')
   assert.throws(() => scaffold(app, 'visits'), /already exists/)
   assert.equal(fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8'), before)
   const described = scaffold(app, 'visit_notes', "Keeps the team's notes \\ for visits.")
-  assert.match(fs.readFileSync(path.join(described, 'index.ts'), 'utf8'), /version: '0\.1\.0',\n {2}description: 'Keeps the team\\'s notes \\\\ for visits\.',\n {2}ejectable: true,/)
+  assert.match(fs.readFileSync(path.join(described, 'index.ts'), 'utf8'), /version: '0\.1\.0',\n {2}description: 'Keeps the team\\'s notes \\\\ for visits\.',\n {2}license: '',\n {2}ejectable: true,/)
   assert.equal(moduleInfo(described).description, "Keeps the team's notes \\ for visits.")
 })
 
@@ -376,7 +377,7 @@ test('dedicated repository publication creates and updates an isolated repo with
   run('git', ['remote', 'add', 'origin', 'https://example.com/whole-app.git'], app.directory, { capture: true })
   const before = run('git', ['status', '--porcelain'], app.directory, { capture: true }).stdout
   const remote = path.join(root, 'module.git')
-  const publication = { ...settings, repository: 'fixture/visits' }
+  const publication = { ...settings, repository: 'fixture/visits', license: 'MIT' }
   let creations = 0
   function execute(command, args, cwd, options) {
     if (command !== 'gh') return run(command, args, cwd, options)
@@ -393,6 +394,7 @@ test('dedicated repository publication creates and updates an isolated repo with
   publishRepository(first, publication, execute)
   assert.equal(creations, 1)
   assert.equal(JSON.parse(run('git', ['--git-dir', remote, 'show', 'main:package.json'], root, { capture: true }).stdout).name, settings.packageName)
+  assert.match(run('git', ['--git-dir', remote, 'show', 'main:LICENSE'], root, { capture: true }).stdout, /^MIT License/)
   const updated = { ...publication, version: '0.1.1' }
   addFile(directory, 'new-feature.ts', 'export const enabled = true\n')
   const remoteHead = () => run('git', ['--git-dir', remote, 'rev-parse', 'main'], root, { capture: true }).stdout.trim()
@@ -496,12 +498,28 @@ test('releases are tagged with the bare version so the generated v* workflow doe
 test('package metadata takes the module description and links the dedicated repository', (context) => {
   const { app, directory, destination } = fixture(context)
   const index = path.join(directory, 'index.ts')
-  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  ejectable: true,\n", "  ejectable: true,\n  description: 'Plans customer visits.',\n"))
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  description: '',", "  description: 'Plans customer visits.',"))
   const prepared = preparePackage(app, 'visits', { ...settings, repository: 'fixture/visits' }, destination)
   assert.equal(prepared.manifest.description, 'Plans customer visits.')
   assert.deepEqual(prepared.manifest.keywords, ['open-mercato', 'open-mercato-module'])
   assert.equal(prepared.manifest.homepage, 'https://github.com/fixture/visits#readme')
   assert.deepEqual(prepared.manifest.bugs, { url: 'https://github.com/fixture/visits/issues' })
+})
+
+test('the chosen license reaches package.json, and MIT ships its LICENSE text', (context) => {
+  const { app, directory, root } = fixture(context)
+  const mit = preparePackage(app, 'visits', { ...settings, license: 'MIT' }, path.join(root, 'mit'))
+  assert.equal(mit.manifest.license, 'MIT')
+  assert.match(fs.readFileSync(path.join(root, 'mit/LICENSE'), 'utf8'), /^MIT License\n\nCopyright \(c\) \d{4} @fixture\/visits authors\n/)
+  const unset = preparePackage(app, 'visits', settings, path.join(root, 'unset'))
+  assert.equal(unset.manifest.license, 'UNLICENSED', 'no choice keeps the earlier default')
+  assert.ok(!fs.existsSync(path.join(root, 'unset/LICENSE')))
+  const index = path.join(directory, 'index.ts')
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  license: '',", "  license: 'Apache-2.0',"))
+  assert.equal(preparePackage(app, 'visits', settings, path.join(root, 'declared')).manifest.license, 'Apache-2.0')
+  assert.ok(!fs.existsSync(path.join(root, 'declared/LICENSE')), 'only the MIT text ships with the tool')
+  assert.throws(() => validateSettings({ ...settings, license: 'MIT; rm -rf /' }), /SPDX license/)
+  assert.doesNotThrow(() => validateSettings({ ...settings, license: '(MIT OR Apache-2.0)' }))
 })
 
 test('generated module README uses the tool install command and explains the Yarn age gate', (context) => {

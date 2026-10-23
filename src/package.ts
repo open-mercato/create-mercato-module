@@ -49,6 +49,14 @@ function npmInstallLocator(packageName: string): string {
   return packageName.startsWith('@') ? packageName : `npm:${packageName}`
 }
 
+// An SPDX license expression such as MIT or (MIT OR Apache-2.0), or UNLICENSED.
+const licensePattern =
+  /^\(?[A-Za-z0-9][A-Za-z0-9.+-]*\)?(?: (?:AND|OR|WITH) \(?[A-Za-z0-9][A-Za-z0-9.+-]*\)?)*$/
+
+function mitLicense(holder: string): string {
+  return `MIT License\n\nCopyright (c) ${new Date().getFullYear()} ${holder}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n`
+}
+
 const localLocator =
   /^(?:workspace:|file:|link:|portal:|patch:|git\+|git:|ssh:|https?:|github:)/
 
@@ -91,6 +99,13 @@ function validateSettings(settings: Settings): void {
       'Use an npm tag such as latest, next, or beta. Tags cannot be version numbers or version ranges.',
     )
   if (
+    settings.license &&
+    (settings.license.length > 100 || !licensePattern.test(settings.license))
+  )
+    throw new Error(
+      'Use an SPDX license such as MIT or Apache-2.0, or UNLICENSED for a proprietary module.',
+    )
+  if (
     settings.repository &&
     !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(
       settings.repository,
@@ -103,7 +118,11 @@ function validateSettings(settings: Settings): void {
 
 // Plain string fields of the module's `metadata` export (Open Mercato
 // ModuleInfo), read from the syntax tree without running module code.
-function moduleInfo(moduleRoot: string): { title?: string; description?: string } {
+function moduleInfo(moduleRoot: string): {
+  title?: string
+  description?: string
+  license?: string
+} {
   let source: ts.SourceFile
   try {
     const file = path.join(moduleRoot, 'index.ts')
@@ -116,7 +135,7 @@ function moduleInfo(moduleRoot: string): { title?: string; description?: string 
   } catch {
     return {}
   }
-  const info: { title?: string; description?: string } = {}
+  const info: { title?: string; description?: string; license?: string } = {}
   function visit(node: ts.Node): void {
     if (
       ts.isVariableDeclaration(node) &&
@@ -136,7 +155,9 @@ function moduleInfo(moduleRoot: string): { title?: string; description?: string 
           if (
             ts.isPropertyAssignment(entry) &&
             (ts.isIdentifier(entry.name) || ts.isStringLiteralLike(entry.name)) &&
-            (entry.name.text === 'title' || entry.name.text === 'description') &&
+            (entry.name.text === 'title' ||
+              entry.name.text === 'description' ||
+              entry.name.text === 'license') &&
             ts.isStringLiteralLike(entry.initializer) &&
             entry.initializer.text.trim()
           )
@@ -146,6 +167,22 @@ function moduleInfo(moduleRoot: string): { title?: string; description?: string 
   }
   visit(source)
   return info
+}
+
+// The publish setting, then the module's metadata, then the app's license.
+function packageLicense(
+  app: App,
+  settings: Settings,
+  moduleLicense?: string,
+): string {
+  return (
+    settings.license ||
+    (moduleLicense && licensePattern.test(moduleLicense)
+      ? moduleLicense
+      : '') ||
+    app.manifest.license ||
+    'UNLICENSED'
+  )
 }
 
 function installedVersion(app: App, name: string): string {
@@ -240,13 +277,13 @@ function preparePackage(
     settings.repository ||
     (settings.auth === 'trusted' && process.env.GITHUB_REPOSITORY) ||
     ''
+  const info = moduleInfo(sourceRoot)
   const manifest = {
     name: settings.packageName,
     version: settings.version,
-    description:
-      moduleInfo(sourceRoot).description || fallbackDescription(id),
+    description: info.description || fallbackDescription(id),
     keywords: [...moduleKeywords],
-    license: app.manifest.license || 'UNLICENSED',
+    license: packageLicense(app, settings, info.license),
     type: 'module',
     main: './dist/index.js',
     files: ['src', 'dist', 'types', 'build.cjs', 'README.md'],
@@ -288,6 +325,11 @@ function preparePackage(
     path.join(destination, 'src/.npmignore'),
     '**/__tests__/\n**/__integration__/\n**/__mocks__/\n**/*.test.*\n**/*.spec.*\n**/*.typecheck.*\n**/node_modules/\n**/.git/\n',
   )
+  if (manifest.license === 'MIT')
+    fs.writeFileSync(
+      path.join(destination, 'LICENSE'),
+      mitLicense(`${settings.packageName} authors`),
+    )
   fs.copyFileSync(
     path.join(__dirname, 'build.js'),
     path.join(destination, 'build.cjs'),
@@ -314,6 +356,7 @@ export {
   validateSettings,
   installedVersion,
   moduleInfo,
+  packageLicense,
   preparePackage,
   localLocator,
   ageGateNote,

@@ -32,6 +32,8 @@ export interface Settings {
   repository?: string
   auth?: string
   tag?: string
+  // SPDX expression or UNLICENSED; unset keeps the module or app license.
+  license?: string
 }
 
 export interface SavedSettings extends Settings {

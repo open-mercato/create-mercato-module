@@ -270,6 +270,12 @@ function exportLinkedPackage(
       fs.copyFileSync(file, path.join(prepared.destination, name))
     }
   }
+  // The repository keeps its own license; a generated LICENSE must match it.
+  if (
+    !fs.existsSync(path.join(checkout, 'LICENSE')) &&
+    manifest.license !== prepared.manifest.license
+  )
+    fs.rmSync(path.join(prepared.destination, 'LICENSE'), { force: true })
   const workflow = path.join(checkout, '.github/workflows/publish.yml')
   const notes =
     fs.existsSync(workflow) &&
@@ -637,6 +643,8 @@ function publishRepository(
     '.gitignore',
     '.github/workflows/publish.yml',
   ]
+  if (fs.existsSync(path.join(prepared.destination, 'LICENSE')))
+    owned.push('LICENSE')
   validateMutablePaths(checkout, owned)
   for (const name of owned) {
     const destination = path.join(checkout, name)

@@ -10,6 +10,7 @@ import {
   catalogPendingNote,
   catalogSubmitUrl,
   catalogUrl,
+  moduleInfo,
   npmInstallLocator,
 } from './package.js'
 import { validateSettings } from './package.js'
@@ -59,6 +60,8 @@ Publish options:
   --tag beta                  npm release channel (stable: latest; prerelease: next)
   --repo your-name/mercato-visits  optional dedicated GitHub repository; - skips GitHub
   --access public|restricted  npm and new GitHub repo visibility (default public)
+  --license MIT               SPDX license; UNLICENSED means proprietary
+                              (the wizard suggests MIT; default: module or app license)
   --auth auto|login|token|trusted  npm authentication (default auto)
   --configure                edit saved settings in the interactive wizard
   --dry-run                  build a local .tgz; no GitHub/npm writes or login needed
@@ -161,7 +164,7 @@ function parse(argv: string[]): ParsedArguments {
             : ['no-generate']
   const values =
     command === 'publish'
-      ? ['package', 'version', 'repo', 'access', 'auth', 'tag']
+      ? ['package', 'version', 'repo', 'access', 'auth', 'tag', 'license']
       : command === 'link'
         ? ['package', 'repo']
         : command === 'install'
@@ -240,6 +243,9 @@ function publicationSettings(
         : String(flags.repo),
     access: String(flags.access || '') || previous.access || 'public',
     auth: String(flags.auth || '') || previous.auth || 'auto',
+    ...(flags.license || previous.license
+      ? { license: String(flags.license || '') || previous.license }
+      : {}),
   }
 }
 
@@ -476,6 +482,20 @@ async function main(argv = process.argv.slice(2)) {
           '🔐 Access: public or restricted',
           settings.access,
         )
+      // A linked repository keeps its own license.
+      if (
+        !previous.development &&
+        !args.flags.license &&
+        (configure || !previous.license)
+      )
+        settings.license = await ask(
+          '⚖️ License (SPDX, e.g. MIT; UNLICENSED means proprietary)',
+          settings.license ||
+            moduleInfo(path.join(app.directory, 'src/modules', args.id))
+              .license ||
+            app.manifest.license ||
+            'MIT',
+        )
     }
     if (settings.repository === '-') settings.repository = ''
     settings.tag = releaseTag(settings.version, previous, args.flags.tag)
@@ -500,7 +520,7 @@ async function main(argv = process.argv.slice(2)) {
           ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created before npm publication; it stays if npm rejects the package; tagged ${settings.version} and given the open-mercato-module and open-mercato topics once npm accepts it)`
           : `${settings.repository} (existing ${repository.private ? 'private' : 'PUBLIC'} repository; tagged ${settings.version} and given the open-mercato-module and open-mercato topics once npm accepts it)`
     console.log(
-      `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
+      `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n⚖️ License:    ${prepared.manifest.license ?? 'none'}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
     )
     const risks = publicationRisks(prepared, settings, repository)
     for (const risk of risks)

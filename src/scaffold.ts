@@ -78,7 +78,7 @@ function scaffold(app: App, id: string, description = ''): string {
     .join(' ')
   const quoted = description.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
   const files = {
-    'index.ts': `import type { ModuleInfo } from '@open-mercato/shared/modules/registry'\n\nexport const metadata: ModuleInfo = {\n  name: '${id}',\n  title: '${title}',\n  version: '0.1.0',\n${description ? `  description: '${quoted}',\n` : ''}  ejectable: true,\n}\n`,
+    'index.ts': `import type { ModuleInfo } from '@open-mercato/shared/modules/registry'\n\nexport const metadata: ModuleInfo = {\n  name: '${id}',\n  title: '${title}',\n  version: '0.1.0',\n  description: '${quoted}',\n  license: '',\n  ejectable: true,\n}\n`,
     [`backend/${id}/page.tsx`]: `import { Page, PageBody } from '@open-mercato/ui/backend/Page'\nimport { resolveTranslations } from '@open-mercato/shared/lib/i18n/server'\n\nexport default async function ModulePage() {\n  const { t } = await resolveTranslations()\n  return (\n    <Page>\n      <PageBody>\n        <h1 className="text-2xl font-semibold">{t('${id}.title')}</h1>\n        <p className="text-muted-foreground">{t('${id}.welcome')}</p>\n      </PageBody>\n    </Page>\n  )\n}\n`,
     [`backend/${id}/page.meta.ts`]: `import type { PageMetadata } from '@open-mercato/shared/modules/registry'\n\nexport const metadata: PageMetadata = {\n  requireAuth: true,\n  title: '${title}',\n  titleKey: '${id}.title',\n}\n`,
     'i18n/en.json': `${JSON.stringify({ [`${id}.title`]: title, [`${id}.welcome`]: 'Your module is ready. Start building here.' }, null, 2)}\n`,

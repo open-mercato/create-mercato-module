@@ -119,6 +119,7 @@ Packages one local module and publishes it after confirmation.
 | `--repo -` | Clear a saved GitHub repository; publish only to npm |
 | `--access public` | Public npm package and public new GitHub repository; default |
 | `--access restricted` | Private npm package and private new GitHub repository |
+| `--license MIT` | SPDX license for the package, such as `MIT` or `Apache-2.0`; `UNLICENSED` means proprietary |
 | `--auth auto\|login\|token\|trusted` | Choose npm authentication; defaults to `auto` |
 | `--configure` | Reopen the wizard to edit remembered settings |
 | `--dry-run` | Build the archive without publishing or saving settings |
@@ -382,7 +383,7 @@ The package includes `src/modules/<id>`, `dist/modules/<id>`, and portable `type
 
 Imported dependencies are recorded from installed versions. Framework packages, React, Next.js, and MikroORM become caret-range peers from the source app's versions, such as `^0.9.0`, and exact `devDependencies` for building the module repository. `install` warns when an app's `@open-mercato/*` versions fall outside those peers. Other imported packages become runtime dependencies.
 
-The initial module license follows the app's `package.json` `license` field, or defaults to `UNLICENSED`. Linked releases preserve the module repository's own license. Choose the appropriate license before publishing. The tool itself is MIT licensed.
+The package license is the one you choose: the wizard asks once and suggests the `license` from the module's `metadata`, then the app's `package.json` `license`, then `MIT`; scripts pass `--license`. Without a choice, as in scripts that predate the option, the license follows the module's `metadata`, then the app, and defaults to `UNLICENSED`. An MIT package and its dedicated repository get a `LICENSE` file with the MIT text. Linked releases preserve the module repository's own license. The tool itself is MIT licensed.
 
 The package description is the `description` in the module's `metadata`, or `Open Mercato module: <id>`. Every package gets the keywords `open-mercato` and `open-mercato-module`, which [Open Mercato Modules](#list-your-module) and npm search use, and a package with a dedicated repository gets its `homepage` and `bugs` links. Linked releases keep the repository's description, homepage and keywords and add the two keywords when they are missing. A repository description that is empty or still `Open Mercato module: <id>`, as the first export writes it, gives way to the one in the module's `metadata`.
 

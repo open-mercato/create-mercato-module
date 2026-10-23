@@ -81,6 +81,7 @@ function settingsFrom(value: unknown): SavedSettings {
     'repository',
     'auth',
     'tag',
+    'license',
     'lastPublishedVersion',
   ] as const
   for (const key of keys) {
