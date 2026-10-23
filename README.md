@@ -172,6 +172,16 @@ npx create-mercato-module publish visits \
 
 This builds a real `.tgz` under `.mercato/module-publish/`, without login or publication. See the [command reference](docs/guide.md#command-reference) for repository, version, access, and automation options.
 
+## List your module in the catalog
+
+[Open Mercato Modules](https://modules.openmercato.com) lists official and community modules for people and coding agents. After a public release, `publish` prints the link that adds yours. To prepare the entry yourself:
+
+```bash
+npx create-mercato-module describe visits
+```
+
+It prints the catalog entry from your saved publish settings; `--open` also opens the submit page. Published packages carry the `open-mercato` and `open-mercato-module` keywords, and dedicated repositories get the `open-mercato-module` and `open-mercato` topics.
+
 ## Documentation
 
 | Topic | Guide |
@@ -180,6 +190,7 @@ This builds a real `.tgz` under `.mercato/module-publish/`, without login or pub
 | Login and npm tokens | [Authentication](docs/guide.md#authentication) |
 | GitHub Actions without a write token | [Trusted Publishing](docs/guide.md#npm-trusted-publishing) |
 | Contents, dependencies, and portable imports | [Package contents](docs/guide.md#what-ships-in-the-package) |
+| List your module in Open Mercato Modules | [List your module](docs/guide.md#list-your-module) |
 | Errors mentioning `.mercato/generated` | [Generated-import errors](docs/guide.md#an-error-mentions-mercatogenerated) |
 | Settings, Git, and releases | [Release behavior](docs/guide.md#how-git-and-releases-work) |
 | Run the unreleased GitHub version | [GitHub installation](docs/guide.md#try-the-github-version) |

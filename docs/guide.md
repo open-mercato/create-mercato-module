@@ -3,6 +3,7 @@
 [Back to the README](../README.md)
 
 - [Command reference](#command-reference)
+- [List your module](#list-your-module)
 - [Authentication](#authentication)
 - [npm Trusted Publishing](#npm-trusted-publishing)
 - [Package contents and portability](#what-ships-in-the-package)
@@ -274,6 +275,40 @@ Linked publication reads the owned checkout, including custom local checkout nam
 
 Makes a linked module an ordinary local module again. The checkout's current source, including uncommitted edits, is copied into `src/modules/<module_id>`, and the development link is removed from `.mercato/module-tool.json`. The package name, repository and released versions stay saved, so `publish <module_id>` exports from the app again; if the repository's latest commit came from the linked checkout, publish asks for `--overwrite-repo` approval first. The checkout under `.mercato/module-repos/` and the source backed up when linking stay in place for you to inspect or delete. `src/modules.ts` is not changed. If saving the settings fails, the symlink is restored.
 
+### `describe <module_id>`
+
+Prints the module's [Open Mercato Modules](https://modules.openmercato.com) entry as YAML. It reads the saved publish settings and the module's `metadata` and needs no network or login. See [List your module](#list-your-module).
+
+| Option | Behavior |
+|---|---|
+| `--open` | Also open the catalog's submit page for the package in your browser |
+
+## List your module
+
+Open Mercato Modules lists official and community modules with what they add to an app and the Open Mercato versions they install on. Coding agents search it before building a feature. The catalog lists public npm packages and GitHub repositories.
+
+After a public release, `publish` prints the submit link for your package. Open it, check the entry, and the page opens the pull request for you. To prepare the entry in the terminal instead:
+
+```bash
+npx create-mercato-module describe visits
+```
+
+```yaml
+# Open Mercato Modules entry for @your-name/mercato-visits, as modules/@your-name/mercato-visits.yml.
+# Replace each TODO value, then submit the module at
+# https://modules.openmercato.com/submit?npm=@your-name/mercato-visits
+npm: "@your-name/mercato-visits"
+github: your-name/mercato-visits
+# Categories: crm-sales, catalog-pricing, orders-checkout, ...
+category: operations # TODO: choose the category that fits
+summary: Visits module for Open Mercato apps. # TODO: what it adds, 20 to 140 characters
+whenToUse: Use when an Open Mercato app needs the Visits module. # TODO: when an app needs it, 40 to 240 characters
+```
+
+`summary` comes from `description` in the module's `metadata` (`src/modules/<id>/index.ts`) when it is 20 to 140 characters of plain text; set it there and the same text becomes the npm package description. Replace each `TODO` value before you submit. Restricted packages cannot be listed, so `describe` stops for them.
+
+To help people find your module without the catalog too, every generated `package.json` has the keywords `open-mercato` and `open-mercato-module`, and a dedicated GitHub repository gets the `open-mercato-module` and `open-mercato` topics.
+
 ## Authentication
 
 Publication checks npm authentication before building the archive and checks GitHub authentication before work requiring a repository. GitHub forms of `install` and `link` check GitHub first. npm forms of `install`, `init`, `--help`, and `publish --dry-run` do not require GitHub authentication.
@@ -332,6 +367,8 @@ Imported dependencies are recorded from installed versions. Framework packages, 
 
 The initial module license follows the app's `package.json` `license` field, or defaults to `UNLICENSED`. Linked releases preserve the module repository's own license. Choose the appropriate license before publishing. The tool itself is MIT licensed.
 
+The package description is the `description` in the module's `metadata`, or `Open Mercato module: <id>`. Every package gets the keywords `open-mercato` and `open-mercato-module`, which [Open Mercato Modules](#list-your-module) and npm search use, and a package with a dedicated repository gets its `homepage` and `bugs` links. Linked releases keep the repository's description, homepage and keywords and add the two keywords when they are missing.
+
 ### Keep your module portable
 
 Imports within the selected module, including `@/modules/visits/...`, become portable relative imports. Publication stops with an actionable error for app-only aliases, imports of another local module, local/Git dependency locators, CommonJS `require()` / `import = require`, symlinks, and recognizable embedded credentials.
@@ -365,7 +402,7 @@ For an entity identifier, use the owning module's stable `module:entity` ID, or 
 
 Without `link`, the application module remains the source of truth. The tool does not commit, push, or change the app's Git origin. GitHub export uses an isolated checkout under `.mercato/module-publish/`, then pushes a normal commit without forcing history. Existing repositories must be empty or contain the matching package and this tool's ownership marker. The export replaces the repository's `src`, `dist`, `types`, `README.md`, and workflow with the app's module, so when the repository's latest commit was not released from an app by this tool (a merged pull request, an edit on GitHub, a release from a linked checkout), the tool warns and asks for approval first. Release commits carry a `Mercato-Source:` trailer for this, so the check works from any machine and in CI. Exports older than 15 minutes are removed from `.mercato/module-publish/` on the next export. With `link`, the independent checkout becomes the module source; the app's symlink keeps development inside the same app.
 
-GitHub is updated before npm publication: a retry after an npm failure finds the release commit and adds no second one, while a published npm version can never be redone. A new repository is therefore created, with the visibility shown in the summary, even if npm then rejects the package. If npm fails after the push, the error names the repository and the pushed commit; fix the reported npm issue and run publish again with the same version. Once npm accepts the release, the tool tags its commit with the bare version (for example `1.2.3`) through the GitHub API so `install owner/repo@1.2.3` resolves it. A failed tag request only warns, because the npm release is already out, and prints the command that creates the tag.
+GitHub is updated before npm publication: a retry after an npm failure finds the release commit and adds no second one, while a published npm version can never be redone. A new repository is therefore created, with the visibility shown in the summary, even if npm then rejects the package. If npm fails after the push, the error names the repository and the pushed commit; fix the reported npm issue and run publish again with the same version. Once npm accepts the release, the tool tags its commit with the bare version (for example `1.2.3`) through the GitHub API so `install owner/repo@1.2.3` resolves it. A failed tag request only warns, because the npm release is already out, and prints the command that creates the tag. Then it adds the `open-mercato-module` and `open-mercato` topics to the repository (`gh repo edit --add-topic`); adding them again changes nothing, and a refused request is ignored.
 
 Keep `.mercato/` ignored by Git; Open Mercato sandboxes already exclude it. `.mercato/module-tool.json` stores per-module publishing settings, last successful versions, and owned development-link paths. It contains no tokens. Authentication stays in the environment or the npm/GitHub CLI session. The original `mercato-modules.json` file remains a compatible settings input.
 
