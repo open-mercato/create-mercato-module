@@ -7,7 +7,8 @@
 - `publish` tags each release commit with its bare version (`1.2.3`) once npm accepts it, so `install owner/repo@1.2.3` works for repositories released by this tool. The bare tag does not start the generated `publish.yml` (`v*`). Newly generated workflows also skip publication when the version is already on npm; existing repositories keep their workflow until the next export from the app.
 - When npm rejects a release after the GitHub push, the error names the repository, says whether this run created it, and gives the pushed commit. The summary says a new repository is created before npm publication.
 - New `unlink <module_id>` command turns a linked module back into an ordinary local module and keeps the checkout and backup. Messages that mentioned unlinking now name it.
-- `install` warns once when a module's `@open-mercato/*` peers differ from the app's framework versions. Published peers stay exact.
+- `install` warns once when a module's `@open-mercato/*` peers differ from the app's framework versions.
+- **Peer ranges:** published packages declare framework, React, Next.js and MikroORM peers as caret ranges of the source app's versions (`^0.9.0` instead of `0.9.0`), so apps on later compatible releases install them without Yarn peer warnings and Open Mercato Modules no longer reports `peer-exact-pin`. `devDependencies` keep the exact versions the module repository builds against.
 - **Exit code:** cancelling the publish wizard by not retyping the package name now exits with code 1 instead of 0, so wrapping scripts can tell a cancellation from a release.
 - SSH locators such as `ssh://git@github.com/owner/repo` no longer read `git@…` as a Git ref, and linked publish compares the configured origin URL, so `insteadOf` rewrites no longer make a valid checkout look foreign.
 - The `pkarw/visits-example` example, which no longer exists, is replaced by `pkarw/marketing-consents`.

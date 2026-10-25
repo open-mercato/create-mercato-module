@@ -166,6 +166,7 @@ function preparePackage(
     }
   }
   const peers: Record<string, string> = {}
+  const built: Record<string, string> = {}
   const runtime: Record<string, string> = {}
   for (const name of [...dependencies].sort()) {
     const declared =
@@ -183,7 +184,12 @@ function preparePackage(
       name.startsWith('@open-mercato/') ||
       name.startsWith('@mikro-orm/') ||
       ['react', 'react-dom', 'next'].includes(name)
-    ;(singleton ? peers : runtime)[name] = version
+    if (singleton) {
+      // Apps on later compatible framework releases accept the module without
+      // Yarn peer warnings; the module repository builds against the exact one.
+      peers[name] = `^${version}`
+      built[name] = version
+    } else runtime[name] = version
   }
   if (fs.existsSync(destination))
     throw new Error(`Export directory already exists: ${destination}`)
@@ -228,7 +234,7 @@ function preparePackage(
     engines: { node: '>=24' },
     ...(Object.keys(runtime).length ? { dependencies: runtime } : {}),
     peerDependencies: peers,
-    devDependencies: { typescript: typescriptVersion, ...peers },
+    devDependencies: { typescript: typescriptVersion, ...built },
     publishConfig: { access: settings.access },
     ...(repository
       ? {
