@@ -280,7 +280,7 @@ Makes a linked module an ordinary local module again. The checkout's current sou
 
 ### `describe <module_id>`
 
-Prints the module's [Open Mercato Modules](https://modules.openmercato.com) entry as YAML. It reads the saved publish settings and the module's `metadata` and needs no network or login. See [List your module](#list-your-module).
+Prints the module's Open Mercato Modules entry as YAML. It reads the saved publish settings and the module's `metadata` and needs no network or login. See [List your module](#list-your-module).
 
 | Option | Behavior |
 |---|---|
@@ -291,9 +291,9 @@ Open Mercato Modules has not launched yet. Until it does, `describe`, `publish` 
 
 ## List your module
 
-Open Mercato Modules lists official and community modules with what they add to an app and the Open Mercato versions they install on. Coding agents can check it before they build a feature (see For agents on the catalog site). The catalog lists public npm packages and GitHub repositories.
+Open Mercato Modules, the catalog at modules.openmercato.com, will list official and community modules with what they add to an app and the Open Mercato versions they install on. Coding agents will be able to check it before they build a feature (see For agents on the catalog site). The catalog lists public npm packages and GitHub repositories.
 
-After a public release, `publish` prints the submit link for your package. Open it and check the entry. The page builds the entry and opens GitHub with the file filled in; commit it and open the pull request. To prepare the entry in the terminal instead:
+The catalog has not launched yet, so its submit page does not open and no module can be listed yet. Until it launches, prepare the entry with `describe` below and submit it once the site opens; npm search already finds your package by the keywords every release carries. After launch, `publish` prints the submit link for your package after a public release. Open it and check the entry. The page builds the entry and opens GitHub with the file filled in; commit it and open the pull request. To prepare the entry in the terminal instead:
 
 ```bash
 npx create-mercato-module describe visits
@@ -304,6 +304,7 @@ npx create-mercato-module describe visits
 # Write each value marked TODO, then delete those TODO comments (the catalog rejects a file that still has them).
 # Submit the module at
 # https://modules.openmercato.com/submit?npm=@your-name/mercato-visits
+# Open Mercato Modules has not launched yet, so this link does not open until it does.
 
 npm: "@your-name/mercato-visits"
 github: your-name/mercato-visits
@@ -312,6 +313,8 @@ category: operations # choose the category that fits
 summary: Visits module for Open Mercato apps. # TODO: what it adds, 20 to 140 characters
 whenToUse: Use when an Open Mercato app needs the Visits module. # TODO: when an app needs it, 40 to 240 characters
 ```
+
+Before the package's first release, which you describe with `--package`, the header also says `# Publish the package to npm before you submit: the catalog reads it from npm.` The pending-launch line goes once the catalog launches, or when `MERCATO_CATALOG_URL` names another deployment.
 
 `summary` comes from `description` in the module's `metadata` (`src/modules/<id>/index.ts`) when it is 20 to 140 characters of plain text; set it there and the same text becomes the npm package description. Write each value marked `TODO` and delete the `# TODO` comments before you submit: the catalog's check rejects a file that still has them, even when the value next to a comment is right. Keep `category: operations` if it fits. Restricted packages cannot be listed, so `describe` stops for them.
 
