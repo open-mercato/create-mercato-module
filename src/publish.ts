@@ -595,7 +595,9 @@ function repositoryLicense(
 
 // publishRepository keeps a LICENSE the author wrote in the dedicated
 // repository and replaces only the text this tool wrote for the same holder.
-// The npm package ships the LICENSE the repository keeps, so both say the same.
+// An MIT package ships the LICENSE the repository keeps, so both say the same.
+// A package under another license never carries it: the file may grant rights
+// the license field does not, so the summary warns about the mismatch instead.
 function adoptRepositoryLicense(
   prepared: ExportedPackage,
   settings: Settings,
@@ -609,6 +611,17 @@ function adoptRepositoryLicense(
     )
   )
     return prepared
+  if (prepared.manifest.license !== 'MIT')
+    return {
+      ...prepared,
+      warnings: [
+        ...(prepared.warnings ?? []),
+        keptLicenseWarning(
+          settings.repository!,
+          String(prepared.manifest.license ?? 'UNLICENSED'),
+        ),
+      ],
+    }
   const license = path.join(prepared.destination, 'LICENSE')
   if (fs.existsSync(license) && fs.readFileSync(license, 'utf8') === text)
     return prepared
@@ -622,6 +635,12 @@ function adoptRepositoryLicense(
       `${settings.repository} keeps its own LICENSE, so the npm package carries that file.`,
     ],
   }
+}
+
+// Printed when the dedicated repository keeps a LICENSE of its own and the
+// package goes out under a license other than MIT.
+function keptLicenseWarning(repository: string, license: string): string {
+  return `${repository} keeps its own LICENSE, but this package is published as ${license}, so the npm package does not carry that file.\n   The release leaves the repository LICENSE as it is. If it no longer applies, edit or remove it in ${repository}; if it does, publish with the license it grants, such as --license MIT.`
 }
 
 function githubState(repository: string, cwd: string, execute: Executor = run) {
@@ -1010,6 +1029,7 @@ export {
   ignoredLicenseWarning,
   repositoryLicense,
   adoptRepositoryLicense,
+  keptLicenseWarning,
   packEntries,
   tagRelease,
 }

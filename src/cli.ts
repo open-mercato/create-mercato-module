@@ -520,8 +520,9 @@ async function main(argv = process.argv.slice(2)) {
       !args.flags['dry-run'] && settings.repository
         ? inspectRepository(settings.repository, app.directory)
         : undefined
-    // The release keeps a LICENSE the author wrote in the dedicated repository,
-    // so the archive approved below carries the same file.
+    // The release keeps a LICENSE the author wrote in the dedicated repository.
+    // An MIT archive approved below carries the same file; for another license
+    // the summary warns that the repository file stays and npm does not get it.
     if (repository?.head && !prepared.linkedCheckout) {
       const license = repositoryLicense(
         settings.repository!,
@@ -545,6 +546,8 @@ async function main(argv = process.argv.slice(2)) {
     for (const risk of risks)
       console.log(`\n⚠️ ${risk.message}\n   Option: --${risk.flag}`)
     for (const note of prepared.notes ?? []) console.log(`\nℹ️ ${note}`)
+    for (const warning of prepared.warnings ?? [])
+      console.log(`\n⚠️ ${warning}`)
     if (prepared.licenseDefaulted)
       console.log(`\n⚠️ ${unchosenLicenseWarning(settings.packageName)}`)
     if (

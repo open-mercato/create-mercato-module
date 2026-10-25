@@ -72,6 +72,8 @@ export interface ExportedPackage extends PreparedPackage {
   linkedBranch?: string
   installScripts?: string[]
   notes?: string[]
+  // Shown with a warning sign in the publish summary.
+  warnings?: string[]
 }
 
 export type RunOptions = Omit<

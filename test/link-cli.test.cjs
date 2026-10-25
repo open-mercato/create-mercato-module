@@ -413,6 +413,25 @@ test('a release from the app ships the LICENSE its dedicated repository keeps', 
   assert.equal(run('git', ['--git-dir', bare, 'show', 'main:LICENSE'], app.directory, { capture: true }).stdout, own)
 })
 
+test('a release under another license never ships the MIT LICENSE its dedicated repository keeps, and warns', context => {
+  const own = 'MIT License\n\nCopyright (c) 2025 Fixture Ltd.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software.\n'
+  for (const license of ['UNLICENSED', 'Apache-2.0', undefined]) {
+    const { app, cli, bare, published } = fixture(context, { license: 'MIT', licenseText: own, localSource: true })
+    const released = cli(['publish', 'visits', '--package', '@fixture/visits', '--repo', 'release-checks/visits-example', '--version', '0.1.1', ...(license ? ['--license', license] : []), '--yes', '--overwrite-repo'])
+    assert.equal(released.status, 0, released.output)
+    const shown = license ?? 'UNLICENSED'
+    assert.ok(released.output.includes(`⚖️ License:    ${shown}${license ? '' : ' (no license chosen)'}`), released.output)
+    assert.ok(released.output.includes(`⚠️ release-checks/visits-example keeps its own LICENSE, but this package is published as ${shown}, so the npm package does not carry that file.`), released.output)
+    assert.doesNotMatch(released.output, /so the npm package carries that file/)
+    if (!license) assert.match(released.output, /No license chosen, so @fixture\/visits is published as UNLICENSED/)
+    const archive = JSON.parse(fs.readFileSync(published, 'utf8'))[1]
+    assert.equal(JSON.parse(run('tar', ['-xOzf', archive, 'package/package.json'], app.directory, { capture: true }).stdout).license, shown)
+    const listing = run('tar', ['-tzf', archive], app.directory, { capture: true }).stdout.split('\n')
+    assert.ok(!listing.includes('package/LICENSE'), `a ${shown} package carries no MIT grant`)
+    assert.equal(run('git', ['--git-dir', bare, 'show', 'main:LICENSE'], app.directory, { capture: true }).stdout, own, 'the repository keeps its LICENSE')
+  }
+})
+
 test('unlink restores the link when saving settings fails', context => {
   const { app, cli } = fixture(context)
   assert.equal(cli(['link', 'release-checks/visits-example', '--no-generate']).status, 0)
