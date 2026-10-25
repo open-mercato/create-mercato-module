@@ -97,8 +97,11 @@ For a simpler whole-app Git workflow, skip `link`: keep the real module director
 
 Creates a translated starter page, registers the module, and runs generation. Module IDs use `snake_case`, such as `visits` or `service_visits`. Existing module directories and duplicate registrations are rejected.
 
+In a terminal, `init` first asks what the module does: one sentence of plain text, 20 to 140 characters. It is written as `description` in the module's `metadata` and becomes the npm package description and the catalog summary. Press Enter to skip it; `publish` and `describe` then warn that the module has no description.
+
 | Option | Behavior |
 |---|---|
+| `--description "Plans customer visits and their follow-ups."` | Write this description without asking, for scripts and agents |
 | `--no-generate` | Create and register the module; run generation yourself |
 
 The starter is one page. After `yarn setup` has the app running, you will probably want to open the app in your coding agent and have it build the module further; the app's `AGENTS.md` gives the agent the framework conventions.

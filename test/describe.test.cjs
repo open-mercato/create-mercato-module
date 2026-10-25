@@ -125,6 +125,7 @@ test('describe prints a catalog entry from saved settings and the module metadat
   assert.equal(entry.github, 'fixture/mercato-visits')
   assert.equal(entry.summary, 'Plans customer visits: routes, notes and follow-ups.')
   assert.match(result.stdout, /^npm: "@fixture\/visits"$/m)
+  assert.doesNotMatch(result.stderr, /description/, 'a usable description needs no warning')
   assert.match(result.stdout, /^summary: "Plans customer visits: routes, notes and follow-ups\."$/m, 'a ": " inside a value needs quotes')
   assert.match(result.stdout, /^category: operations # choose the category that fits$/m, 'a fitting default category needs no edit')
   assert.match(result.stdout, /^# Write each value marked TODO, then delete those TODO comments/m)
@@ -146,6 +147,9 @@ test('describe falls back to a valid summary when the module has no usable descr
     assert.equal(entry.summary, 'Visits module for Open Mercato apps.')
     assert.match(result.stdout, /^summary: .* # TODO/m)
     assert.equal(entry.github, undefined, 'an npm-only module has no github field')
+    assert.match(result.stderr, description
+      ? /⚠️ The description of visits cannot be the catalog summary: Write .*Set description in the metadata in src\/modules\/visits\/index\.ts/
+      : /⚠️ Module visits has no description\. Set description in the metadata in src\/modules\/visits\/index\.ts: it becomes the catalog summary/)
   }
 })
 

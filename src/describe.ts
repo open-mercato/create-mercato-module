@@ -49,6 +49,18 @@ function plainText(value: string | undefined, min: number, max: number) {
     : undefined
 }
 
+/**
+ * Why a module description cannot be the catalog summary (20 to 140
+ * characters of plain text), or undefined when it can.
+ */
+export function descriptionProblem(value: string): string | undefined {
+  if (value.length < 20 || value.length > 140)
+    return `Write 20 to 140 characters (this has ${value.length}).`
+  if (notPlainText.test(value))
+    return 'Write plain text: no links, markdown, HTML, control characters or long dashes.'
+  return undefined
+}
+
 // Plain when YAML reads it back unchanged, otherwise double quotes; the
 // catalog's formatter writes scalars the same way.
 function scalar(value: string): string {
@@ -63,6 +75,8 @@ export interface ModuleDescription {
   packageName: string
   yaml: string
   submitUrl: string
+  // Set when the module has no description the catalog can use as summary.
+  warning?: string
 }
 
 /**
@@ -138,6 +152,11 @@ export function describeModule(
     packageName: saved.packageName,
     yaml: `${lines.join('\n')}\n`,
     submitUrl: catalogSubmitUrl(saved.packageName),
+    ...(summary
+      ? {}
+      : {
+          warning: `⚠️ ${description ? `The description of ${id} cannot be the catalog summary: ${descriptionProblem(description)}` : `Module ${id} has no description.`} Set description in the metadata in ${saved.development ? `${saved.development.checkoutPath}/src/modules/${id}/index.ts` : `src/modules/${id}/index.ts`}: it becomes the catalog summary and, on the next publish, the npm package description.`,
+        }),
   }
 }
 

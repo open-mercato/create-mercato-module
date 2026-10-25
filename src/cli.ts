@@ -1,5 +1,7 @@
 import type { Settings, SavedSettings } from './types.js'
 import { createInterface } from 'node:readline/promises'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 import { findApp, validateId, run } from './common.js'
 import { scaffold } from './scaffold.js'
 import {
@@ -21,7 +23,11 @@ import { loadConfig, saveConfig, removeDevelopment } from './config.js'
 import { isUnconfiguredLocalModule, linkFromInput } from './link.js'
 import { validateCheckoutName, unlinkDevelopment } from './development.js'
 import { checkAuthentication, resolveRegistry } from './npm-auth.js'
-import { describeModule, openCatalogPage } from './describe.js'
+import {
+  describeModule,
+  descriptionProblem,
+  openCatalogPage,
+} from './describe.js'
 import {
   installFromInput,
   GitRepositoryApprovalRequired,
@@ -95,6 +101,9 @@ Install options:
                              if its version is younger than the app's npmMinimalAgeGate
 
 Init options:
+  --description "Plans customer visits and their follow-ups."
+                             one sentence, 20 to 140 characters, for npm and the catalog
+                             (asked in a terminal; Enter skips)
   --no-generate              create/register the module without running yarn generate
 
 Nothing is published without approval: interactively you retype the package name;
@@ -157,7 +166,9 @@ function parse(argv: string[]): ParsedArguments {
           ? ['package', 'module', 'ref']
           : command === 'describe'
             ? ['package']
-            : []
+            : command === 'init'
+              ? ['description']
+              : []
   for (let index = 0; index < rest.length; index += 1) {
     if (!rest[index].startsWith('-')) {
       positional.push(rest[index])
@@ -235,7 +246,35 @@ async function main(argv = process.argv.slice(2)) {
   if (args.help) return console.log(help)
   const app = findApp()
   if (args.command === 'init') {
-    const directory = scaffold(app, args.id)
+    let description = String(args.flags.description ?? '').trim()
+    const problem = description && descriptionProblem(description)
+    if (problem)
+      throw new Error(`${problem} No files were changed.`)
+    if (
+      !args.flags.description &&
+      process.stdin.isTTY &&
+      !fs.existsSync(path.join(app.directory, 'src/modules', args.id))
+    ) {
+      const prompt = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      })
+      try {
+        for (;;) {
+          description = (
+            await prompt.question(
+              '📝 What does the module do? One sentence, 20 to 140 characters, for npm and Open Mercato Modules (Enter to skip): ',
+            )
+          ).trim()
+          const answerProblem = description && descriptionProblem(description)
+          if (!answerProblem) break
+          console.log(answerProblem)
+        }
+      } finally {
+        prompt.close()
+      }
+    }
+    const directory = scaffold(app, args.id, description)
     console.log(`✅ Created ${directory}\n🧩 Registered in src/modules.ts.`)
     if (!args.flags['no-generate']) run('yarn', ['generate'], app.directory)
     console.log(
@@ -316,6 +355,7 @@ async function main(argv = process.argv.slice(2)) {
       args.flags.package ? String(args.flags.package) : undefined,
     )
     process.stdout.write(described.yaml)
+    if (described.warning) console.error(`\n${described.warning}`)
     if (args.flags.open && !catalogOpen)
       console.error(`\n${catalogPendingNote}`)
     else if (args.flags.open && !openCatalogPage(described.submitUrl))
@@ -464,6 +504,10 @@ async function main(argv = process.argv.slice(2)) {
     for (const risk of risks)
       console.log(`\n⚠️ ${risk.message}\n   Option: --${risk.flag}`)
     for (const note of prepared.notes ?? []) console.log(`\nℹ️ ${note}`)
+    if (prepared.manifest.description === `Open Mercato module: ${args.id}`)
+      console.log(
+        `\n⚠️ No description: npm${settings.access === 'public' ? ' and Open Mercato Modules' : ''} will show "${prepared.manifest.description}". Set description in the metadata in src/modules/${args.id}/index.ts (one sentence, 20 to 140 characters) before you publish.`,
+      )
     if (args.flags['dry-run'])
       return console.log(
         `\n✅ Dry run complete. No npm/GitHub publication or app Git changes.${settings.repository ? '\nℹ️ GitHub checks (repository visibility, unreleased commits, branch) run when you publish.' : ''}`,

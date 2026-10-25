@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process')
 const { scaffold } = require('../dist/scaffold.js')
 const { loadConfig, saveConfig, saveDevelopment } = require('../dist/config.js')
 const { checkAuthentication } = require('../dist/npm-auth.js')
+const { moduleInfo } = require('../dist/package.js')
 
 const settings = { packageName: '@fixture/visits', version: '0.1.0', access: 'public', repository: '', auth: 'login' }
 
@@ -142,6 +143,31 @@ test('dry-run skips authentication even when npm login is unavailable', (context
   assert.match(result.output, /Dry run complete/)
   assert.ok(fs.existsSync(path.join(app.directory, '.mercato/module-publish')))
   assert.ok(!fs.existsSync(path.join(app.directory, '.mercato/module-tool.json')))
+})
+
+test('init asks for a description in a terminal, takes --description in scripts, and publish warns without one', (context) => {
+  const { root, app, cli } = fixture(context)
+  const answers = path.join(root, 'answers.cjs')
+  fs.writeFileSync(answers, `Object.defineProperty(process.stdin,'isTTY',{value:true});const replies=['Too short.',"Plans the team's customer visits and follow-ups."];require('node:readline/promises').createInterface=()=>({question:async(label)=>{console.log('PROMPT:'+label);return replies.shift()??''},close(){}})\n`)
+  const asked = spawnSync(process.execPath, ['--require', answers, path.resolve(__dirname, '../dist/cli.js'), 'init', 'visit_plans', '--no-generate'], { cwd: app.directory, encoding: 'utf8' })
+  assert.equal(asked.status, 0, asked.stderr)
+  assert.equal((asked.stdout.match(/PROMPT:📝 What does the module do\?/g) || []).length, 2, 'an unusable answer is asked again')
+  assert.match(asked.stdout, /Write 20 to 140 characters \(this has 10\)\./)
+  assert.equal(moduleInfo(path.join(app.directory, 'src/modules/visit_plans')).description, "Plans the team's customer visits and follow-ups.")
+  const scripted = cli(['init', 'visit_notes', '--no-generate', '--description', 'Keeps notes for every customer visit.'], false)
+  assert.equal(scripted.status, 0, scripted.output)
+  assert.doesNotMatch(scripted.output, /PROMPT:/)
+  assert.equal(moduleInfo(path.join(app.directory, 'src/modules/visit_notes')).description, 'Keeps notes for every customer visit.')
+  const rejected = cli(['init', 'visit_links', '--no-generate', '--description', 'See https://example.com for the visits.'], false)
+  assert.equal(rejected.status, 1)
+  assert.match(rejected.output, /Write plain text: no links[\s\S]*No files were changed\./)
+  assert.ok(!fs.existsSync(path.join(app.directory, 'src/modules/visit_links')))
+  const bare = cli(['publish', 'visits', '--package', settings.packageName, '--dry-run'], false)
+  assert.equal(bare.status, 0, bare.output)
+  assert.match(bare.output, /⚠️ No description: npm and Open Mercato Modules will show "Open Mercato module: visits"\. Set description in the metadata in src\/modules\/visits\/index\.ts/)
+  const described = cli(['publish', 'visit_notes', '--package', '@fixture/visit-notes', '--dry-run'], false)
+  assert.equal(described.status, 0, described.output)
+  assert.doesNotMatch(described.output, /No description/)
 })
 
 test('publication needs the package name retyped interactively and explicit approval options otherwise', (context) => {

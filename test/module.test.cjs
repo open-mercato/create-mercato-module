@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
 const { scaffold, registration } = require('../dist/scaffold.js')
 const { findApp, writeJson, readJson, run } = require('../dist/common.js')
-const { preparePackage, validateSettings } = require('../dist/package.js')
+const { preparePackage, validateSettings, moduleInfo } = require('../dist/package.js')
 const { addTopics, exportPackage, githubState, publish, publishRepository, tagRelease, loadConfig, saveConfig } = require('../dist/publish.js')
 const { parse } = require('../dist/cli.js')
 
@@ -47,6 +47,9 @@ test('init registers and localizes a working page; refuses duplicate modules wit
   assert.equal(readJson(path.join(directory, 'i18n/en.json'))['visits.title'], 'Visits')
   assert.throws(() => scaffold(app, 'visits'), /already exists/)
   assert.equal(fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8'), before)
+  const described = scaffold(app, 'visit_notes', "Keeps the team's notes \\ for visits.")
+  assert.match(fs.readFileSync(path.join(described, 'index.ts'), 'utf8'), /version: '0\.1\.0',\n {2}description: 'Keeps the team\\'s notes \\\\ for visits\.',\n {2}ejectable: true,/)
+  assert.equal(moduleInfo(described).description, "Keeps the team's notes \\ for visits.")
 })
 
 test('init and publish outside an Open Mercato app show actionable guidance and leave files untouched', (context) => {

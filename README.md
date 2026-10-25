@@ -50,7 +50,7 @@ npx create-mercato-module init visits
 yarn setup
 ```
 
-`init` creates `src/modules/visits`, registers it as `@app`, and runs generation. `yarn setup` initializes your new app and starts its development server; leave it running. Open `/backend/visits` using the app credentials printed in the terminal, then build your feature in `src/modules/visits`.
+`init` asks for a one-sentence description, which npm and the catalog show, then creates `src/modules/visits`, registers it as `@app`, and runs generation. `yarn setup` initializes your new app and starts its development server; leave it running. Open `/backend/visits` using the app credentials printed in the terminal, then build your feature in `src/modules/visits`.
 
 The scaffold is a starting point: one page and its translations. From here you will probably want a coding agent to build the module out. The app already carries agent instructions (`AGENTS.md`) for the tools you chose in step 1, so open the app in your agent once `yarn setup` is running and describe the feature, for example: "In `src/modules/visits`, add a Visit entity with a list page and a create form." Keep the dev server running so you can check each change at `/backend/visits`.
 
