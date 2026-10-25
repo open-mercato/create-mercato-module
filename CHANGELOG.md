@@ -12,7 +12,7 @@
 - **Exit code:** cancelling the publish wizard by not retyping the package name now exits with code 1 instead of 0, so wrapping scripts can tell a cancellation from a release.
 - SSH locators such as `ssh://git@github.com/owner/repo` no longer read `git@…` as a Git ref, and linked publish compares the configured origin URL, so `insteadOf` rewrites no longer make a valid checkout look foreign.
 - The `pkarw/visits-example` example, which no longer exists, is replaced by `pkarw/marketing-consents`.
-- New `describe <module_id>` command prints the module's entry for [Open Mercato Modules](https://modules.openmercato.com) from its saved publish settings; `--open` opens the submit page. After a public release, `publish` prints the submit link, and generated module READMEs mention it.
+- New `describe <module_id>` command prints the module's entry for [Open Mercato Modules](https://modules.openmercato.com) from its saved publish settings; `--open` opens the submit page. After a public release, `publish` prints the submit link, and generated module READMEs mention it. Until the catalog launches, printed links say that it has not launched yet and `--open` does not open them; `MERCATO_CATALOG_URL` points the tool at another deployment of the catalog.
 - Generated `package.json` files carry the keywords `open-mercato` and `open-mercato-module`, the description from the module's `metadata` and, with a dedicated repository, `homepage` and `bugs`. Linked releases keep the repository's keywords and add the two when missing. Once npm accepts a release, the dedicated repository gets the `open-mercato-module` and `open-mercato` topics (best effort, like the tag).
 
 ## 0.5.1

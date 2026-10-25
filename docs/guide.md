@@ -283,6 +283,8 @@ Prints the module's [Open Mercato Modules](https://modules.openmercato.com) entr
 |---|---|
 | `--open` | Also open the catalog's submit page for the package in your browser |
 
+Open Mercato Modules has not launched yet. Until it does, `describe`, `publish` and `--help` print its links with a note saying so, and `--open` does not open them. To use another deployment of the catalog, such as a local copy of the site, set `MERCATO_CATALOG_URL` to its origin, for example `MERCATO_CATALOG_URL=http://127.0.0.1:4321`; `describe`, `--open` and the message after `publish` then use it. Generated module READMEs always link the public catalog.
+
 ## List your module
 
 Open Mercato Modules lists official and community modules with what they add to an app and the Open Mercato versions they install on. Coding agents can check it before they build a feature (see For agents on the catalog site). The catalog lists public npm packages and GitHub repositories.

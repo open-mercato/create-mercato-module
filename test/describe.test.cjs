@@ -31,8 +31,8 @@ function fixture(context) {
   fs.mkdirSync(binary)
   for (const name of ['open', 'xdg-open', 'explorer'])
     fs.writeFileSync(path.join(binary, name), `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(opened)},JSON.stringify(process.argv.slice(2)))\n`, { mode: 0o755 })
-  function cli(args) {
-    const result = spawnSync(process.execPath, [path.resolve(__dirname, '../dist/cli.js'), ...args], { cwd: app.directory, encoding: 'utf8', env: { ...process.env, PATH: `${binary}${path.delimiter}${process.env.PATH}` } })
+  function cli(args, env = {}) {
+    const result = spawnSync(process.execPath, [path.resolve(__dirname, '../dist/cli.js'), ...args], { cwd: app.directory, encoding: 'utf8', env: { ...process.env, MERCATO_CATALOG_URL: '', PATH: `${binary}${path.delimiter}${process.env.PATH}`, ...env } })
     return { ...result, output: `${result.stdout}\n${result.stderr}` }
   }
   return { app, index, opened, cli }
@@ -129,7 +129,7 @@ test('describe prints a catalog entry from saved settings and the module metadat
   assert.match(result.stdout, /^category: operations # choose the category that fits$/m, 'a fitting default category needs no edit')
   assert.match(result.stdout, /^# Write each value marked TODO, then delete those TODO comments/m)
   assert.match(result.stdout, /^whenToUse: Use when an Open Mercato app needs the Visits module\. # TODO/m)
-  assert.match(result.stdout, /https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits/)
+  assert.match(result.stdout, /https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits\n# Open Mercato Modules has not launched yet, so this link does not open until it does\.\n/)
   assert.doesNotMatch(result.stdout, /github\.io/)
   assert.equal(fs.readFileSync(path.join(app.directory, '.mercato/module-tool.json'), 'utf8'), before, 'describe changes no files')
 })
@@ -159,9 +159,16 @@ test('describe explains what is missing and opens the submit page on request', (
   assert.equal(restricted.status, 1)
   assert.match(restricted.output, /restricted npm package\. Open Mercato Modules lists public packages only/)
   saveConfig(app, 'visits', settings, true)
-  const open = cli(['describe', 'visits', '--open'])
+  const pending = cli(['describe', 'visits', '--open'])
+  assert.equal(pending.status, 0, pending.output)
+  assert.ok(!fs.existsSync(opened), 'a catalog that has not launched is not opened')
+  assert.match(pending.stderr, /Open Mercato Modules has not launched yet/)
+  const open = cli(['describe', 'visits', '--open'], { MERCATO_CATALOG_URL: 'http://127.0.0.1:4321/' })
   assert.equal(open.status, 0, open.output)
-  assert.deepEqual(JSON.parse(fs.readFileSync(opened, 'utf8')), ['https://modules.openmercato.com/submit?npm=@fixture/visits'])
+  assert.deepEqual(JSON.parse(fs.readFileSync(opened, 'utf8')), ['http://127.0.0.1:4321/submit?npm=@fixture/visits'], 'MERCATO_CATALOG_URL names the catalog deployment')
+  assert.doesNotMatch(open.stdout, /not launched/)
+  const ignored = cli(['describe', 'visits'], { MERCATO_CATALOG_URL: 'javascript:alert(1)' })
+  assert.match(ignored.stdout, /^# https:\/\/modules\.openmercato\.com\/submit/m, 'only http(s) origins override the catalog')
   assert.match(cli(['describe', 'visits', '--yes']).output, /Unknown option or missing value: --yes/)
   assert.match(cli(['describe', '../visits']).output, /snake_case/)
 })

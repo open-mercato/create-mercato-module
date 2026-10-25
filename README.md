@@ -180,7 +180,7 @@ This builds a real `.tgz` under `.mercato/module-publish/`, without login or pub
 npx create-mercato-module describe visits
 ```
 
-It prints the catalog entry from your saved publish settings; `--open` also opens the submit page. Published packages carry the `open-mercato` and `open-mercato-module` keywords, and dedicated repositories get the `open-mercato-module` and `open-mercato` topics.
+It prints the catalog entry from your saved publish settings; `--open` also opens the submit page. The catalog site has not launched yet: until it does, the printed links say so and `--open` does not open them. Published packages carry the `open-mercato` and `open-mercato-module` keywords, and dedicated repositories get the `open-mercato-module` and `open-mercato` topics.
 
 ## Documentation
 

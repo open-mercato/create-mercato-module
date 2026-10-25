@@ -2,7 +2,13 @@ import type { Settings, SavedSettings } from './types.js'
 import { createInterface } from 'node:readline/promises'
 import { findApp, validateId, run } from './common.js'
 import { scaffold } from './scaffold.js'
-import { ageGateNote, catalogSubmitUrl } from './package.js'
+import {
+  ageGateNote,
+  catalogOpen,
+  catalogPendingNote,
+  catalogSubmitUrl,
+  catalogUrl,
+} from './package.js'
 import { validateSettings } from './package.js'
 import {
   exportPackage,
@@ -70,7 +76,7 @@ Unlink:
 
 Describe:
   Prints the module's Open Mercato Modules entry (YAML) from its saved
-  publish settings, to list it at https://modules.openmercato.com/submit.
+  publish settings, to list it at ${catalogUrl}/submit${catalogOpen ? '' : '\n  (not launched yet)'}.
   --open                     also open the submit page for the package
 
 Install options:
@@ -303,7 +309,9 @@ async function main(argv = process.argv.slice(2)) {
   if (args.command === 'describe') {
     const described = describeModule(app, args.id)
     process.stdout.write(described.yaml)
-    if (args.flags.open && !openCatalogPage(described.submitUrl))
+    if (args.flags.open && !catalogOpen)
+      console.error(`\n${catalogPendingNote}`)
+    else if (args.flags.open && !openCatalogPage(described.submitUrl))
       console.log(`Open ${described.submitUrl} in your browser.`)
     return
   }
@@ -488,7 +496,7 @@ async function main(argv = process.argv.slice(2)) {
       console.log(`\n🏷️ Tagged ${settings.repository} ${released.tag}.`)
     if (released.tagWarning) console.log(`\n⚠️ ${released.tagWarning}`)
     console.log(
-      `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  npx create-mercato-module install ${settings.packageName}@${settings.version}${released.tag ? `\n  npx create-mercato-module install ${settings.repository}@${released.tag}` : ''}\n⏳ ${ageGateNote}${settings.access === 'public' ? `\n📚 Add it to the catalog: ${catalogSubmitUrl(settings.packageName)}\n   Print its catalog entry: npx create-mercato-module describe ${args.id}` : ''}`,
+      `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  npx create-mercato-module install ${settings.packageName}@${settings.version}${released.tag ? `\n  npx create-mercato-module install ${settings.repository}@${released.tag}` : ''}\n⏳ ${ageGateNote}${settings.access === 'public' ? `\n📚 Add it to the catalog: ${catalogSubmitUrl(settings.packageName)}${catalogOpen ? '' : `\n   ${catalogPendingNote}`}\n   Print its catalog entry: npx create-mercato-module describe ${args.id}` : ''}`,
     )
   } finally {
     prompt?.close()

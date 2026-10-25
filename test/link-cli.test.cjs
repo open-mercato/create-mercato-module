@@ -163,7 +163,7 @@ test('CLI switches an installed package registration to @app and publishes a new
   assert.match(run('git', ['--git-dir', bare, 'show', 'main:dist/modules/visits/new.js'], app.directory, { capture: true }).stdout, /New linked feature/)
   assert.match(released.output, /🐙 GitHub: +release-checks\/visits-example \(existing PUBLIC repository; tagged 0\.1\.1 and given the open-mercato-module and open-mercato topics once npm accepts it\)/, 'the approval summary discloses the tag and topics')
   assert.deepEqual(JSON.parse(fs.readFileSync(`${bare}.json`, 'utf8')).topics, ['open-mercato-module', 'open-mercato'])
-  assert.match(released.output, /📚 Add it to the catalog: https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits\n {3}Print its catalog entry: npx create-mercato-module describe visits/)
+  assert.match(released.output, /📚 Add it to the catalog: https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits\n {3}Open Mercato Modules has not launched yet, so this link does not open until it does\.\n {3}Print its catalog entry: npx create-mercato-module describe visits/)
   const described = cli(['describe', 'visits'])
   assert.equal(described.status, 0, described.output)
   assert.match(described.stdout, /^npm: "@fixture\/visits"\ngithub: release-checks\/visits-example$/m, 'a linked module is described from its saved repository')

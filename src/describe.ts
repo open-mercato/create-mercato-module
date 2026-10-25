@@ -4,7 +4,13 @@ import * as path from 'node:path'
 import { moduleDirectory, readJson, run } from './common.js'
 import { loadConfig } from './config.js'
 import { linkedModuleDirectory } from './development.js'
-import { catalogUrl, catalogSubmitUrl, moduleInfo } from './package.js'
+import {
+  catalogUrl,
+  catalogOpen,
+  catalogPendingNote,
+  catalogSubmitUrl,
+  moduleInfo,
+} from './package.js'
 
 // Categories of the Open Mercato Modules descriptor schema
 // (https://modules.openmercato.com/schema/descriptor-1.json).
@@ -100,6 +106,7 @@ export function describeModule(app: App, id: string): ModuleDescription {
     '# Write each value marked TODO, then delete those TODO comments (the catalog rejects a file that still has them).',
     '# Submit the module at',
     `# ${catalogSubmitUrl(saved.packageName)}`,
+    ...(catalogOpen ? [] : [`# ${catalogPendingNote}`]),
     '',
     `npm: ${scalar(saved.packageName)}`,
     ...(saved.repository ? [`github: ${scalar(saved.repository)}`] : []),
