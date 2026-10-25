@@ -21,6 +21,7 @@ import {
   publish,
   inspectRepository,
   publicationRisks,
+  ignoredLicenseWarning,
 } from './publish.js'
 import { loadConfig, saveConfig, removeDevelopment } from './config.js'
 import { isUnconfiguredLocalModule, linkFromInput } from './link.js'
@@ -497,6 +498,10 @@ async function main(argv = process.argv.slice(2)) {
             app.manifest.license ||
             'MIT',
         )
+      else if (previous.development && !args.flags.license && configure)
+        console.log(
+          `⚖️ License: a linked module keeps the license in its repository's package.json. To change it, edit the license field in ${previous.development.checkoutPath}/package.json.`,
+        )
     }
     if (settings.repository === '-') settings.repository = ''
     settings.tag = releaseTag(settings.version, previous, args.flags.tag)
@@ -529,6 +534,14 @@ async function main(argv = process.argv.slice(2)) {
     for (const note of prepared.notes ?? []) console.log(`\nℹ️ ${note}`)
     if (prepared.licenseDefaulted)
       console.log(`\n⚠️ ${unchosenLicenseWarning(settings.packageName)}`)
+    if (
+      previous.development &&
+      args.flags.license &&
+      String(args.flags.license) !== prepared.manifest.license
+    )
+      console.log(
+        `\n⚠️ ${ignoredLicenseWarning(String(args.flags.license), String(prepared.manifest.license ?? 'none'), previous.development.checkoutPath)}`,
+      )
     const descriptionNote = descriptionWarning(
       args.id,
       prepared.manifest.description,

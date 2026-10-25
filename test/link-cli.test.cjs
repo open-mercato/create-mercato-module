@@ -371,6 +371,25 @@ test('link keeps the saved license, and unlink keeps the license the linked rele
   assert.doesNotMatch(local.output, /No license chosen/)
 })
 
+test('publish --license warns when a linked repository keeps another license', context => {
+  const { app, cli } = fixture(context, { license: 'MIT' })
+  assert.equal(cli(['link', 'release-checks/visits-example', '--no-generate']).status, 0)
+  const other = cli(['publish', 'visits', '--dry-run', '--license', 'Apache-2.0'])
+  assert.equal(other.status, 0, other.output)
+  assert.match(other.output, /⚖️ License: {4}MIT\n/, 'the repository license wins while linked')
+  const file = `${loadConfig(app).modules.visits.development.checkoutPath}/package.json`
+  assert.ok(other.output.includes(`⚠️ --license Apache-2.0 has no effect on this release: the module is linked to its repository, and linked releases keep the license in the repository's package.json, MIT.\n   To publish under Apache-2.0, change the license field in ${file} from MIT to Apache-2.0, commit it and publish again.`), other.output)
+  const same = cli(['publish', 'visits', '--dry-run', '--license', 'MIT'])
+  assert.equal(same.status, 0, same.output)
+  assert.doesNotMatch(same.output, /has no effect/, 'a matching license needs no warning')
+  const preload = path.join(app.directory, '..', 'interactive.cjs')
+  fs.writeFileSync(preload, `Object.defineProperty(process.stdin,'isTTY',{value:true});require('node:readline/promises').createInterface=()=>({question:async(label)=>{console.log('PROMPT:'+label);return ''},close(){}})\n`)
+  const configured = cli(['publish', 'visits', '--configure'], { NODE_OPTIONS: `--require ${preload}` })
+  assert.equal(configured.status, 1, configured.output)
+  assert.doesNotMatch(configured.output, /PROMPT:⚖️ License/, 'a linked module has no license question')
+  assert.ok(configured.output.includes(`⚖️ License: a linked module keeps the license in its repository's package.json. To change it, edit the license field in ${file}.`), configured.output)
+})
+
 test('unlink restores the link when saving settings fails', context => {
   const { app, cli } = fixture(context)
   assert.equal(cli(['link', 'release-checks/visits-example', '--no-generate']).status, 0)

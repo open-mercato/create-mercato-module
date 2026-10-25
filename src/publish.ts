@@ -311,6 +311,16 @@ function exportLinkedPackage(
   }
 }
 
+// A linked release takes the license in the repository's package.json, so a
+// --license that names another one has no effect and must say so.
+function ignoredLicenseWarning(
+  requested: string,
+  repositoryLicense: string,
+  checkoutPath: string,
+): string {
+  return `--license ${requested} has no effect on this release: the module is linked to its repository, and linked releases keep the license in the repository's package.json, ${repositoryLicense}.\n   To publish under ${requested}, change the license field in ${checkoutPath}/package.json from ${repositoryLicense} to ${requested}, commit it and publish again.`
+}
+
 function assertLinkedRepository(
   checkout: string,
   settings: Settings,
@@ -940,6 +950,7 @@ export {
   preflight,
   publish,
   exportLinkedPackage,
+  ignoredLicenseWarning,
   packEntries,
   tagRelease,
 }
