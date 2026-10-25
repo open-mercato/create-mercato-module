@@ -277,7 +277,7 @@ Linked publication reads the owned checkout, including custom local checkout nam
 
 ### `unlink <module_id>`
 
-Makes a linked module an ordinary local module again. The checkout's current source, including uncommitted edits, is copied into `src/modules/<module_id>`, and the development link is removed from `.mercato/module-tool.json`. The package name, repository and released versions stay saved, so `publish <module_id>` exports from the app again; if the repository's latest commit came from the linked checkout, publish asks for `--overwrite-repo` approval first. The checkout under `.mercato/module-repos/` and the source backed up when linking stay in place for you to inspect or delete. `src/modules.ts` is not changed. If saving the settings fails, the symlink is restored.
+Makes a linked module an ordinary local module again. The checkout's current source, including uncommitted edits, is copied into `src/modules/<module_id>`, and the development link is removed from `.mercato/module-tool.json`. The package name, repository and released versions stay saved, and so does the license named in the repository's `package.json`, so `publish <module_id>` exports from the app again under the same license; if the repository's latest commit came from the linked checkout, publish asks for `--overwrite-repo` approval first. The checkout under `.mercato/module-repos/` and the source backed up when linking stay in place for you to inspect or delete. `src/modules.ts` is not changed. If saving the settings fails, the symlink is restored.
 
 ### `describe <module_id>`
 

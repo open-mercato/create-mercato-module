@@ -53,6 +53,15 @@ function npmInstallLocator(packageName: string): string {
 const licensePattern =
   /^\(?[A-Za-z0-9][A-Za-z0-9.+-]*\)?(?: (?:AND|OR|WITH) \(?[A-Za-z0-9][A-Za-z0-9.+-]*\)?)*$/
 
+// A license publish accepts as a setting, or undefined.
+function settingLicense(value: unknown): string | undefined {
+  return typeof value === 'string' &&
+    value.length <= 100 &&
+    licensePattern.test(value)
+    ? value
+    : undefined
+}
+
 // The copyright holder of a generated LICENSE: the Git author name, then the
 // npm user, and only when both are missing the package's authors.
 function licenseHolder(
@@ -140,7 +149,7 @@ function validateSettings(settings: Settings): void {
     )
   if (
     settings.license &&
-    (settings.license.length > 100 || !licensePattern.test(settings.license))
+    !settingLicense(settings.license)
   )
     throw new Error(
       'Use an SPDX license such as MIT or Apache-2.0, or UNLICENSED for a proprietary module.',
@@ -417,6 +426,7 @@ export {
   moduleInfo,
   packageLicense,
   licenseHolder,
+  settingLicense,
   mitLicense,
   generatedMitLicense,
   unchosenLicenseWarning,

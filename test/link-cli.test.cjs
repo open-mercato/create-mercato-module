@@ -10,6 +10,7 @@ const { preparePackage } = require('../dist/package.js')
 const { parse } = require('../dist/cli.js')
 const { githubRepository } = require('../dist/link.js')
 const { loadConfig } = require('../dist/config.js')
+const { saveConfig } = require('../dist/publish.js')
 const { unlinkDevelopment } = require('../dist/development.js')
 
 // All fixtures are created locally. Only gh's transport and npm's metadata /
@@ -23,7 +24,7 @@ function fixture(context, options = {}) {
   fs.writeFileSync(path.join(app.directory, 'src/modules/visits/index.ts'), "export const metadata = { name: 'visits', title: 'Repository visits', version: '0.1.0' }\n")
   fs.writeFileSync(path.join(app.directory, 'src/modules.ts'), "// Preserve other modules\nexport const enabledModules = [{ id: 'auth', from: '@open-mercato/core' }]\n")
   for (const [name, version] of Object.entries(app.manifest.dependencies)) writeJson(path.join(app.directory, 'node_modules', name, 'package.json'), { name, version })
-  const settings = { packageName: options.packageName || '@fixture/visits', repository: 'release-checks/visits-example', version: '0.1.0', access: 'public' }
+  const settings = { packageName: options.packageName || '@fixture/visits', repository: 'release-checks/visits-example', version: '0.1.0', access: 'public', ...(options.license ? { license: options.license } : {}) }
   const exported = path.join(root, 'export')
   preparePackage(app, 'visits', settings, exported)
   fs.writeFileSync(path.join(exported, 'README.md'), '# Keep custom documentation\n')
@@ -352,6 +353,22 @@ test('unlink makes a linked module local again from the checkout and keeps check
   const again = cli(['unlink', 'visits'])
   assert.equal(again.status, 1)
   assert.match(again.output, /not linked to a repository checkout/)
+})
+
+test('link keeps the saved license, and unlink keeps the license the linked releases used', context => {
+  const { app, cli } = fixture(context, { license: 'MIT', localSource: true, registration: "export const enabledModules = [{ id: 'visits', from: '@app' }]\n" })
+  saveConfig(app, 'visits', { packageName: '@fixture/visits', version: '0.1.0', access: 'public', license: 'Apache-2.0' }, false)
+  assert.equal(cli(['link', 'visits', '--repo', 'release-checks/visits-example', '--no-generate']).status, 0)
+  assert.equal(loadConfig(app).modules.visits.license, 'Apache-2.0', 'link must not forget the chosen license')
+  const linked = cli(['publish', 'visits', '--dry-run'])
+  assert.equal(linked.status, 0, linked.output)
+  assert.match(linked.output, /⚖️ License: {4}MIT\n/, 'the repository license wins while linked')
+  assert.equal(cli(['unlink', 'visits']).status, 0)
+  assert.equal(loadConfig(app).modules.visits.license, 'MIT')
+  const local = cli(['publish', 'visits', '--dry-run', '--yes'])
+  assert.equal(local.status, 0, local.output)
+  assert.match(local.output, /⚖️ License: {4}MIT\n/, 'the next release from the app keeps the license')
+  assert.doesNotMatch(local.output, /No license chosen/)
 })
 
 test('unlink restores the link when saving settings fails', context => {

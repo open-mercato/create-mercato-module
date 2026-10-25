@@ -214,6 +214,7 @@ export function linkFromInput(
     access: previous.access || manifest.publishConfig?.access || 'public',
     auth: previous.auth || 'auto',
     ...(previous.tag ? { tag: previous.tag } : {}),
+    ...(previous.license ? { license: previous.license } : {}),
   }
   validateSettings(settings)
   const development = linkDevelopment(
