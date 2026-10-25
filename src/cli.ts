@@ -26,6 +26,8 @@ import { checkAuthentication, resolveRegistry } from './npm-auth.js'
 import {
   describeModule,
   descriptionProblem,
+  descriptionWarning,
+  moduleDescription,
   openCatalogPage,
 } from './describe.js'
 import {
@@ -504,9 +506,15 @@ async function main(argv = process.argv.slice(2)) {
     for (const risk of risks)
       console.log(`\n⚠️ ${risk.message}\n   Option: --${risk.flag}`)
     for (const note of prepared.notes ?? []) console.log(`\nℹ️ ${note}`)
-    if (prepared.manifest.description === `Open Mercato module: ${args.id}`)
+    const descriptionNote = descriptionWarning(
+      args.id,
+      prepared.manifest.description,
+      moduleDescription(app, args.id, previous.development).file,
+      settings.access === 'public',
+    )
+    if (descriptionNote)
       console.log(
-        `\n⚠️ No description: npm${settings.access === 'public' ? ' and Open Mercato Modules' : ''} will show "${prepared.manifest.description}". Set description in the metadata in src/modules/${args.id}/index.ts (one sentence, 20 to 140 characters) before you publish.`,
+        `\n${descriptionNote}${prompt ? ' To include it in this version, cancel below, set it and publish again.' : ''}`,
       )
     if (args.flags['dry-run'])
       return console.log(

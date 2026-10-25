@@ -164,10 +164,16 @@ test('init asks for a description in a terminal, takes --description in scripts,
   assert.ok(!fs.existsSync(path.join(app.directory, 'src/modules/visit_links')))
   const bare = cli(['publish', 'visits', '--package', settings.packageName, '--dry-run'], false)
   assert.equal(bare.status, 0, bare.output)
-  assert.match(bare.output, /⚠️ No description: npm and Open Mercato Modules will show "Open Mercato module: visits"\. Set description in the metadata in src\/modules\/visits\/index\.ts/)
+  assert.match(bare.output, /⚠️ Module visits has no description\. Set description in the metadata in src\/modules\/visits\/index\.ts \(one sentence, 20 to 140 characters\): it becomes the catalog summary and the npm description of the next version you publish\.\n/)
   const described = cli(['publish', 'visit_notes', '--package', '@fixture/visit-notes', '--dry-run'], false)
   assert.equal(described.status, 0, described.output)
-  assert.doesNotMatch(described.output, /No description/)
+  assert.doesNotMatch(described.output, /description/)
+  const notes = path.join(app.directory, 'src/modules/visit_notes/index.ts')
+  fs.writeFileSync(notes, fs.readFileSync(notes, 'utf8').replace('Keeps notes for every customer visit.', 'Visit notes.'))
+  const short = cli(['publish', 'visit_notes', '--package', '@fixture/visit-notes', '--dry-run'], false)
+  assert.match(short.output, /⚠️ The description of visit_notes cannot be the catalog summary: Write 20 to 140 characters \(this has 12\)\. Set description in the metadata in src\/modules\/visit_notes\/index\.ts/, 'publish warns like describe')
+  const restricted = cli(['publish', 'visit_notes', '--package', '@fixture/visit-notes', '--access', 'restricted', '--dry-run'], false)
+  assert.doesNotMatch(restricted.output, /description/, 'the catalog summary rule does not apply to restricted packages')
 })
 
 test('publication needs the package name retyped interactively and explicit approval options otherwise', (context) => {

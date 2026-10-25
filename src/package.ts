@@ -33,6 +33,12 @@ const catalogOpen = catalogLaunched || Boolean(catalogOverride)
 const catalogPendingNote =
   'Open Mercato Modules has not launched yet, so this link does not open until it does.'
 
+// The npm description of a module without one in its metadata. Tools treat it
+// as missing: a linked repository's package.json keeps it from its first export.
+function fallbackDescription(id: string): string {
+  return `Open Mercato module: ${id}`
+}
+
 function catalogSubmitUrl(packageName: string, origin = catalogUrl): string {
   return `${origin}/submit?npm=${packageName}`
 }
@@ -232,7 +238,7 @@ function preparePackage(
     name: settings.packageName,
     version: settings.version,
     description:
-      moduleInfo(sourceRoot).description || `Open Mercato module: ${id}`,
+      moduleInfo(sourceRoot).description || fallbackDescription(id),
     keywords: [...moduleKeywords],
     license: app.manifest.license || 'UNLICENSED',
     type: 'module',
@@ -310,4 +316,5 @@ export {
   catalogOpen,
   catalogPendingNote,
   catalogSubmitUrl,
+  fallbackDescription,
 }

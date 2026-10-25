@@ -149,7 +149,7 @@ test('describe falls back to a valid summary when the module has no usable descr
     assert.equal(entry.github, undefined, 'an npm-only module has no github field')
     assert.match(result.stderr, description
       ? /⚠️ The description of visits cannot be the catalog summary: Write .*Set description in the metadata in src\/modules\/visits\/index\.ts/
-      : /⚠️ Module visits has no description\. Set description in the metadata in src\/modules\/visits\/index\.ts: it becomes the catalog summary/)
+      : /⚠️ Module visits has no description\. Set description in the metadata in src\/modules\/visits\/index\.ts \(one sentence, 20 to 140 characters\): it becomes the catalog summary/)
   }
 })
 

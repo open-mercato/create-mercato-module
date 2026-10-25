@@ -1,4 +1,5 @@
 import type { App, SavedSettings } from './types.js'
+import type { DevelopmentLink } from './development.js'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { moduleDirectory, readJson, run } from './common.js'
@@ -9,6 +10,7 @@ import {
   catalogOpen,
   catalogPendingNote,
   catalogSubmitUrl,
+  fallbackDescription,
   moduleInfo,
   validatePackageName,
 } from './package.js'
@@ -61,6 +63,56 @@ export function descriptionProblem(value: string): string | undefined {
   return undefined
 }
 
+/**
+ * The description npm and the catalog get for a module, as publish builds it:
+ * a linked repository's own package.json description wins over the metadata,
+ * unless it is empty or the fallback its first export wrote. `file` names
+ * where the author sets it.
+ */
+export function moduleDescription(
+  app: App,
+  id: string,
+  development?: DevelopmentLink,
+): { description?: string; file: string } {
+  const source = development
+    ? linkedModuleDirectory(app, id, development)
+    : moduleDirectory(app, id)
+  if (development) {
+    const manifest = path.join(
+      app.directory,
+      development.checkoutPath,
+      'package.json',
+    )
+    const own = fs.existsSync(manifest) ? readJson(manifest).description : ''
+    if (typeof own === 'string' && own.trim() && own !== fallbackDescription(id))
+      return {
+        description: own.replace(/\s+/g, ' ').trim(),
+        file: `${development.checkoutPath}/package.json`,
+      }
+  }
+  const description = moduleInfo(source).description
+  return {
+    ...(description ? { description } : {}),
+    file: `the metadata in ${development ? `${development.checkoutPath}/` : ''}src/modules/${id}/index.ts`,
+  }
+}
+
+/**
+ * The warning for a missing description or, for a module listed in the
+ * catalog, one that cannot be its summary; undefined when it is usable.
+ */
+export function descriptionWarning(
+  id: string,
+  description: string | undefined,
+  file: string,
+  listed = true,
+): string | undefined {
+  const missing = !description || description === fallbackDescription(id)
+  const problem = !missing && listed ? descriptionProblem(description) : undefined
+  if (!missing && !problem) return undefined
+  return `⚠️ ${missing ? `Module ${id} has no description.` : `The description of ${id} cannot be the catalog summary: ${problem}`} Set description in ${file} (one sentence, 20 to 140 characters): it becomes ${listed ? 'the catalog summary and ' : ''}the npm description of the next version you publish.`
+}
+
 // Plain when YAML reads it back unchanged, otherwise double quotes; the
 // catalog's formatter writes scalars the same way.
 function scalar(value: string): string {
@@ -108,18 +160,7 @@ export function describeModule(
     ? linkedModuleDirectory(app, id, saved.development)
     : moduleDirectory(app, id)
   const info = moduleInfo(source)
-  // A linked repository's own package.json description wins, as in publish.
-  let description = info.description
-  if (saved.development) {
-    const manifest = path.join(
-      app.directory,
-      saved.development.checkoutPath,
-      'package.json',
-    )
-    const own = fs.existsSync(manifest) ? readJson(manifest).description : ''
-    if (typeof own === 'string' && own.trim() && own !== `Open Mercato module: ${id}`)
-      description = own.replace(/\s+/g, ' ').trim()
-  }
+  const { description, file } = moduleDescription(app, id, saved.development)
   const title =
     plainText(info.title, 1, 60) ??
     id
@@ -152,11 +193,7 @@ export function describeModule(
     packageName: saved.packageName,
     yaml: `${lines.join('\n')}\n`,
     submitUrl: catalogSubmitUrl(saved.packageName),
-    ...(summary
-      ? {}
-      : {
-          warning: `⚠️ ${description ? `The description of ${id} cannot be the catalog summary: ${descriptionProblem(description)}` : `Module ${id} has no description.`} Set description in the metadata in ${saved.development ? `${saved.development.checkoutPath}/src/modules/${id}/index.ts` : `src/modules/${id}/index.ts`}: it becomes the catalog summary and, on the next publish, the npm package description.`,
-        }),
+    warning: descriptionWarning(id, description, file),
   }
 }
 

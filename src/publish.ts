@@ -2,7 +2,12 @@ import type { App, Settings, ExportedPackage, Executor } from './types.js'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { readJson, writeJson, run, within } from './common.js'
-import { preparePackage, localLocator, moduleKeywords } from './package.js'
+import {
+  preparePackage,
+  localLocator,
+  moduleKeywords,
+  fallbackDescription,
+} from './package.js'
 import { createNpmRunner } from './npm-auth.js'
 import { linkedModuleDirectory } from './development.js'
 import type { DevelopmentLink } from './development.js'
@@ -191,8 +196,15 @@ function exportLinkedPackage(
       'This module repository is marked private: true in package.json, which blocks npm publication. Remove that field to publish; use --access restricted for a private npm package.',
     )
   const manifest = { ...original, ...prepared.manifest }
+  // The repository's own description wins; an empty one, or the fallback its
+  // first export wrote, gives way to the description in the module metadata.
+  if (
+    typeof original.description === 'string' &&
+    original.description.trim() &&
+    original.description !== fallbackDescription(id)
+  )
+    manifest.description = original.description
   for (const field of [
-    'description',
     'license',
     'author',
     'homepage',
@@ -562,7 +574,7 @@ function publishRepository(
         // GitHub limits repository descriptions to 350 characters.
         prepared.manifest.description.length <= 350
           ? prepared.manifest.description
-          : `Open Mercato module: ${prepared.manifest.mercatoModule.id}`,
+          : fallbackDescription(prepared.manifest.mercatoModule.id),
       ],
       prepared.workspace,
     )

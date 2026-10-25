@@ -375,7 +375,7 @@ Imported dependencies are recorded from installed versions. Framework packages, 
 
 The initial module license follows the app's `package.json` `license` field, or defaults to `UNLICENSED`. Linked releases preserve the module repository's own license. Choose the appropriate license before publishing. The tool itself is MIT licensed.
 
-The package description is the `description` in the module's `metadata`, or `Open Mercato module: <id>`. Every package gets the keywords `open-mercato` and `open-mercato-module`, which [Open Mercato Modules](#list-your-module) and npm search use, and a package with a dedicated repository gets its `homepage` and `bugs` links. Linked releases keep the repository's description, homepage and keywords and add the two keywords when they are missing.
+The package description is the `description` in the module's `metadata`, or `Open Mercato module: <id>`. Every package gets the keywords `open-mercato` and `open-mercato-module`, which [Open Mercato Modules](#list-your-module) and npm search use, and a package with a dedicated repository gets its `homepage` and `bugs` links. Linked releases keep the repository's description, homepage and keywords and add the two keywords when they are missing. A repository description that is empty or still `Open Mercato module: <id>`, as the first export writes it, gives way to the one in the module's `metadata`.
 
 ### Keep your module portable
 

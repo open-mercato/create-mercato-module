@@ -8,6 +8,7 @@ const { pathToFileURL } = require('node:url')
 const { scaffold } = require('../dist/scaffold.js')
 const { run, readJson, writeJson } = require('../dist/common.js')
 const { exportPackage, exportLinkedPackage, publishRepository, publicationRisks, packEntries } = require('../dist/publish.js')
+const { moduleDescription, descriptionWarning } = require('../dist/describe.js')
 
 function fixture(context) {
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-linked-publish-'))
@@ -79,6 +80,23 @@ test('linked publication releases app edits, preserves repository customization 
   assert.equal(run('git', ['show', 'HEAD:src/modules/visits/__tests__/keep.test.ts'], checkout, { capture: true }).stdout, 'export const originalTest = true\n')
   assert.equal(run('git', ['status', '--porcelain'], app.directory, { capture: true }).stdout, before)
   assert.equal(run('git', ['remote', 'get-url', 'origin'], app.directory, { capture: true }).stdout.trim(), 'https://github.com/fixture/app.git')
+})
+
+test('linked publication takes the metadata description over the fallback the first export wrote', context => {
+  const { app, settings, metadata, checkout } = fixture(context)
+  const manifestFile = path.join(checkout, 'package.json')
+  assert.equal(readJson(manifestFile).description, 'Open Mercato module: visits', 'the first export writes the fallback')
+  const index = path.join(checkout, 'src/modules/visits/index.ts')
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace('  ejectable: true,\n', "  ejectable: true,\n  description: 'Plans customer visits and their follow-ups.',\n"))
+  assert.equal(exportLinkedPackage(app, 'visits', settings, metadata).manifest.description, 'Plans customer visits and their follow-ups.')
+  const fromMetadata = moduleDescription(app, 'visits', metadata)
+  assert.deepEqual(fromMetadata, { description: 'Plans customer visits and their follow-ups.', file: 'the metadata in .mercato/module-repos/visits/src/modules/visits/index.ts' })
+  assert.equal(descriptionWarning('visits', fromMetadata.description, fromMetadata.file), undefined)
+  writeJson(manifestFile, { ...readJson(manifestFile), description: 'Visits.' })
+  assert.equal(exportLinkedPackage(app, 'visits', settings, metadata).manifest.description, 'Visits.', "the repository's own description wins")
+  const own = moduleDescription(app, 'visits', metadata)
+  assert.equal(own.file, '.mercato/module-repos/visits/package.json')
+  assert.match(descriptionWarning('visits', own.description, own.file), /cannot be the catalog summary: Write 20 to 140 characters \(this has 7\)\. Set description in \.mercato\/module-repos\/visits\/package\.json/)
 })
 
 test('linked publication rejects wrong remote and mismatched package before packing', context => {
