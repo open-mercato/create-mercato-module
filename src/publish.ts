@@ -567,6 +567,63 @@ function publicationRisks(
   return risks
 }
 
+// The LICENSE at a commit of the dedicated repository, or undefined when the
+// repository has none.
+function repositoryLicense(
+  repository: string,
+  commit: string,
+  cwd: string,
+  execute: Executor = run,
+): string | undefined {
+  const result = execute(
+    'gh',
+    [
+      'api',
+      `repos/${repository}/contents/LICENSE?ref=${encodeURIComponent(commit)}`,
+      '-H',
+      'Accept: application/vnd.github.raw',
+    ],
+    cwd,
+    { capture: true, allowFailure: true },
+  )
+  if (result.status === 0) return result.stdout
+  if (/HTTP 404/.test(result.stderr || '')) return undefined
+  throw new Error(
+    'Cannot read the LICENSE of the GitHub repository; nothing was published.',
+  )
+}
+
+// publishRepository keeps a LICENSE the author wrote in the dedicated
+// repository and replaces only the text this tool wrote for the same holder.
+// The npm package ships the LICENSE the repository keeps, so both say the same.
+function adoptRepositoryLicense(
+  prepared: ExportedPackage,
+  settings: Settings,
+  text: string,
+  execute: Executor = run,
+): ExportedPackage {
+  if (
+    generatedMitLicense(
+      text,
+      licenseHolder({ directory: prepared.workspace }, settings, execute),
+    )
+  )
+    return prepared
+  const license = path.join(prepared.destination, 'LICENSE')
+  if (fs.existsSync(license) && fs.readFileSync(license, 'utf8') === text)
+    return prepared
+  assertNoCredentials('LICENSE', text)
+  fs.writeFileSync(license, text)
+  fs.rmSync(prepared.archive, { force: true })
+  return {
+    ...packPrepared(prepared, prepared.workspace),
+    notes: [
+      ...(prepared.notes ?? []),
+      `${settings.repository} keeps its own LICENSE, so the npm package carries that file.`,
+    ],
+  }
+}
+
 function githubState(repository: string, cwd: string, execute: Executor = run) {
   const result = execute('gh', ['api', `repos/${repository}`], cwd, {
     capture: true,
@@ -951,6 +1008,8 @@ export {
   publish,
   exportLinkedPackage,
   ignoredLicenseWarning,
+  repositoryLicense,
+  adoptRepositoryLicense,
   packEntries,
   tagRelease,
 }

@@ -1,6 +1,6 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { inspectRepository, publicationRisks } = require('../dist/publish.js')
+const { inspectRepository, publicationRisks, repositoryLicense } = require('../dist/publish.js')
 const { createNpmRunner, resolveRegistry } = require('../dist/npm-auth.js')
 const { createPublishWorkflow } = require('../dist/workflow.js')
 
@@ -27,6 +27,14 @@ test('repository inspection reports visibility, branch and latest commit, and ne
   assert.throws(() => inspect({ 'repos/fixture/visits': details }), /nothing was published/)
   assert.throws(() => inspect({ 'repos/fixture/visits': details, 'repos/fixture/visits/commits/main': { status: 0, stdout: 'null', stderr: '' } }), /unreadable latest commit/)
   assert.throws(() => inspect({ 'repos/fixture/visits': { status: 0, stdout: '{}', stderr: '' } }), /incomplete/)
+})
+
+test('the repository LICENSE is read at the inspected commit, and only a missing file reads as none', () => {
+  const path = `repos/fixture/visits/contents/LICENSE?ref=${head}`
+  const read = (response) => repositoryLicense('fixture/visits', head, '/tmp', github({ [path]: response }))
+  assert.equal(read({ status: 0, stdout: 'MIT License\n\nCopyright (c) 2025 Fixture Ltd.\n', stderr: '' }), 'MIT License\n\nCopyright (c) 2025 Fixture Ltd.\n')
+  assert.equal(read({ status: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' }), undefined)
+  assert.throws(() => read(undefined), /Cannot read the LICENSE of the GitHub repository; nothing was published/)
 })
 
 test('publication risks need approval for public source, unreleased repository commits, branches and install scripts', () => {

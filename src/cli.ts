@@ -22,6 +22,8 @@ import {
   inspectRepository,
   publicationRisks,
   ignoredLicenseWarning,
+  repositoryLicense,
+  adoptRepositoryLicense,
 } from './publish.js'
 import { loadConfig, saveConfig, removeDevelopment } from './config.js'
 import { isUnconfiguredLocalModule, linkFromInput } from './link.js'
@@ -511,13 +513,24 @@ async function main(argv = process.argv.slice(2)) {
         checkAuthentication(app.directory, settings)
       console.log('🐙 GitHub authentication ready.')
     }
-    const prepared = previous.development
+    let prepared = previous.development
       ? exportLinkedPackage(app, args.id, settings, previous.development)
       : exportPackage(app, args.id, settings)
     const repository =
       !args.flags['dry-run'] && settings.repository
         ? inspectRepository(settings.repository, app.directory)
         : undefined
+    // The release keeps a LICENSE the author wrote in the dedicated repository,
+    // so the archive approved below carries the same file.
+    if (repository?.head && !prepared.linkedCheckout) {
+      const license = repositoryLicense(
+        settings.repository!,
+        repository.head,
+        app.directory,
+      )
+      if (license !== undefined)
+        prepared = adoptRepositoryLicense(prepared, settings, license)
+    }
     const destination = !settings.repository
       ? 'skip'
       : !repository

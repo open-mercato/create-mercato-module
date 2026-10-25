@@ -31,6 +31,7 @@ function fixture(context, options = {}) {
   fs.mkdirSync(path.join(exported, 'src/modules/visits/__tests__'))
   fs.writeFileSync(path.join(exported, 'src/modules/visits/__tests__/author.test.ts'), 'export const authorTest = true\n')
   if (options.remoteManifest !== undefined) writeJson(path.join(exported, 'package.json'), options.remoteManifest)
+  if (options.licenseText !== undefined) fs.writeFileSync(path.join(exported, 'LICENSE'), options.licenseText)
   run('git', ['init', '-q', '-b', 'main'], exported, { capture: true })
   run('git', ['add', '.'], exported, { capture: true })
   run('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-qm', 'Module snapshot'], exported, { capture: true })
@@ -388,6 +389,28 @@ test('publish --license warns when a linked repository keeps another license', c
   assert.equal(configured.status, 1, configured.output)
   assert.doesNotMatch(configured.output, /PROMPT:⚖️ License/, 'a linked module has no license question')
   assert.ok(configured.output.includes(`⚖️ License: a linked module keeps the license in its repository's package.json. To change it, edit the license field in ${file}.`), configured.output)
+})
+
+test('linked releases of an MIT repository ship the repository LICENSE, not generated text', context => {
+  const own = 'MIT License\n\nCopyright (c) 2025 Fixture Ltd.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software.\n'
+  const { app, cli, bare, published } = fixture(context, { license: 'MIT', licenseText: own })
+  assert.equal(cli(['link', 'release-checks/visits-example', '--no-generate']).status, 0)
+  const released = cli(['publish', 'visits', '--yes'])
+  assert.equal(released.status, 0, released.output)
+  const archive = JSON.parse(fs.readFileSync(published, 'utf8'))[1]
+  assert.equal(run('tar', ['-xOzf', archive, 'package/LICENSE'], app.directory, { capture: true }).stdout, own, 'the npm archive carries the repository LICENSE')
+  assert.equal(run('git', ['--git-dir', bare, 'show', 'main:LICENSE'], app.directory, { capture: true }).stdout, own, 'the repository keeps its LICENSE')
+})
+
+test('a release from the app ships the LICENSE its dedicated repository keeps', context => {
+  const own = 'MIT License\n\nCopyright (c) 2025 Fixture Ltd.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software.\n'
+  const { app, cli, bare, published } = fixture(context, { license: 'MIT', licenseText: own, localSource: true })
+  const released = cli(['publish', 'visits', '--package', '@fixture/visits', '--repo', 'release-checks/visits-example', '--version', '0.1.1', '--license', 'MIT', '--yes', '--overwrite-repo'])
+  assert.equal(released.status, 0, released.output)
+  assert.match(released.output, /release-checks\/visits-example keeps its own LICENSE, so the npm package carries that file\./)
+  const archive = JSON.parse(fs.readFileSync(published, 'utf8'))[1]
+  assert.equal(run('tar', ['-xOzf', archive, 'package/LICENSE'], app.directory, { capture: true }).stdout, own, 'npm and the repository carry the same LICENSE')
+  assert.equal(run('git', ['--git-dir', bare, 'show', 'main:LICENSE'], app.directory, { capture: true }).stdout, own)
 })
 
 test('unlink restores the link when saving settings fails', context => {
