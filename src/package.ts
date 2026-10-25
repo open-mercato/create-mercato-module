@@ -65,8 +65,8 @@ function settingLicense(value: unknown): string | undefined {
 // The copyright holder of a generated LICENSE: the Git author name, then the
 // npm user, and only when both are missing the package's authors.
 function licenseHolder(
-  app: App,
-  settings: Settings,
+  app: Pick<App, 'directory'>,
+  settings: Pick<Settings, 'packageName'>,
   execute: Executor = run,
 ): string {
   const usable = (value: string | undefined) => {
@@ -94,16 +94,20 @@ function licenseHolder(
   )
 }
 
-function mitLicense(holder: string): string {
-  return `MIT License\n\nCopyright (c) ${new Date().getFullYear()} ${holder}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n`
+function mitLicense(
+  holder: string,
+  year: number | string = new Date().getFullYear(),
+): string {
+  return `MIT License\n\nCopyright (c) ${year} ${holder}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n`
 }
 
-// Whether a LICENSE holds the text mitLicense writes, whatever its year and
-// holder, so a release may replace or remove it without touching the author's.
-function generatedMitLicense(text: string): boolean {
-  const withoutCopyright = (value: string) =>
-    value.replace(/^Copyright \(c\) .*$/m, '')
-  return withoutCopyright(text) === withoutCopyright(mitLicense(''))
+// Whether a LICENSE is exactly the text mitLicense writes for this holder, in
+// the year of any earlier release, so a release may replace or remove it. Any
+// other text is the author's, including the standard MIT text with another
+// holder line, and stays.
+function generatedMitLicense(text: string, holder: string): boolean {
+  const year = /^Copyright \(c\) (\d{4}) /m.exec(text)?.[1]
+  return year !== undefined && text === mitLicense(holder, year)
 }
 
 const localLocator =

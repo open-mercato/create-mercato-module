@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
 const { scaffold, registration } = require('../dist/scaffold.js')
 const { findApp, writeJson, readJson, run } = require('../dist/common.js')
-const { preparePackage, validateSettings, moduleInfo, licenseHolder, npmInstallLocator } = require('../dist/package.js')
+const { preparePackage, validateSettings, moduleInfo, licenseHolder, mitLicense, generatedMitLicense, npmInstallLocator } = require('../dist/package.js')
 const { addTopics, exportPackage, githubState, publish, publishRepository, tagRelease, loadConfig, saveConfig } = require('../dist/publish.js')
 const { parse } = require('../dist/cli.js')
 const { installFromInput } = require('../dist/install.js')
@@ -485,6 +485,9 @@ test('an accepted release gives the repository its topics; a refused topic never
 
 test('a repository release removes the LICENSE an earlier MIT release generated, never the author\'s own', (context) => {
   const { app, root } = fixture(context)
+  const holder = process.env.GIT_AUTHOR_NAME
+  process.env.GIT_AUTHOR_NAME = 'Ada Lovelace'
+  context.after(() => { if (holder === undefined) delete process.env.GIT_AUTHOR_NAME; else process.env.GIT_AUTHOR_NAME = holder })
   const remote = path.join(root, 'module.git')
   function execute(command, args, cwd, options) {
     if (command !== 'gh') return run(command, args, cwd, options)
@@ -505,13 +508,27 @@ test('a repository release removes the LICENSE an earlier MIT release generated,
   assert.notEqual(show('LICENSE').status, 0, 'the MIT grant must not outlive the MIT license')
   const author = path.join(root, 'author')
   run('git', ['clone', '-q', remote, author], root, { capture: true })
-  fs.writeFileSync(path.join(author, 'LICENSE'), 'Copyright (c) 2026 Fixture Ltd. All rights reserved.\n')
-  run('git', ['add', 'LICENSE'], author, { capture: true })
-  run('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-qm', 'Add our terms'], author, { capture: true })
-  run('git', ['push', '-q', 'origin', 'main'], author, { capture: true })
+  const authorLicense = (text) => {
+    run('git', ['pull', '-q', '--ff-only'], author, { capture: true })
+    fs.writeFileSync(path.join(author, 'LICENSE'), text)
+    run('git', ['add', 'LICENSE'], author, { capture: true })
+    run('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-qm', 'Add our terms'], author, { capture: true })
+    run('git', ['push', '-q', 'origin', 'main'], author, { capture: true })
+  }
+  authorLicense('Copyright (c) 2026 Fixture Ltd. All rights reserved.\n')
   release('0.2.2', 'UNLICENSED')
   assert.equal(JSON.parse(show('package.json').stdout).version, '0.2.2')
   assert.equal(show('LICENSE').stdout, 'Copyright (c) 2026 Fixture Ltd. All rights reserved.\n', 'a LICENSE the author wrote stays')
+  const handWritten = mitLicense('Fixture Ltd.', 2025)
+  authorLicense(handWritten)
+  release('0.2.3', 'MIT')
+  assert.equal(JSON.parse(show('package.json').stdout).license, 'MIT')
+  assert.equal(show('LICENSE').stdout, handWritten, 'a release does not overwrite an MIT LICENSE the author wrote')
+  release('0.2.4', 'UNLICENSED')
+  assert.equal(show('LICENSE').stdout, handWritten, 'nor removes it when the license changes')
+  authorLicense(mitLicense('Ada Lovelace', 2024))
+  release('0.2.5', 'UNLICENSED')
+  assert.notEqual(show('LICENSE').status, 0, 'the text this tool wrote in an earlier year still goes')
 })
 
 test('releases are tagged with the bare version so the generated v* workflow does not publish again', () => {
@@ -535,6 +552,18 @@ test('package metadata takes the module description and links the dedicated repo
   assert.deepEqual(prepared.manifest.keywords, ['open-mercato', 'open-mercato-module'])
   assert.equal(prepared.manifest.homepage, 'https://github.com/fixture/visits#readme')
   assert.deepEqual(prepared.manifest.bugs, { url: 'https://github.com/fixture/visits/issues' })
+})
+
+test('only the exact text the tool writes, holder line included, counts as a generated LICENSE', () => {
+  const generated = mitLicense('Ada Lovelace')
+  assert.equal(generatedMitLicense(generated, 'Ada Lovelace'), true)
+  assert.equal(generatedMitLicense(mitLicense('Ada Lovelace', 2024), 'Ada Lovelace'), true, 'a release from an earlier year')
+  assert.equal(generatedMitLicense(generated, 'Grace Hopper'), false, 'the standard MIT text naming another holder is hand-written')
+  assert.equal(generatedMitLicense(generated.replace('MIT License\n', 'The MIT License (MIT)\n'), 'Ada Lovelace'), false)
+  assert.equal(generatedMitLicense(generated.replace('\n', '\r\n'), 'Ada Lovelace'), false)
+  assert.equal(generatedMitLicense(generated.replace('Copyright (c) ', 'Copyright (c) 2023-'), 'Ada Lovelace'), false)
+  assert.equal(generatedMitLicense(`${generated}\nPortions copyright (c) 2026 Grace Hopper.\n`, 'Ada Lovelace'), false)
+  assert.equal(generatedMitLicense('', 'Ada Lovelace'), false)
 })
 
 test('the chosen license reaches package.json, and MIT ships its LICENSE text', (context) => {

@@ -656,13 +656,17 @@ function publishRepository(
     '.gitignore',
     '.github/workflows/publish.yml',
   ]
-  // A LICENSE this tool generated for an earlier MIT release goes when the
-  // license changes; one the author wrote stays.
+  // The release writes LICENSE where the repository has none, and replaces or
+  // removes only the one this tool wrote for the same holder. A LICENSE the
+  // author wrote stays, even when it is the standard MIT text.
   const license = path.join(checkout, 'LICENSE')
   if (
-    fs.existsSync(path.join(prepared.destination, 'LICENSE')) ||
-    (fs.lstatSync(license, { throwIfNoEntry: false })?.isFile() &&
-      generatedMitLicense(fs.readFileSync(license, 'utf8')))
+    fs.lstatSync(license, { throwIfNoEntry: false })?.isFile()
+      ? generatedMitLicense(
+          fs.readFileSync(license, 'utf8'),
+          licenseHolder({ directory: prepared.workspace }, settings, execute),
+        )
+      : fs.existsSync(path.join(prepared.destination, 'LICENSE'))
   )
     owned.push('LICENSE')
   validateMutablePaths(checkout, owned)
