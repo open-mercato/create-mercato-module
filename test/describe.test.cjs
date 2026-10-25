@@ -17,7 +17,7 @@ const descriptorSchema = require('./fixtures/catalog/descriptor-1.json')
 const settings = { packageName: '@fixture/visits', version: '0.1.0', access: 'public', repository: 'fixture/mercato-visits', auth: 'login' }
 
 function fixture(context) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-describe-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-describe-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const app = { directory: path.join(root, 'app'), manifest: { name: 'fixture-app', private: true, dependencies: { '@open-mercato/core': '0.9.0' } } }
   writeJson(path.join(app.directory, 'package.json'), app.manifest)

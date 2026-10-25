@@ -12,7 +12,7 @@ const { createPublishWorkflow } = require('../dist/workflow.js')
 
 const base = { packageName: '@fixture/visits', version: '0.1.0', access: 'public', auth: 'login', repository: '' }
 function fixture(context) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-tags-'))
+  const directory = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-tags-'))
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }))
   const manifest = { name: 'fixture-app', private: true, dependencies: { '@open-mercato/core': '0.9.0', '@open-mercato/shared': '0.9.0', '@open-mercato/ui': '0.9.0', react: '19.0.0' } }
   fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify(manifest))

@@ -15,7 +15,7 @@ const { unlinkDevelopment } = require('../dist/development.js')
 // All fixtures are created locally. Only gh's transport and npm's metadata /
 // submission are replaced; cloning, editing, packing, commits and pushes are real.
 function fixture(context, options = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-link-cli-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-link-cli-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const app = { directory: path.join(root, 'app'), manifest: { name: 'fixture-app', private: true, dependencies: { '@open-mercato/core': '0.9.0', '@open-mercato/shared': '0.9.0', '@open-mercato/ui': '0.9.0', react: '19.0.0' } } }
   writeJson(path.join(app.directory, 'package.json'), app.manifest)

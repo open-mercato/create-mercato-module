@@ -11,7 +11,7 @@ const { checkAuthentication } = require('../dist/npm-auth.js')
 const settings = { packageName: '@fixture/visits', version: '0.1.0', access: 'public', repository: '', auth: 'login' }
 
 function fixture(context) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-config-cli-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-config-cli-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const app = { directory: path.join(root, 'app'), manifest: { name: 'fixture-app', private: true, dependencies: { '@open-mercato/core': '0.9.0', '@open-mercato/shared': '0.9.0', '@open-mercato/ui': '0.9.0', react: '19.0.0' } } }
   fs.mkdirSync(path.join(app.directory, 'src/modules'), { recursive: true })

@@ -10,7 +10,7 @@ const { run, readJson, writeJson } = require('../dist/common.js')
 const { exportPackage, exportLinkedPackage, publishRepository, publicationRisks, packEntries } = require('../dist/publish.js')
 
 function fixture(context) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-linked-publish-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-linked-publish-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const app = { directory: path.join(root, 'app'), manifest: { name: 'app', dependencies: { '@open-mercato/core': '0.9.0', '@open-mercato/shared': '0.9.0', '@open-mercato/ui': '0.9.0', react: '19.2.8' } } }
   writeJson(path.join(app.directory, 'package.json'), app.manifest)

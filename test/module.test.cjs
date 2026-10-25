@@ -14,7 +14,7 @@ const { parse } = require('../dist/cli.js')
 const settings = { packageName: '@fixture/visits', version: '0.1.0', repository: '', access: 'public' }
 
 function fixture(context) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-module-test-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-module-test-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const app = { directory: path.join(root, 'app'), manifest: { name: 'sandbox-app', private: true, dependencies: { '@open-mercato/core': '0.9.0', '@open-mercato/shared': '0.9.0', '@open-mercato/ui': '0.9.0', react: '19.2.8', 'fixture-library': '^1.2.0' } } }
   writeJson(path.join(app.directory, 'package.json'), app.manifest)

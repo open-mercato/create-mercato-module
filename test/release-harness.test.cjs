@@ -30,7 +30,7 @@ test('release harness disables Yarn package-age gates for nested Git package bui
 
 test('fresh release fixtures use patched Yarn without changing app dependencies or approvals', async (context) => {
   const { pinFixtureYarn } = await import('./release-e2e/run.mts')
-  const app = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-yarn-fixture-'))
+  const app = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-yarn-fixture-'))
   context.after(() => fs.rmSync(app, { recursive: true, force: true }))
   const manifest = {
     name: 'release-fixture',
@@ -90,7 +90,7 @@ test('local release checks install both lanes through create-mercato-module inst
 
 test('release fixture writer creates portable module source and refuses to replace existing source', async (context) => {
   const { writeFixture, fixtureContract } = await import('./release-e2e/fixture.mts')
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-release-fixture-'))
+  const directory = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-release-fixture-'))
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }))
   writeFixture(directory)
   const moduleRoot = path.join(directory, 'src/modules', fixtureContract.moduleId)

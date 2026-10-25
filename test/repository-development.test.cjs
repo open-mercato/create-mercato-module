@@ -12,7 +12,7 @@ const { packEntries } = require('../dist/publish.js')
 
 test('dedicated repo develops through a Yarn portal, shares React, rebuilds, regenerates and packs releases', { skip: !process.env.OPEN_MERCATO_ROOT, timeout: 180000 }, async (context) => {
   const framework = fs.realpathSync(process.env.OPEN_MERCATO_ROOT)
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-repo-development-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-repo-development-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const source = path.join(root, 'source-app')
   const app = path.join(root, 'test-app')
