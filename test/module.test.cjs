@@ -515,6 +515,7 @@ test('generated module README uses the tool install command and explains the Yar
   assert.doesNotMatch(readme, /yarn mercato module add/)
   assert.match(readme, /## Open Mercato Modules\n\nList this module in \[Open Mercato Modules\]\(https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits\)/)
   assert.match(readme, /`npx create-mercato-module describe visits` prints its catalog entry/)
+  assert.doesNotMatch(readme, /!\[|\/badge\//, 'no catalog badge before the module is listed')
   const restricted = path.join(destination, '..', 'restricted')
   preparePackage(app, 'visits', { ...settings, access: 'restricted' }, restricted)
   assert.doesNotMatch(fs.readFileSync(path.join(restricted, 'README.md'), 'utf8'), /Open Mercato Modules/, 'the catalog lists public packages only')

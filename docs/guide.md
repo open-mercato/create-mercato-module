@@ -318,6 +318,12 @@ Before the package's first release, which you describe with `--package`, the hea
 
 `summary` comes from `description` in the module's `metadata` (`src/modules/<id>/index.ts`) when it is 20 to 140 characters of plain text; set it there and the same text becomes the npm package description. Write each value marked `TODO` and delete the `# TODO` comments before you submit: the catalog's check rejects a file that still has them, even when the value next to a comment is right. Keep `category: operations` if it fits. Restricted packages cannot be listed, so `describe` stops for them.
 
+Generated module READMEs link the submit page for the package (`https://modules.openmercato.com/submit?npm=<package>`) and show no catalog badge, because the badge exists only for a listed module. Once the catalog lists yours, you can add the badge to the repository README yourself:
+
+```markdown
+[![Open Mercato Modules](https://modules.openmercato.com/badge/@your-name/mercato-visits.svg)](https://modules.openmercato.com/m/@your-name/mercato-visits)
+```
+
 To help people find your module without the catalog too, every generated `package.json` has the keywords `open-mercato` and `open-mercato-module`, and a dedicated GitHub repository gets the `open-mercato-module` and `open-mercato` topics.
 
 ## Authentication
