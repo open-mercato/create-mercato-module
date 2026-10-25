@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 
 test('release harness rejects ambiguous refs, credentials in repo URLs and unknown lanes before running commands', async () => {
   const { parseOptions } = await import('./release-e2e/run.mts')
@@ -86,6 +87,29 @@ test('local release checks install both lanes through create-mercato-module inst
   assert.match(source, /install-refused-by-age-gate/)
   assert.match(source, /\[toolBin, 'install', npmLocator, '--preapprove-package'\]/)
   assert.match(source, /\[toolBin, 'install', `\$\{options\.repository\}@\$\{options\.ref\}`, '--approve-git-repository'\]/)
+})
+
+test('local release checks publish their fixture without a warning', async (context) => {
+  const { fixtureDescription, publishArguments } = await import('./release-e2e/local.mts')
+  const { writeFixture, fixtureContract } = await import('./release-e2e/fixture.mts')
+  const { writeJson } = require('../dist/common.js')
+  const app = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-release-warnings-'))
+  context.after(() => fs.rmSync(app, { recursive: true, force: true }))
+  const dependencies = { '@open-mercato/core': '0.9.0', '@open-mercato/shared': '0.9.0', '@open-mercato/ui': '0.9.0', '@mikro-orm/decorators': '7.0.0', '@mikro-orm/migrations': '7.0.0', react: '19.0.0' }
+  writeJson(path.join(app, 'package.json'), { name: 'release-source-app', private: true, dependencies })
+  for (const [name, version] of Object.entries(dependencies)) writeJson(path.join(app, 'node_modules', name, 'package.json'), { name, version })
+  fs.mkdirSync(path.join(app, 'src/modules'), { recursive: true })
+  fs.writeFileSync(path.join(app, 'src/modules.ts'), 'export const enabledModules = []\n')
+  const cli = (args) => spawnSync(process.execPath, [path.resolve(__dirname, '../bin/cli.cjs'), ...args], { cwd: app, encoding: 'utf8', timeout: 60000, env: { ...process.env, GIT_AUTHOR_NAME: 'Fixture' } })
+  const init = cli(['init', fixtureContract.moduleId, '--description', fixtureDescription, '--no-generate'])
+  assert.equal(init.status, 0, init.stderr)
+  writeFixture(app, { extend: true })
+  const dry = cli(['publish', fixtureContract.moduleId, ...publishArguments('0.0.1'), '--dry-run'])
+  assert.equal(dry.status, 0, dry.stderr)
+  assert.doesNotMatch(dry.stdout, /⚠️/, 'local.mts asserts that its first releases print no warning')
+  const source = fs.readFileSync(path.join(__dirname, 'release-e2e/local.mts'), 'utf8')
+  assert.match(source, /\[toolBin, 'init', fixtureContract\.moduleId, '--description', fixtureDescription\]/)
+  assert.match(source, /\[toolBin, 'publish', fixtureContract\.moduleId, \.\.\.publishArguments\(version\), '--yes'\]/)
 })
 
 test('release fixture writer creates portable module source and refuses to replace existing source', async (context) => {
