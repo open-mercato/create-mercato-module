@@ -1,10 +1,10 @@
-import type { App, Settings, PreparedPackage } from './types.js'
+import type { App, Settings, PreparedPackage, Executor } from './types.js'
 import * as fs from 'node:fs'
 import * as ts from 'typescript'
 import { version as typescriptVersion } from 'typescript'
 import * as path from 'node:path'
 import { createRequire } from 'node:module'
-import { readJson, writeJson, moduleDirectory } from './common.js'
+import { readJson, writeJson, moduleDirectory, run } from './common.js'
 import { filesIn, rewriteSource, build, codePattern } from './build.js'
 import { createPublishWorkflow } from './workflow.js'
 import { assertNoCredentials } from './repository-safety.js'
@@ -52,6 +52,38 @@ function npmInstallLocator(packageName: string): string {
 // An SPDX license expression such as MIT or (MIT OR Apache-2.0), or UNLICENSED.
 const licensePattern =
   /^\(?[A-Za-z0-9][A-Za-z0-9.+-]*\)?(?: (?:AND|OR|WITH) \(?[A-Za-z0-9][A-Za-z0-9.+-]*\)?)*$/
+
+// The copyright holder of a generated LICENSE: the Git author name, then the
+// npm user, and only when both are missing the package's authors.
+function licenseHolder(
+  app: App,
+  settings: Settings,
+  execute: Executor = run,
+): string {
+  const usable = (value: string | undefined) => {
+    // eslint-disable-next-line no-control-regex
+    const line = (value ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()
+    return line.length <= 100 ? line : ''
+  }
+  const ask = (command: string, args: string[]) => {
+    try {
+      const result = execute(command, args, app.directory, {
+        capture: true,
+        allowFailure: true,
+        timeout: 15_000,
+      })
+      return result.status === 0 ? usable(result.stdout) : ''
+    } catch {
+      return ''
+    }
+  }
+  return (
+    usable(process.env.GIT_AUTHOR_NAME) ||
+    ask('git', ['config', 'user.name']) ||
+    ask('npm', ['whoami']) ||
+    `${settings.packageName} authors`
+  )
+}
 
 function mitLicense(holder: string): string {
   return `MIT License\n\nCopyright (c) ${new Date().getFullYear()} ${holder}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n`
@@ -342,7 +374,7 @@ function preparePackage(
   if (manifest.license === 'MIT')
     fs.writeFileSync(
       path.join(destination, 'LICENSE'),
-      mitLicense(`${settings.packageName} authors`),
+      mitLicense(licenseHolder(app, settings)),
     )
   fs.copyFileSync(
     path.join(__dirname, 'build.js'),
@@ -376,6 +408,7 @@ export {
   installedVersion,
   moduleInfo,
   packageLicense,
+  licenseHolder,
   unchosenLicenseWarning,
   preparePackage,
   localLocator,

@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
 const { scaffold, registration } = require('../dist/scaffold.js')
 const { findApp, writeJson, readJson, run } = require('../dist/common.js')
-const { preparePackage, validateSettings, moduleInfo, npmInstallLocator } = require('../dist/package.js')
+const { preparePackage, validateSettings, moduleInfo, licenseHolder, npmInstallLocator } = require('../dist/package.js')
 const { addTopics, exportPackage, githubState, publish, publishRepository, tagRelease, loadConfig, saveConfig } = require('../dist/publish.js')
 const { parse } = require('../dist/cli.js')
 const { installFromInput } = require('../dist/install.js')
@@ -508,9 +508,12 @@ test('package metadata takes the module description and links the dedicated repo
 
 test('the chosen license reaches package.json, and MIT ships its LICENSE text', (context) => {
   const { app, directory, root } = fixture(context)
+  const author = process.env.GIT_AUTHOR_NAME
+  process.env.GIT_AUTHOR_NAME = 'Ada Lovelace'
+  context.after(() => { if (author === undefined) delete process.env.GIT_AUTHOR_NAME; else process.env.GIT_AUTHOR_NAME = author })
   const mit = preparePackage(app, 'visits', { ...settings, license: 'MIT' }, path.join(root, 'mit'))
   assert.equal(mit.manifest.license, 'MIT')
-  assert.match(fs.readFileSync(path.join(root, 'mit/LICENSE'), 'utf8'), /^MIT License\n\nCopyright \(c\) \d{4} @fixture\/visits authors\n/)
+  assert.match(fs.readFileSync(path.join(root, 'mit/LICENSE'), 'utf8'), /^MIT License\n\nCopyright \(c\) \d{4} Ada Lovelace\n/, 'the Git author holds the copyright')
   const unset = preparePackage(app, 'visits', settings, path.join(root, 'unset'))
   assert.equal(unset.manifest.license, 'UNLICENSED', 'no choice keeps the earlier default')
   assert.equal(unset.licenseDefaulted, true)
@@ -521,6 +524,12 @@ test('the chosen license reaches package.json, and MIT ships its LICENSE text', 
   assert.equal(preparePackage(app, 'visits', settings, path.join(root, 'declared')).manifest.license, 'Apache-2.0')
   assert.ok(!fs.existsSync(path.join(root, 'declared/LICENSE')), 'only the MIT text ships with the tool')
   assert.throws(() => validateSettings({ ...settings, license: 'MIT; rm -rf /' }), /SPDX license/)
+  delete process.env.GIT_AUTHOR_NAME
+  const answers = (replies) => (command) => ({ status: replies[command] === undefined ? 1 : 0, stdout: `${replies[command] ?? ''}\n`, stderr: '' })
+  assert.equal(licenseHolder(app, settings, answers({ git: 'Grace Hopper', npm: 'grace' })), 'Grace Hopper')
+  assert.equal(licenseHolder(app, settings, answers({ npm: 'grace' })), 'grace', 'the npm user when Git has no name')
+  assert.equal(licenseHolder(app, settings, answers({})), '@fixture/visits authors', 'the package authors only when both are missing')
+  assert.equal(licenseHolder(app, settings, () => { throw new Error('npm is missing') }), '@fixture/visits authors')
   assert.doesNotThrow(() => validateSettings({ ...settings, license: '(MIT OR Apache-2.0)' }))
 })
 
