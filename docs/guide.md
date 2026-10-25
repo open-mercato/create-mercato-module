@@ -295,17 +295,19 @@ npx create-mercato-module describe visits
 
 ```yaml
 # Open Mercato Modules entry for @your-name/mercato-visits, as modules/@your-name/mercato-visits.yml.
-# Replace each TODO value, then submit the module at
+# Write each value marked TODO, then delete those TODO comments (the catalog rejects a file that still has them).
+# Submit the module at
 # https://modules.openmercato.com/submit?npm=@your-name/mercato-visits
+
 npm: "@your-name/mercato-visits"
 github: your-name/mercato-visits
 # Categories: crm-sales, catalog-pricing, orders-checkout, ...
-category: operations # TODO: choose the category that fits
+category: operations # choose the category that fits
 summary: Visits module for Open Mercato apps. # TODO: what it adds, 20 to 140 characters
 whenToUse: Use when an Open Mercato app needs the Visits module. # TODO: when an app needs it, 40 to 240 characters
 ```
 
-`summary` comes from `description` in the module's `metadata` (`src/modules/<id>/index.ts`) when it is 20 to 140 characters of plain text; set it there and the same text becomes the npm package description. Replace each `TODO` value before you submit. Restricted packages cannot be listed, so `describe` stops for them.
+`summary` comes from `description` in the module's `metadata` (`src/modules/<id>/index.ts`) when it is 20 to 140 characters of plain text; set it there and the same text becomes the npm package description. Write each value marked `TODO` and delete the `# TODO` comments before you submit: the catalog's check rejects a file that still has them, even when the value next to a comment is right. Keep `category: operations` if it fits. Restricted packages cannot be listed, so `describe` stops for them.
 
 To help people find your module without the catalog too, every generated `package.json` has the keywords `open-mercato` and `open-mercato-module`, and a dedicated GitHub repository gets the `open-mercato-module` and `open-mercato` topics.
 

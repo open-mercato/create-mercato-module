@@ -97,12 +97,14 @@ export function describeModule(app: App, id: string): ModuleDescription {
   const summary = plainText(description, 20, 140)
   const lines = [
     `# Open Mercato Modules entry for ${saved.packageName}, as modules/${saved.packageName}.yml.`,
-    '# Replace each TODO value, then submit the module at',
+    '# Write each value marked TODO, then delete those TODO comments (the catalog rejects a file that still has them).',
+    '# Submit the module at',
     `# ${catalogSubmitUrl(saved.packageName)}`,
+    '',
     `npm: ${scalar(saved.packageName)}`,
     ...(saved.repository ? [`github: ${scalar(saved.repository)}`] : []),
     `# Categories: ${categories.join(', ')}`,
-    'category: operations # TODO: choose the category that fits',
+    'category: operations # choose the category that fits',
     summary
       ? `summary: ${scalar(summary)}`
       : `summary: ${scalar(`${title} module for Open Mercato apps.`)} # TODO: what it adds, 20 to 140 characters`,
