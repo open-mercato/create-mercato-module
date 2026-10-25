@@ -16,11 +16,11 @@ import { main as runLanes, redact, pinFixtureYarn, freePort } from './run.mts'
 const packageName = '@mercato-e2e/release-checks'
 const repository = 'mercato-e2e/release-checks'
 const versions = ['0.0.1', '0.0.2']
-// The fixture has what publish asks every module for, so a release made only
-// by this tool prints no warning.
+// The fixture has what publish asks every module for, a description and a
+// license, so a release made only by this tool prints no warning.
 export const fixtureDescription = 'Checks that a released module installs, generates and runs in a new app.'
 export function publishArguments(version: string): string[] {
-  return ['--package', packageName, '--version', version, '--repo', repository, '--access', 'restricted', '--auth', 'token']
+  return ['--package', packageName, '--version', version, '--repo', repository, '--access', 'restricted', '--auth', 'token', '--license', 'MIT']
 }
 
 type Options = { registry: string; results: string; createApp: string; databaseUrl?: string }
