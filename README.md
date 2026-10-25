@@ -139,15 +139,15 @@ npx create-mercato-module link pkarw/marketing-consents my-consents
 
 The tool clones under `.mercato/module-repos/my-consents` (default: the module ID), links `src/modules/marketing_consents`, registers it as `@app`, and runs generation. Existing local source is backed up. The local folder name does not change the module ID, routes, or imports.
 
-Edit through the app, then release from the linked repository using the saved package and repository settings:
+Edit through the app, then release from the linked repository using the saved package and repository settings (this needs push access to the repository and publish rights for its npm package):
 
 ```bash
-npx create-mercato-module publish visits
+npx create-mercato-module publish marketing_consents
 ```
 
-Publication includes your linked edits, preserves repository customizations, and suggests the next patch version. `link visits` still works when the repository is saved. For a new local module, publish it with `publish visits --repo owner/repo` before linking it.
+Publication includes your linked edits, preserves repository customizations, and suggests the next patch version. `link marketing_consents` still works when the repository is saved. For a new local module of your own, such as `visits`, publish it with `publish visits --repo owner/repo` before linking it.
 
-To make it an ordinary local module again, run `npx create-mercato-module unlink visits`: it copies the checkout's current source into `src/modules/visits` and keeps the checkout and the earlier backup.
+To make it an ordinary local module again, run `npx create-mercato-module unlink marketing_consents`: it copies the checkout's current source into `src/modules/marketing_consents` and keeps the checkout and the earlier backup.
 
 This link is local: a fresh clone of the whole app needs the module source restored or linked again. See [repository development and PR workflow](docs/guide.md#develop-in-the-dedicated-repository-without-leaving-your-app) for details.
 
