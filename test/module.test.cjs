@@ -7,9 +7,10 @@ const { spawnSync } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
 const { scaffold, registration } = require('../dist/scaffold.js')
 const { findApp, writeJson, readJson, run } = require('../dist/common.js')
-const { preparePackage, validateSettings, moduleInfo } = require('../dist/package.js')
+const { preparePackage, validateSettings, moduleInfo, npmInstallLocator } = require('../dist/package.js')
 const { addTopics, exportPackage, githubState, publish, publishRepository, tagRelease, loadConfig, saveConfig } = require('../dist/publish.js')
 const { parse } = require('../dist/cli.js')
+const { installFromInput } = require('../dist/install.js')
 
 const settings = { packageName: '@fixture/visits', version: '0.1.0', repository: '', access: 'public' }
 
@@ -516,6 +517,24 @@ test('generated module README uses the tool install command and explains the Yar
   const restricted = path.join(destination, '..', 'restricted')
   preparePackage(app, 'visits', { ...settings, access: 'restricted' }, restricted)
   assert.doesNotMatch(fs.readFileSync(path.join(restricted, 'README.md'), 'utf8'), /Open Mercato Modules/, 'the catalog lists public packages only')
+})
+
+test('generated commands name an unscoped package with npm: so install does not take it for a GitHub repository', (context) => {
+  const { app, destination } = fixture(context)
+  preparePackage(app, 'visits', { ...settings, packageName: 'mercato-visits' }, destination)
+  const readme = fs.readFileSync(path.join(destination, 'README.md'), 'utf8')
+  assert.match(readme, /npx create-mercato-module install npm:mercato-visits\n/)
+  assert.match(readme, /npx create-mercato-module link npm:mercato-visits\n/)
+  assert.equal(npmInstallLocator('@fixture/visits'), '@fixture/visits')
+  for (const version of ['', '@0.1.0']) {
+    const calls = []
+    installFromInput(app, `${npmInstallLocator('mercato-visits')}${version}`, {}, (command, args) => {
+      calls.push([command, ...args])
+      if (command === 'gh') throw new Error('an npm package must not reach GitHub')
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    assert.deepEqual(calls, [['yarn', 'mercato', 'module', 'add', `mercato-visits${version}`, '--allow-third-party']])
+  }
 })
 
 test('publication preferences persist per module without credentials', (context) => {

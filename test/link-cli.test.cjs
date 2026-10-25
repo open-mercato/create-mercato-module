@@ -176,6 +176,15 @@ test('CLI switches an installed package registration to @app and publishes a new
   assert.equal(tagged('0.1.1'), tagged('main'), 'install owner/repo@0.1.1 must find the release commit')
 })
 
+test('CLI release summary names an unscoped package with npm: so the printed install command reaches npm', context => {
+  const { cli } = fixture(context, { packageName: 'visits' })
+  const linked = cli(['link', 'npm:visits', '--no-generate'])
+  assert.equal(linked.status, 0, linked.output)
+  const released = cli(['publish', 'visits', '--yes'])
+  assert.equal(released.status, 0, released.output)
+  assert.match(released.output, /npx create-mercato-module install npm:visits@0\.1\.1\n {2}npx create-mercato-module install release-checks\/visits-example@0\.1\.1/)
+})
+
 test('CLI reads npm 12 repository metadata, which npm wraps in an array', context => {
   const { app, settings, cli } = fixture(context, { npmRepository: [{ type: 'git', url: 'git+https://github.com/release-checks/visits-example.git' }] })
   const linked = cli(['link', '@fixture/visits', '--no-generate'])

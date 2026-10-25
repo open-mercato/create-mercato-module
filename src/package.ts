@@ -43,6 +43,12 @@ function catalogSubmitUrl(packageName: string, origin = catalogUrl): string {
   return `${origin}/submit?npm=${packageName}`
 }
 
+// install and link read a bare name as a repository of the signed-in GitHub
+// user, so printed commands name an unscoped package with the npm: prefix.
+function npmInstallLocator(packageName: string): string {
+  return packageName.startsWith('@') ? packageName : `npm:${packageName}`
+}
+
 const localLocator =
   /^(?:workspace:|file:|link:|portal:|patch:|git\+|git:|ssh:|https?:|github:)/
 
@@ -297,7 +303,7 @@ function preparePackage(
   )
   fs.writeFileSync(
     path.join(destination, 'README.md'),
-    `# ${settings.packageName}\n\nInstall in an Open Mercato app:\n\n\`\`\`sh\nnpx create-mercato-module install ${settings.packageName}\n\`\`\`\n\n${ageGateNote.replace('--preapprove-package', '`--preapprove-package`').replace('npmMinimalAgeGate', '`npmMinimalAgeGate`').replace("app's npmPreapprovedPackages", "app's `npmPreapprovedPackages`")}\n\n${settings.repository ? `Or install from this repository; \`@<version>\` selects a release tagged by create-mercato-module:\n\n\`\`\`sh\nnpx create-mercato-module install ${settings.repository}\nnpx create-mercato-module install ${settings.repository}@${settings.version}\n\`\`\`\n\n` : ''}Develop in your existing app and publish another version with create-mercato-module. To make this repository the source of your module while keeping the same app for development:\n\n\`\`\`sh\nnpx create-mercato-module link ${settings.repository || settings.packageName}\n\`\`\`\n\nThe tool checks out this repo in the app's .mercato/module-repos/${id} directory, backs up the original module, and links src/modules/${id} to the checkout. Edits in the app are edits in this repository.\n\n${settings.access === 'public' ? `## Open Mercato Modules\n\nList this module in [Open Mercato Modules](${catalogSubmitUrl(settings.packageName, publicCatalogUrl)}) so people and coding agents can find it. In the app you develop it in, \`npx create-mercato-module describe ${id}\` prints its catalog entry.\n\n` : ''}## Trusted Publishing\n\nConfigure this package's trusted publisher on npmjs.com for the GitHub owner, repository, and workflow filename publish.yml. Then dispatch the included GitHub Actions workflow or push a v<version> tag matching package.json. Releases published with create-mercato-module are tagged <version> without the v, so they do not start this workflow, and the workflow skips a version that is already on npm. For private dependencies, set a read-only NPM_READ_TOKEN repository secret.\n\nSee [create-mercato-module](https://github.com/open-mercato/create-mercato-module) for authentication, release tests, and development details.\n`,
+    `# ${settings.packageName}\n\nInstall in an Open Mercato app:\n\n\`\`\`sh\nnpx create-mercato-module install ${npmInstallLocator(settings.packageName)}\n\`\`\`\n\n${ageGateNote.replace('--preapprove-package', '`--preapprove-package`').replace('npmMinimalAgeGate', '`npmMinimalAgeGate`').replace("app's npmPreapprovedPackages", "app's `npmPreapprovedPackages`")}\n\n${settings.repository ? `Or install from this repository; \`@<version>\` selects a release tagged by create-mercato-module:\n\n\`\`\`sh\nnpx create-mercato-module install ${settings.repository}\nnpx create-mercato-module install ${settings.repository}@${settings.version}\n\`\`\`\n\n` : ''}Develop in your existing app and publish another version with create-mercato-module. To make this repository the source of your module while keeping the same app for development:\n\n\`\`\`sh\nnpx create-mercato-module link ${settings.repository || npmInstallLocator(settings.packageName)}\n\`\`\`\n\nThe tool checks out this repo in the app's .mercato/module-repos/${id} directory, backs up the original module, and links src/modules/${id} to the checkout. Edits in the app are edits in this repository.\n\n${settings.access === 'public' ? `## Open Mercato Modules\n\nList this module in [Open Mercato Modules](${catalogSubmitUrl(settings.packageName, publicCatalogUrl)}) so people and coding agents can find it. In the app you develop it in, \`npx create-mercato-module describe ${id}\` prints its catalog entry.\n\n` : ''}## Trusted Publishing\n\nConfigure this package's trusted publisher on npmjs.com for the GitHub owner, repository, and workflow filename publish.yml. Then dispatch the included GitHub Actions workflow or push a v<version> tag matching package.json. Releases published with create-mercato-module are tagged <version> without the v, so they do not start this workflow, and the workflow skips a version that is already on npm. For private dependencies, set a read-only NPM_READ_TOKEN repository secret.\n\nSee [create-mercato-module](https://github.com/open-mercato/create-mercato-module) for authentication, release tests, and development details.\n`,
   )
   build(destination)
   return { destination, manifest, fileCount: files.length }
@@ -317,4 +323,5 @@ export {
   catalogPendingNote,
   catalogSubmitUrl,
   fallbackDescription,
+  npmInstallLocator,
 }
