@@ -73,13 +73,15 @@ Give the package a name of its own, such as `@your-name/mercato-visits`. A name 
 
 Settings are remembered in `.mercato/module-tool.json`; later releases reuse them and default to the next stable patch version. Use `--configure` to change them. Your app's module, other modules, and Git origin stay in place.
 
-### 4. Install it in another app
+### 4. Install a published module in another app
 
-Once npm makes the published version available, run inside the receiving app:
+Run inside the receiving app, for example with a module already on npm:
 
 ```bash
-npx create-mercato-module install @your-name/mercato-visits
+npx create-mercato-module install @fastwhitecat/integration-ksef-direct@0.1.8
 ```
+
+Your own module installs the same way under its package name, such as `@your-name/mercato-visits`, once npm makes the published version available.
 
 Apps created by `create-mercato-app` install npm versions only 5 days after
 publication (Yarn `npmMinimalAgeGate`). To install a new version sooner, add
