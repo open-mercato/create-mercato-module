@@ -69,6 +69,8 @@ npx create-mercato-module publish visits
 
 The wizard asks for the npm package name, version, optional GitHub repository, and public or restricted access. It builds an archive, shows the destinations and any warnings, and publishes only after you retype the package name. Complete npm's 2FA verification when requested.
 
+Give the package a name of its own, such as `@your-name/mercato-visits`. A name that only repeats a module ID, such as `@your-name/visits`, can match a module already listed in [Open Mercato Modules](#list-your-module-in-the-catalog), and the catalog then asks a curator to check the name before listing it.
+
 Settings are remembered in `.mercato/module-tool.json`; later releases reuse them and default to the next stable patch version. Use `--configure` to change them. Your app's module, other modules, and Git origin stay in place.
 
 ### 4. Install it in another app

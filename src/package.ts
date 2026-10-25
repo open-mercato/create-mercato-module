@@ -48,7 +48,7 @@ function validateSettings(settings: Settings): void {
     settings.packageName.length > 214
   )
     throw new Error(
-      'Enter a valid npm package name, for example @your-name/visits.',
+      'Enter a valid npm package name, for example @your-name/mercato-visits.',
     )
   if (
     !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(
@@ -60,7 +60,7 @@ function validateSettings(settings: Settings): void {
     throw new Error('Access must be public or restricted.')
   if (settings.access === 'restricted' && !settings.packageName.startsWith('@'))
     throw new Error(
-      'Private npm packages need a scope. Use a name such as @your-name/visits with --access restricted.',
+      'Private npm packages need a scope. Use a name such as @your-name/mercato-visits with --access restricted.',
     )
   if (!['auto', 'login', 'token', 'trusted'].includes(settings.auth || 'auto'))
     throw new Error(

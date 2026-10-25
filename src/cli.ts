@@ -46,10 +46,10 @@ Existing modules can be published directly; init is optional.
 Settings are saved per module in .mercato/module-tool.json.
 
 Publish options:
-  --package @your-name/visits  npm package name
+  --package @your-name/mercato-visits  npm package name
   --version 0.1.0             a new npm version
   --tag beta                  npm release channel (stable: latest; prerelease: next)
-  --repo your-name/visits     optional dedicated GitHub repository; - skips GitHub
+  --repo your-name/mercato-visits  optional dedicated GitHub repository; - skips GitHub
   --access public|restricted  npm and new GitHub repo visibility (default public)
   --auth auto|login|token|trusted  npm authentication (default auto)
   --configure                edit saved settings in the interactive wizard
@@ -66,8 +66,8 @@ Link options:
   Package name and module ID are read from the repository.
   Existing unsaved local module IDs prompt for --repo to preserve the legacy form.
   local-name optionally names the checkout folder; the module ID stays the same.
-  --package @your-name/visits  optional package identity check
-  --repo your-name/visits     repository override for link <module_id>
+  --package @your-name/mercato-visits  optional package identity check
+  --repo your-name/mercato-visits  repository override for link <module_id>
   --no-generate              link without running yarn generate
 
 Unlink:
@@ -85,7 +85,7 @@ Install options:
   Numeric @versions try the exact ref, then v<version> only if it is missing.
   Scoped npm packages and npm:package-name install from npm.
   Package name and module ID are discovered automatically.
-  --package @your-name/visits  optional package identity check
+  --package @your-name/mercato-visits  optional package identity check
   --module module_id         choose one module from a multi-module package
   --ref tag|branch|commit    pin an exact Git ref; must match a locator ref
   --eject                    copy ejectable module source into src/modules
@@ -409,7 +409,7 @@ async function main(argv = process.argv.slice(2)) {
       const configure = Boolean(args.flags.configure)
       if (!args.flags.package && (configure || !previous.packageName))
         settings.packageName = await ask(
-          '📦 npm package (for example @your-name/visits)',
+          '📦 npm package (for example @your-name/mercato-visits)',
           settings.packageName,
         )
       if (!args.flags.version && (configure || !previous.version))
