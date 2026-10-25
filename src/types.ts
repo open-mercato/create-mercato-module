@@ -58,6 +58,9 @@ export interface PreparedPackage {
   destination: string
   manifest: GeneratedManifest
   fileCount: number
+  // No setting, module metadata, app or repository names a license, so the
+  // package falls back to UNLICENSED.
+  licenseDefaulted?: boolean
 }
 
 export interface ExportedPackage extends PreparedPackage {

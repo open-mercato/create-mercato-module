@@ -169,8 +169,9 @@ function moduleInfo(moduleRoot: string): {
   return info
 }
 
-// The publish setting, then the module's metadata, then the app's license.
-function packageLicense(
+// The publish setting, then the module's metadata, then the app's license;
+// empty when none of them names one.
+function chosenLicense(
   app: App,
   settings: Settings,
   moduleLicense?: string,
@@ -181,8 +182,21 @@ function packageLicense(
       ? moduleLicense
       : '') ||
     app.manifest.license ||
-    'UNLICENSED'
+    ''
   )
+}
+
+function packageLicense(
+  app: App,
+  settings: Settings,
+  moduleLicense?: string,
+): string {
+  return chosenLicense(app, settings, moduleLicense) || 'UNLICENSED'
+}
+
+// Printed when a package falls back to UNLICENSED because nobody chose a license.
+function unchosenLicenseWarning(packageName: string): string {
+  return `No license chosen, so ${packageName} is published as UNLICENSED: proprietary, others get no right to use it, and no LICENSE file is added.\n   To publish it as open source, rerun with --license MIT (or another SPDX license, such as Apache-2.0).\n   The license is saved for later releases; change it with --license or --configure. Versions already on npm keep the license they were published with.`
 }
 
 function installedVersion(app: App, name: string): string {
@@ -348,7 +362,12 @@ function preparePackage(
     `# ${settings.packageName}\n\nInstall in an Open Mercato app:\n\n\`\`\`sh\nnpx create-mercato-module install ${npmInstallLocator(settings.packageName)}\n\`\`\`\n\n${ageGateNote.replace('--preapprove-package', '`--preapprove-package`').replace('npmMinimalAgeGate', '`npmMinimalAgeGate`').replace("app's npmPreapprovedPackages", "app's `npmPreapprovedPackages`")}\n\n${settings.repository ? `Or install from this repository; \`@<version>\` selects a release tagged by create-mercato-module:\n\n\`\`\`sh\nnpx create-mercato-module install ${settings.repository}\nnpx create-mercato-module install ${settings.repository}@${settings.version}\n\`\`\`\n\n` : ''}Develop in your existing app and publish another version with create-mercato-module. To make this repository the source of your module while keeping the same app for development:\n\n\`\`\`sh\nnpx create-mercato-module link ${settings.repository || npmInstallLocator(settings.packageName)}\n\`\`\`\n\nThe tool checks out this repo in the app's .mercato/module-repos/${id} directory, backs up the original module, and links src/modules/${id} to the checkout. Edits in the app are edits in this repository.\n\n${settings.access === 'public' ? `## Open Mercato Modules\n\nList this module in [Open Mercato Modules](${catalogSubmitUrl(settings.packageName, publicCatalogUrl)}) so people and coding agents can find it. In the app you develop it in, \`npx create-mercato-module describe ${id}\` prints its catalog entry.\n\n` : ''}## Trusted Publishing\n\nConfigure this package's trusted publisher on npmjs.com for the GitHub owner, repository, and workflow filename publish.yml. Then dispatch the included GitHub Actions workflow or push a v<version> tag matching package.json. Releases published with create-mercato-module are tagged <version> without the v, so they do not start this workflow, and the workflow skips a version that is already on npm. For private dependencies, set a read-only NPM_READ_TOKEN repository secret.\n\nSee [create-mercato-module](https://github.com/open-mercato/create-mercato-module) for authentication, release tests, and development details.\n`,
   )
   build(destination)
-  return { destination, manifest, fileCount: files.length }
+  return {
+    destination,
+    manifest,
+    fileCount: files.length,
+    licenseDefaulted: !chosenLicense(app, settings, info.license),
+  }
 }
 
 export {
@@ -357,6 +376,7 @@ export {
   installedVersion,
   moduleInfo,
   packageLicense,
+  unchosenLicenseWarning,
   preparePackage,
   localLocator,
   ageGateNote,

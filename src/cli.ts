@@ -12,6 +12,7 @@ import {
   catalogUrl,
   moduleInfo,
   npmInstallLocator,
+  unchosenLicenseWarning,
 } from './package.js'
 import { validateSettings } from './package.js'
 import {
@@ -520,12 +521,14 @@ async function main(argv = process.argv.slice(2)) {
           ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created before npm publication; it stays if npm rejects the package; tagged ${settings.version} and given the open-mercato-module and open-mercato topics once npm accepts it)`
           : `${settings.repository} (existing ${repository.private ? 'private' : 'PUBLIC'} repository; tagged ${settings.version} and given the open-mercato-module and open-mercato topics once npm accepts it)`
     console.log(
-      `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n⚖️ License:    ${prepared.manifest.license ?? 'none'}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
+      `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n⚖️ License:    ${prepared.manifest.license ?? 'none'}${prepared.licenseDefaulted ? ' (no license chosen)' : ''}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
     )
     const risks = publicationRisks(prepared, settings, repository)
     for (const risk of risks)
       console.log(`\n⚠️ ${risk.message}\n   Option: --${risk.flag}`)
     for (const note of prepared.notes ?? []) console.log(`\nℹ️ ${note}`)
+    if (prepared.licenseDefaulted)
+      console.log(`\n⚠️ ${unchosenLicenseWarning(settings.packageName)}`)
     const descriptionNote = descriptionWarning(
       args.id,
       prepared.manifest.description,

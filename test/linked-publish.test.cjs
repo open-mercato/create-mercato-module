@@ -43,12 +43,17 @@ test('linked publication keeps the repository license and never ships a LICENSE 
   const { app, settings, metadata, checkout } = fixture(context)
   const prepared = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1', license: 'MIT' }, metadata)
   assert.equal(prepared.manifest.license, 'UNLICENSED', 'the repository package.json license wins')
+  assert.equal(prepared.licenseDefaulted, false, 'the repository chose it')
   assert.ok(!fs.existsSync(path.join(prepared.destination, 'LICENSE')))
   const manifest = readJson(path.join(checkout, 'package.json'))
   delete manifest.license
   writeJson(path.join(checkout, 'package.json'), manifest)
+  const unchosen = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1' }, metadata)
+  assert.equal(unchosen.manifest.license, 'UNLICENSED')
+  assert.equal(unchosen.licenseDefaulted, true, 'neither the repository nor the settings name a license')
   const licensed = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1', license: 'MIT' }, metadata)
   assert.equal(licensed.manifest.license, 'MIT')
+  assert.equal(licensed.licenseDefaulted, false)
   assert.match(fs.readFileSync(path.join(licensed.destination, 'LICENSE'), 'utf8'), /^MIT License/)
 })
 

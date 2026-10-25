@@ -289,7 +289,15 @@ function exportLinkedPackage(
       'The module changed while packaging. Retry to build one consistent release.',
     )
   return {
-    ...packPrepared({ ...prepared, manifest }, workspace),
+    ...packPrepared(
+      {
+        ...prepared,
+        manifest,
+        licenseDefaulted:
+          prepared.licenseDefaulted && original.license === undefined,
+      },
+      workspace,
+    ),
     linkedCheckout: checkout,
     linkedFingerprint: fingerprint,
     linkedBranch,

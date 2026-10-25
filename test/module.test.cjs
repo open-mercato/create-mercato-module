@@ -513,6 +513,8 @@ test('the chosen license reaches package.json, and MIT ships its LICENSE text', 
   assert.match(fs.readFileSync(path.join(root, 'mit/LICENSE'), 'utf8'), /^MIT License\n\nCopyright \(c\) \d{4} @fixture\/visits authors\n/)
   const unset = preparePackage(app, 'visits', settings, path.join(root, 'unset'))
   assert.equal(unset.manifest.license, 'UNLICENSED', 'no choice keeps the earlier default')
+  assert.equal(unset.licenseDefaulted, true)
+  assert.equal(mit.licenseDefaulted, false)
   assert.ok(!fs.existsSync(path.join(root, 'unset/LICENSE')))
   const index = path.join(directory, 'index.ts')
   fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  license: '',", "  license: 'Apache-2.0',"))
