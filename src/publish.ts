@@ -7,6 +7,9 @@ import {
   localLocator,
   moduleKeywords,
   fallbackDescription,
+  licenseHolder,
+  mitLicense,
+  generatedMitLicense,
 } from './package.js'
 import { createNpmRunner } from './npm-auth.js'
 import { linkedModuleDirectory } from './development.js'
@@ -270,12 +273,14 @@ function exportLinkedPackage(
       fs.copyFileSync(file, path.join(prepared.destination, name))
     }
   }
-  // The repository keeps its own license; a generated LICENSE must match it.
-  if (
-    !fs.existsSync(path.join(checkout, 'LICENSE')) &&
-    manifest.license !== prepared.manifest.license
-  )
-    fs.rmSync(path.join(prepared.destination, 'LICENSE'), { force: true })
+  // The repository keeps its own license; without its own LICENSE text, an
+  // MIT package gets the generated one and any other license gets none.
+  if (!fs.existsSync(path.join(checkout, 'LICENSE'))) {
+    const license = path.join(prepared.destination, 'LICENSE')
+    if (manifest.license !== 'MIT') fs.rmSync(license, { force: true })
+    else if (!fs.existsSync(license))
+      fs.writeFileSync(license, mitLicense(licenseHolder(app, settings)))
+  }
   const workflow = path.join(checkout, '.github/workflows/publish.yml')
   const notes =
     fs.existsSync(workflow) &&
@@ -651,12 +656,24 @@ function publishRepository(
     '.gitignore',
     '.github/workflows/publish.yml',
   ]
-  if (fs.existsSync(path.join(prepared.destination, 'LICENSE')))
+  // A LICENSE this tool generated for an earlier MIT release goes when the
+  // license changes; one the author wrote stays.
+  const license = path.join(checkout, 'LICENSE')
+  if (
+    fs.existsSync(path.join(prepared.destination, 'LICENSE')) ||
+    (fs.lstatSync(license, { throwIfNoEntry: false })?.isFile() &&
+      generatedMitLicense(fs.readFileSync(license, 'utf8')))
+  )
     owned.push('LICENSE')
   validateMutablePaths(checkout, owned)
   for (const name of owned) {
     const destination = path.join(checkout, name)
     fs.rmSync(destination, { recursive: true, force: true })
+    if (
+      name === 'LICENSE' &&
+      !fs.existsSync(path.join(prepared.destination, name))
+    )
+      continue
     fs.mkdirSync(path.dirname(destination), { recursive: true })
     fs.cpSync(path.join(prepared.destination, name), destination, {
       recursive: true,

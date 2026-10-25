@@ -483,6 +483,37 @@ test('an accepted release gives the repository its topics; a refused topic never
   assert.doesNotThrow(() => addTopics('fixture/visits', root, () => { throw new Error('gh did not finish in time') }))
 })
 
+test('a repository release removes the LICENSE an earlier MIT release generated, never the author\'s own', (context) => {
+  const { app, root } = fixture(context)
+  const remote = path.join(root, 'module.git')
+  function execute(command, args, cwd, options) {
+    if (command !== 'gh') return run(command, args, cwd, options)
+    if (args[0] === 'api') return { status: fs.existsSync(remote) ? 0 : 1, stdout: '{}', stderr: 'HTTP 404' }
+    if (args[1] === 'create') return run('git', ['init', '--bare', '--initial-branch=main', remote], root, { capture: true })
+    if (args[1] === 'clone') return run('git', ['clone', remote, args[3]], cwd, { capture: true })
+    throw new Error(`Unexpected gh command: ${args.join(' ')}`)
+  }
+  const show = (file) => run('git', ['--git-dir', remote, 'show', `main:${file}`], root, { capture: true, allowFailure: true })
+  const release = (version, license) => {
+    const publication = { ...settings, repository: 'fixture/visits', version, license }
+    publishRepository(exportPackage(app, 'visits', publication), publication, execute)
+  }
+  release('0.2.0', 'MIT')
+  assert.match(show('LICENSE').stdout, /^MIT License/)
+  release('0.2.1', 'UNLICENSED')
+  assert.equal(JSON.parse(show('package.json').stdout).license, 'UNLICENSED')
+  assert.notEqual(show('LICENSE').status, 0, 'the MIT grant must not outlive the MIT license')
+  const author = path.join(root, 'author')
+  run('git', ['clone', '-q', remote, author], root, { capture: true })
+  fs.writeFileSync(path.join(author, 'LICENSE'), 'Copyright (c) 2026 Fixture Ltd. All rights reserved.\n')
+  run('git', ['add', 'LICENSE'], author, { capture: true })
+  run('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-qm', 'Add our terms'], author, { capture: true })
+  run('git', ['push', '-q', 'origin', 'main'], author, { capture: true })
+  release('0.2.2', 'UNLICENSED')
+  assert.equal(JSON.parse(show('package.json').stdout).version, '0.2.2')
+  assert.equal(show('LICENSE').stdout, 'Copyright (c) 2026 Fixture Ltd. All rights reserved.\n', 'a LICENSE the author wrote stays')
+})
+
 test('releases are tagged with the bare version so the generated v* workflow does not publish again', () => {
   const sha = 'a'.repeat(40)
   const calls = []
