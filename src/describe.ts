@@ -1,4 +1,4 @@
-import type { App } from './types.js'
+import type { App, SavedSettings } from './types.js'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { moduleDirectory, readJson, run } from './common.js'
@@ -10,6 +10,7 @@ import {
   catalogPendingNote,
   catalogSubmitUrl,
   moduleInfo,
+  validatePackageName,
 } from './package.js'
 
 // Categories of the Open Mercato Modules descriptor schema
@@ -65,14 +66,25 @@ export interface ModuleDescription {
 }
 
 /**
- * Prints the Open Mercato Modules entry of a published module from saved
- * settings and the module's `metadata`, without network access.
+ * Prints the Open Mercato Modules entry of a module from saved settings, or
+ * the package named by `packageName` before the first release, and the
+ * module's `metadata`, without network access.
  */
-export function describeModule(app: App, id: string): ModuleDescription {
-  const saved = loadConfig(app).modules[id]
+export function describeModule(
+  app: App,
+  id: string,
+  packageName?: string,
+): ModuleDescription {
+  if (packageName !== undefined) validatePackageName(packageName)
+  const stored = loadConfig(app).modules[id]
+  // Saved settings of another package (repository, link) do not apply.
+  const saved: Partial<SavedSettings> | undefined =
+    packageName && stored?.packageName !== packageName
+      ? { packageName, access: 'public' }
+      : stored
   if (!saved?.packageName)
     throw new Error(
-      `Module ${id} has no saved npm package. Publish it first: npx create-mercato-module publish ${id}`,
+      `Module ${id} has no saved npm package. Publish it first: npx create-mercato-module publish ${id}\nOr name the package it will be published as: npx create-mercato-module describe ${id} --package @your-name/mercato-visits`,
     )
   if (saved.access === 'restricted')
     throw new Error(
@@ -107,6 +119,11 @@ export function describeModule(app: App, id: string): ModuleDescription {
     '# Submit the module at',
     `# ${catalogSubmitUrl(saved.packageName)}`,
     ...(catalogOpen ? [] : [`# ${catalogPendingNote}`]),
+    ...(saved.lastPublishedVersion || saved.development
+      ? []
+      : [
+          '# Publish the package to npm before you submit: the catalog reads it from npm.',
+        ]),
     '',
     `npm: ${scalar(saved.packageName)}`,
     ...(saved.repository ? [`github: ${scalar(saved.repository)}`] : []),

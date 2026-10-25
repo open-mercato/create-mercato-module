@@ -282,6 +282,7 @@ Prints the module's [Open Mercato Modules](https://modules.openmercato.com) entr
 | Option | Behavior |
 |---|---|
 | `--open` | Also open the catalog's submit page for the package in your browser |
+| `--package @your-name/mercato-visits` | Describe the module as this package, for example before its first publish; the saved repository of another package is left out |
 
 Open Mercato Modules has not launched yet. Until it does, `describe`, `publish` and `--help` print its links with a note saying so, and `--open` does not open them. To use another deployment of the catalog, such as a local copy of the site, set `MERCATO_CATALOG_URL` to its origin, for example `MERCATO_CATALOG_URL=http://127.0.0.1:4321`; `describe`, `--open` and the message after `publish` then use it. Generated module READMEs always link the public catalog.
 

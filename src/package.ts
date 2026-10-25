@@ -40,16 +40,20 @@ function catalogSubmitUrl(packageName: string, origin = catalogUrl): string {
 const localLocator =
   /^(?:workspace:|file:|link:|portal:|patch:|git\+|git:|ssh:|https?:|github:)/
 
-function validateSettings(settings: Settings): void {
+function validatePackageName(packageName: string): void {
   if (
     !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(
-      settings.packageName || '',
+      packageName || '',
     ) ||
-    settings.packageName.length > 214
+    packageName.length > 214
   )
     throw new Error(
       'Enter a valid npm package name, for example @your-name/mercato-visits.',
     )
+}
+
+function validateSettings(settings: Settings): void {
+  validatePackageName(settings.packageName)
   if (
     !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(
       settings.version || '',
@@ -294,6 +298,7 @@ function preparePackage(
 }
 
 export {
+  validatePackageName,
   validateSettings,
   installedVersion,
   moduleInfo,

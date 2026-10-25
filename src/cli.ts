@@ -78,6 +78,7 @@ Describe:
   Prints the module's Open Mercato Modules entry (YAML) from its saved
   publish settings, to list it at ${catalogUrl}/submit${catalogOpen ? '' : '\n  (not launched yet)'}.
   --open                     also open the submit page for the package
+  --package @your-name/mercato-visits  describe it before the first publish
 
 Install options:
   Repository URL, owner/repo, or repo name (your GitHub account).
@@ -154,7 +155,9 @@ function parse(argv: string[]): ParsedArguments {
         ? ['package', 'repo']
         : command === 'install'
           ? ['package', 'module', 'ref']
-          : []
+          : command === 'describe'
+            ? ['package']
+            : []
   for (let index = 0; index < rest.length; index += 1) {
     if (!rest[index].startsWith('-')) {
       positional.push(rest[index])
@@ -307,7 +310,11 @@ async function main(argv = process.argv.slice(2)) {
     return
   }
   if (args.command === 'describe') {
-    const described = describeModule(app, args.id)
+    const described = describeModule(
+      app,
+      args.id,
+      args.flags.package ? String(args.flags.package) : undefined,
+    )
     process.stdout.write(described.yaml)
     if (args.flags.open && !catalogOpen)
       console.error(`\n${catalogPendingNote}`)
