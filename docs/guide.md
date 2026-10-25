@@ -285,9 +285,9 @@ Prints the module's [Open Mercato Modules](https://modules.openmercato.com) entr
 
 ## List your module
 
-Open Mercato Modules lists official and community modules with what they add to an app and the Open Mercato versions they install on. Coding agents search it before building a feature. The catalog lists public npm packages and GitHub repositories.
+Open Mercato Modules lists official and community modules with what they add to an app and the Open Mercato versions they install on. Coding agents can check it before they build a feature (see For agents on the catalog site). The catalog lists public npm packages and GitHub repositories.
 
-After a public release, `publish` prints the submit link for your package. Open it, check the entry, and the page opens the pull request for you. To prepare the entry in the terminal instead:
+After a public release, `publish` prints the submit link for your package. Open it and check the entry. The page builds the entry and opens GitHub with the file filled in; commit it and open the pull request. To prepare the entry in the terminal instead:
 
 ```bash
 npx create-mercato-module describe visits
