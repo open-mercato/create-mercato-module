@@ -19,9 +19,9 @@
 Run inside an Open Mercato app, including a fresh app without the module:
 
 ```bash
-npx create-mercato-module link pkarw/marketing-consents
-npx create-mercato-module link https://github.com/pkarw/marketing-consents.git
-npx create-mercato-module link @piotrkarwatka/marketing-consents
+npx create-mercato-module link your-org/your-module
+npx create-mercato-module link https://github.com/your-org/your-module.git
+npx create-mercato-module link @your-org/your-module
 ```
 
 `link` reads the npm package name and module ID from the repository. The npm form first looks up the package's `repository` metadata on npm; no npm publication or login is required for a public package. Scoped package names use npm discovery; use `npm:package-name` for an unscoped npm package. A bare repository name uses your authenticated GitHub account unless an unsaved local module has the same name; that legacy form asks for the module's dedicated repository instead. Use `owner/repository` to remove the ambiguity. HTTPS, SSH, `github:owner/repo`, trailing slashes, and `.git` URLs are accepted. Even an accidentally repeated `https://github.com/` prefix is normalized.
@@ -29,10 +29,10 @@ npx create-mercato-module link @piotrkarwatka/marketing-consents
 To choose the checkout folder, add a local name:
 
 ```bash
-npx create-mercato-module link pkarw/marketing-consents my-consents
+npx create-mercato-module link your-org/your-module my-checkout
 ```
 
-This uses `.mercato/module-repos/my-consents` while keeping the repository's module ID (`marketing_consents`) and its routes and imports. Names may contain letters, numbers, hyphens and underscores.
+This uses `.mercato/module-repos/my-checkout` while keeping the repository's module ID (`your_module`) and its routes and imports. Names may contain letters, numbers, hyphens and underscores.
 
 A dedicated module repository must have a root `package.json` with `name` and `mercatoModule: { id, formatVersion: 1 }`, plus `src/modules/<id>/index.ts`. npm packages without a dedicated GitHub repository, monorepo packages, empty repositories, and unrelated projects produce actionable errors before app files change. GitHub authentication uses `gh auth login`.
 
@@ -153,8 +153,8 @@ branch) once to a full commit SHA for a repeatable Yarn install, and then
 delegate activation to `yarn mercato module enable`.
 
 ```bash
+npx create-mercato-module install @fastwhitecat/integration-ksef-direct@0.1.8
 npx create-mercato-module install @your-name/mercato-visits@beta
-npx create-mercato-module install @your-name/mercato-visits@1.2.3
 npx create-mercato-module install npm:unscoped-visits
 npx create-mercato-module install your-name/mercato-visits
 npx create-mercato-module install your-name/mercato-visits@1.2.3
@@ -228,8 +228,8 @@ process-environment conditions can be evaluated. Unsupported condition branches
 are conservatively excluded; the checker does not execute application code.
 
 Requirements accept legacy module IDs (`customers`), scoped npm packages
-(`@pkarw/marketing_consents@beta`), explicit npm locators
-(`npm:marketing-consents@1.0.0`), and GitHub repository locators (`owner/repo`,
+(`@fastwhitecat/integration-ksef-direct@0.1.8`), explicit npm locators
+(`npm:unscoped-module@1.0.0`), and GitHub repository locators (`owner/repo`,
 `github:owner/repo`, HTTPS, and SSH). Canonical identities are
 `npm:<package-name>` and `github:<owner>/<repository>`; versions and refs are
 installation choices and GitHub names compare without case sensitivity.

@@ -42,13 +42,12 @@ const help = `Create and publish one module from an existing Open Mercato app.
   npx create-mercato-module init visits
   npx create-mercato-module publish visits
   npx create-mercato-module install <repo-or-npm-package>
-  npx create-mercato-module install pkarw/marketing-consents
+  npx create-mercato-module install @fastwhitecat/integration-ksef-direct@0.1.8
   npx create-mercato-module install your-name/mercato-visits@1.2.3
-  npx create-mercato-module install @piotrkarwatka/marketing-consents
   npx create-mercato-module link <repo-or-npm-package> [local-name]
-  npx create-mercato-module link pkarw/marketing-consents
-  npx create-mercato-module link @piotrkarwatka/marketing-consents
-  npx create-mercato-module unlink marketing_consents
+  npx create-mercato-module link your-org/your-module
+  npx create-mercato-module link @your-org/your-module
+  npx create-mercato-module unlink your_module
   npx create-mercato-module describe visits
 
 Existing modules can be published directly; init is optional.
@@ -300,7 +299,7 @@ async function main(argv = process.argv.slice(2)) {
     try {
       if (!input)
         throw new Error(
-          'Provide a GitHub repository or npm package: npx create-mercato-module link pkarw/marketing-consents',
+          'Provide a GitHub repository or npm package: npx create-mercato-module link your-org/your-module',
         )
       if (
         !args.flags.repo &&
@@ -382,7 +381,7 @@ async function main(argv = process.argv.slice(2)) {
     }
     if (!input)
       throw new Error(
-        'Provide a GitHub repository or npm package: npx create-mercato-module install pkarw/marketing-consents',
+        'Provide a GitHub repository or npm package: npx create-mercato-module install @fastwhitecat/integration-ksef-direct@0.1.8',
       )
     const options = {
       eject: Boolean(args.flags.eject),

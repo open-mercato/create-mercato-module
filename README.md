@@ -125,10 +125,10 @@ Keep developing locally and run the same command for later releases. The app can
 Run inside any Open Mercato app. Give `link` a repository or an npm package:
 
 ```bash
-npx create-mercato-module link pkarw/marketing-consents
+npx create-mercato-module link your-org/your-module
 # These work too:
-npx create-mercato-module link https://github.com/pkarw/marketing-consents.git
-npx create-mercato-module link @piotrkarwatka/marketing-consents
+npx create-mercato-module link https://github.com/your-org/your-module.git
+npx create-mercato-module link @your-org/your-module
 ```
 
 The npm form discovers the GitHub repository from the package's npm metadata. The package name and module ID come from the repository; no npm package name prompt or prior `init` is needed. A bare repository name uses your authenticated GitHub account unless an unsaved local module has the same name; in that legacy case, the command asks for its dedicated repository. Use `owner/repository` to remove the ambiguity. If the package has no dedicated module repository, the command explains how to fix it.
@@ -136,20 +136,20 @@ The npm form discovers the GitHub repository from the package's npm metadata. Th
 Optionally name the local checkout folder:
 
 ```bash
-npx create-mercato-module link pkarw/marketing-consents my-consents
+npx create-mercato-module link your-org/your-module my-checkout
 ```
 
-The tool clones under `.mercato/module-repos/my-consents` (default: the module ID), links `src/modules/marketing_consents`, registers it as `@app`, and runs generation. Existing local source is backed up. The local folder name does not change the module ID, routes, or imports.
+The tool clones under `.mercato/module-repos/my-checkout` (default: the module ID), links `src/modules/your_module` (the module ID the repository declares), registers it as `@app`, and runs generation. Existing local source is backed up. The local folder name does not change the module ID, routes, or imports.
 
 Edit through the app, then release from the linked repository using the saved package and repository settings (this needs push access to the repository and publish rights for its npm package):
 
 ```bash
-npx create-mercato-module publish marketing_consents
+npx create-mercato-module publish your_module
 ```
 
-Publication includes your linked edits, preserves repository customizations, and suggests the next patch version. `link marketing_consents` still works when the repository is saved. For a new local module of your own, such as `visits`, publish it with `publish visits --repo owner/repo` before linking it.
+Publication includes your linked edits, preserves repository customizations, and suggests the next patch version. `link your_module` still works when the repository is saved. For a new local module of your own, such as `visits`, publish it with `publish visits --repo owner/repo` before linking it.
 
-To make it an ordinary local module again, run `npx create-mercato-module unlink marketing_consents`: it copies the checkout's current source into `src/modules/marketing_consents` and keeps the checkout and the earlier backup.
+To make it an ordinary local module again, run `npx create-mercato-module unlink your_module`: it copies the checkout's current source into `src/modules/your_module` and keeps the checkout and the earlier backup.
 
 This link is local: a fresh clone of the whole app needs the module source restored or linked again. See [repository development and PR workflow](docs/guide.md#develop-in-the-dedicated-repository-without-leaving-your-app) for details.
 
