@@ -2,6 +2,7 @@ import type { Settings, SavedSettings } from './types.js'
 import { createInterface } from 'node:readline/promises'
 import { findApp, validateId, run } from './common.js'
 import { scaffold } from './scaffold.js'
+import { ageGateNote } from './package.js'
 import { validateSettings } from './package.js'
 import {
   exportPackage,
@@ -10,23 +11,28 @@ import {
   inspectRepository,
   publicationRisks,
 } from './publish.js'
-import { loadConfig, saveConfig } from './config.js'
+import { loadConfig, saveConfig, removeDevelopment } from './config.js'
 import { isUnconfiguredLocalModule, linkFromInput } from './link.js'
-import { validateCheckoutName } from './development.js'
+import { validateCheckoutName, unlinkDevelopment } from './development.js'
 import { checkAuthentication, resolveRegistry } from './npm-auth.js'
-import { installFromInput, GitRepositoryApprovalRequired } from './install.js'
+import {
+  installFromInput,
+  GitRepositoryApprovalRequired,
+  PackageQuarantined,
+} from './install.js'
 
 const help = `Create and publish one module from an existing Open Mercato app.
 
   npx create-mercato-module init visits
   npx create-mercato-module publish visits
   npx create-mercato-module install <repo-or-npm-package>
-  npx create-mercato-module install pkarw/visits-example
-  npx create-mercato-module install pkarw/visits-example@1.2.3
-  npx create-mercato-module install @piotrkarwatka/visits
+  npx create-mercato-module install pkarw/marketing-consents
+  npx create-mercato-module install your-name/mercato-visits@1.2.3
+  npx create-mercato-module install @piotrkarwatka/marketing-consents
   npx create-mercato-module link <repo-or-npm-package> [local-name]
-  npx create-mercato-module link pkarw/visits-example
-  npx create-mercato-module link @piotrkarwatka/visits
+  npx create-mercato-module link pkarw/marketing-consents
+  npx create-mercato-module link @piotrkarwatka/marketing-consents
+  npx create-mercato-module unlink marketing_consents
 
 Existing modules can be published directly; init is optional.
 Settings are saved per module in .mercato/module-tool.json.
@@ -56,6 +62,10 @@ Link options:
   --repo your-name/visits     repository override for link <module_id>
   --no-generate              link without running yarn generate
 
+Unlink:
+  Makes a linked module local again: copies the checkout's current source into
+  src/modules/<module_id> and forgets the link. The checkout and backup are kept.
+
 Install options:
   Repository URL, owner/repo, or repo name (your GitHub account).
   owner/repo@version-or-ref   select a GitHub version, tag, branch, or commit
@@ -67,6 +77,8 @@ Install options:
   --ref tag|branch|commit    pin an exact Git ref; must match a locator ref
   --eject                    copy ejectable module source into src/modules
   --approve-git-repository    approve adding the requested GitHub URL to Yarn's allowlist if blocked
+  --preapprove-package       approve adding the npm package to Yarn's npmPreapprovedPackages
+                             if its version is younger than the app's npmMinimalAgeGate
 
 Init options:
   --no-generate              create/register the module without running yarn generate
@@ -95,9 +107,9 @@ function parse(argv: string[]): ParsedArguments {
     return { help: true }
   const [command, ...rest] = argv
   const positional: string[] = []
-  if (!['init', 'publish', 'install', 'link'].includes(command))
+  if (!['init', 'publish', 'install', 'link', 'unlink'].includes(command))
     throw new Error(
-      'Choose init, publish, install, or link. Run with --help for examples.',
+      'Choose init, publish, install, link, or unlink. Run with --help for examples.',
     )
   const flags: Flags = {}
   const booleans =
@@ -112,8 +124,10 @@ function parse(argv: string[]): ParsedArguments {
           'allow-install-scripts',
         ]
       : command === 'install'
-        ? ['eject', 'approve-git-repository']
-        : ['no-generate']
+        ? ['eject', 'approve-git-repository', 'preapprove-package']
+        : command === 'unlink'
+          ? []
+          : ['no-generate']
   const values =
     command === 'publish'
       ? ['package', 'version', 'repo', 'access', 'auth', 'tag']
@@ -222,7 +236,7 @@ async function main(argv = process.argv.slice(2)) {
     try {
       if (!input)
         throw new Error(
-          'Provide a GitHub repository or npm package: npx create-mercato-module link pkarw/visits-example',
+          'Provide a GitHub repository or npm package: npx create-mercato-module link pkarw/marketing-consents',
         )
       if (
         !args.flags.repo &&
@@ -259,6 +273,20 @@ async function main(argv = process.argv.slice(2)) {
       prompt?.close()
     }
   }
+  if (args.command === 'unlink') {
+    const development = loadConfig(app).modules[args.id]?.development
+    if (!development)
+      throw new Error(
+        `Module ${args.id} is not linked to a repository checkout. No files were changed.`,
+      )
+    unlinkDevelopment(app, args.id, development, () =>
+      removeDevelopment(app, args.id),
+    )
+    console.log(
+      `\n✅ src/modules/${args.id} is a local module again, copied from ${development.checkoutPath}.\n📁 Kept: ${development.checkoutPath}${development.backupPath ? ` and the source from before linking, ${development.backupPath}` : ''}. Delete them once you no longer need them.\n🧩 src/modules.ts is unchanged.\n\nNext release from the app: npx create-mercato-module publish ${args.id}`,
+    )
+    return
+  }
   if (args.command === 'install') {
     let input = args.id
     if (!input && process.stdin.isTTY) {
@@ -276,7 +304,7 @@ async function main(argv = process.argv.slice(2)) {
     }
     if (!input)
       throw new Error(
-        'Provide a GitHub repository or npm package: npx create-mercato-module install pkarw/visits-example',
+        'Provide a GitHub repository or npm package: npx create-mercato-module install pkarw/marketing-consents',
       )
     const options = {
       eject: Boolean(args.flags.eject),
@@ -286,23 +314,33 @@ async function main(argv = process.argv.slice(2)) {
       moduleId: args.flags.module ? String(args.flags.module) : undefined,
       ref: args.flags.ref ? String(args.flags.ref) : undefined,
       approveGitRepository: Boolean(args.flags['approve-git-repository']),
+      preapprovePackage: Boolean(args.flags['preapprove-package']),
     }
     let installed
-    try {
-      installed = installFromInput(app, input, options)
-    } catch (error) {
-      if (!(error instanceof GitRepositoryApprovalRequired) || !process.stdin.isTTY) throw error
-      console.log(`\n${error.message}`)
-      const prompt = createInterface({ input: process.stdin, output: process.stdout })
-      let answer: string
+    for (;;) {
       try {
-        answer = (await prompt.question('\n👉 Add this repository to Yarn approvals and retry? [y/N] ')).trim().toLowerCase()
-      } finally {
-        prompt.close()
+        installed = installFromInput(app, input, options)
+        break
+      } catch (error) {
+        const approval =
+          error instanceof GitRepositoryApprovalRequired
+            ? { question: 'Add this repository to Yarn approvals and retry?', option: 'approveGitRepository' as const }
+            : error instanceof PackageQuarantined
+              ? { question: "Add this package to Yarn's preapproved packages and retry?", option: 'preapprovePackage' as const }
+              : undefined
+        if (!approval || options[approval.option] || !process.stdin.isTTY) throw error
+        console.log(`\n${error instanceof Error ? error.message : String(error)}`)
+        const prompt = createInterface({ input: process.stdin, output: process.stdout })
+        let answer: string
+        try {
+          answer = (await prompt.question(`\n👉 ${approval.question} [y/N] `)).trim().toLowerCase()
+        } finally {
+          prompt.close()
+        }
+        if (!['y', 'yes'].includes(answer))
+          throw new Error('Installation cancelled. Yarn approvals were not changed.', { cause: error })
+        options[approval.option] = true
       }
-      if (!['y', 'yes'].includes(answer))
-        throw new Error('Installation cancelled. Yarn approvals were not changed.', { cause: error })
-      installed = installFromInput(app, input, { ...options, approveGitRepository: true })
     }
     console.log(
       `\n✅ Installed ${installed.packageName} and enabled its Open Mercato module.${installed.repository ? `\n🐙 Source: ${installed.repository}` : `\n📦 Source: ${installed.specifier}`}${args.flags.eject ? '\n📁 Module source was ejected into this app.' : ''}`,
@@ -382,8 +420,8 @@ async function main(argv = process.argv.slice(2)) {
       : !repository
         ? settings.repository
         : repository.state === 'missing'
-          ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created)`
-          : `${settings.repository} (existing ${repository.private ? 'private' : 'PUBLIC'} repository)`
+          ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created before npm publication; it stays if npm rejects the package; tagged ${settings.version} once npm accepts it)`
+          : `${settings.repository} (existing ${repository.private ? 'private' : 'PUBLIC'} repository; tagged ${settings.version} once npm accepts it)`
     console.log(
       `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
     )
@@ -414,18 +452,23 @@ async function main(argv = process.argv.slice(2)) {
       console.log(
         'ℹ️ Publication canceled: the package name was not confirmed. The local archive is available for inspection.',
       )
+      // Scripts wrapping the wizard must not mistake a cancellation for a release.
+      process.exitCode = 1
       return
     }
     saveConfig(app, args.id, settings, false)
-    publish(prepared, settings, undefined, {
+    const released = publish(prepared, settings, undefined, {
       // Linked checkouts are the source and are never overwritten.
       ...(repository && !prepared.linkedCheckout
         ? { expectedHead: repository.head ?? null }
         : {}),
     })
     saveConfig(app, args.id, settings, true)
+    if (released.tag)
+      console.log(`\n🏷️ Tagged ${settings.repository} ${released.tag}.`)
+    if (released.tagWarning) console.log(`\n⚠️ ${released.tagWarning}`)
     console.log(
-      `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  yarn mercato module add ${settings.packageName}@${settings.version} --allow-third-party`,
+      `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  npx create-mercato-module install ${settings.packageName}@${settings.version}${released.tag ? `\n  npx create-mercato-module install ${settings.repository}@${released.tag}` : ''}\n⏳ ${ageGateNote}`,
     )
   } finally {
     prompt?.close()

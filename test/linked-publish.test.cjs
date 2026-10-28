@@ -7,7 +7,7 @@ const { createRequire } = require('node:module')
 const { pathToFileURL } = require('node:url')
 const { scaffold } = require('../dist/scaffold.js')
 const { run, readJson, writeJson } = require('../dist/common.js')
-const { exportPackage, exportLinkedPackage, publishRepository, publicationRisks } = require('../dist/publish.js')
+const { exportPackage, exportLinkedPackage, publishRepository, publicationRisks, packEntries } = require('../dist/publish.js')
 
 function fixture(context) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-linked-publish-'))
@@ -84,6 +84,13 @@ test('linked publication rejects wrong remote and mismatched package before pack
   assert.throws(() => exportLinkedPackage(app, 'visits', { ...settings, packageName: '@fixture/other' }, metadata), /must match/)
   run('git', ['remote', 'set-url', 'origin', 'https://github.com/fixture/wrong.git'], checkout)
   assert.throws(() => exportLinkedPackage(app, 'visits', settings, metadata), /origin does not match/)
+})
+
+test('linked publication compares the configured origin, not a URL rewritten by insteadOf', context => {
+  const { app, settings, metadata, checkout } = fixture(context)
+  run('git', ['config', 'url.http://mirror.invalid/.insteadOf', 'https://github.com/'], checkout)
+  assert.match(run('git', ['remote', 'get-url', 'origin'], checkout, { capture: true }).stdout, /mirror\.invalid/)
+  assert.equal(exportLinkedPackage(app, 'visits', settings, metadata).linkedBranch, 'main')
 })
 
 test('linked publication refuses unrelated staged files without modifying working tree', context => {
@@ -168,7 +175,7 @@ test('GitHub-style packing of raw repository aliases installs and discovers port
   fs.symlinkSync(path.dirname(require.resolve('typescript/package.json')), path.join(app.directory, 'node_modules/typescript'))
   fs.mkdirSync(path.join(sourceRoot, '__tests__'), { recursive: true })
   fs.writeFileSync(path.join(sourceRoot, '__tests__/excluded.test.ts'), 'export const devOnly = true\n')
-  const packed = JSON.parse(run('npm', ['pack', '--json'], checkout, { capture: true }).stdout)[0]
+  const packed = packEntries(run('npm', ['pack', '--json'], checkout, { capture: true }).stdout)[0]
   assert.ok(!packed.files.some(file => file.path.includes('__tests__') || file.path.includes('.test.')), 'development tests must not ship in npm')
   const consumer = path.join(path.dirname(app.directory), 'consumer')
   const installed = path.join(consumer, 'node_modules/@fixture/visits')

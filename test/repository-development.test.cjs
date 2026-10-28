@@ -8,6 +8,7 @@ const { pathToFileURL } = require('node:url')
 const { scaffold } = require('../dist/scaffold.js')
 const { writeJson, readJson, run } = require('../dist/common.js')
 const { preparePackage } = require('../dist/package.js')
+const { packEntries } = require('../dist/publish.js')
 
 test('dedicated repo develops through a Yarn portal, shares React, rebuilds, regenerates and packs releases', { skip: !process.env.OPEN_MERCATO_ROOT, timeout: 180000 }, async (context) => {
   const framework = fs.realpathSync(process.env.OPEN_MERCATO_ROOT)
@@ -94,7 +95,7 @@ test('dedicated repo develops through a Yarn portal, shares React, rebuilds, reg
   assert.doesNotMatch(registries, /\.\.\/\.\.\/src\/modules\/visits\//)
   assert.match(fs.readFileSync(path.join(outputDirectory, 'module-package-sources.css'), 'utf8'), /mercato-visits\/src/)
   run('npm', ['version', 'patch', '--no-git-tag-version'], repository, { capture: true })
-  const packed = JSON.parse(run('npm', ['pack', '--json'], repository, { capture: true }).stdout)[0]
+  const packed = packEntries(run('npm', ['pack', '--json'], repository, { capture: true }).stdout)[0]
   assert.equal(packed.version, '0.1.1')
   assert.ok(packed.files.some((file) => file.path === 'dist/modules/visits/backend/visits/reports/page.js'))
   assert.ok(packed.files.every((file) => !file.path.includes('node_modules') && !file.path.includes('.module-backups')))

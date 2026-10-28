@@ -57,7 +57,7 @@ interface EnabledModule {
 
 const canonicalRequirement = normalizeModuleLocator
 
-function packageDirectory(appDirectory: string, packageName: string): string {
+export function packageDirectory(appDirectory: string, packageName: string): string {
   const requireFromApp = createRequire(path.join(appDirectory, 'package.json'))
   try {
     return path.dirname(requireFromApp.resolve(`${packageName}/package.json`))

@@ -700,6 +700,41 @@ export function linkDevelopment(
   }
 }
 
+// Turns a linked module back into an ordinary local module: the checkout's
+// current source (including uncommitted edits) is copied into src/modules/<id>.
+// The checkout and the pre-link backup stay where they are.
+export function unlinkDevelopment(
+  app: DevelopmentApp,
+  id: string,
+  metadata: DevelopmentLink,
+  commit: () => void,
+): void {
+  const source = linkedModuleDirectory(app, id, metadata)
+  const root = fs.realpathSync(app.directory)
+  const moduleLink = path.join(realDirectories(root, 'src/modules'), id)
+  const target = fs.readlinkSync(moduleLink)
+  const staging = fs.mkdtempSync(
+    path.join(realDirectories(root, '.mercato'), `.unlink-${id}-`),
+  )
+  let replaced = false
+  try {
+    const copy = path.join(staging, id)
+    fs.cpSync(source, copy, { recursive: true, verbatimSymlinks: true })
+    fs.unlinkSync(moduleLink)
+    replaced = true
+    fs.renameSync(copy, moduleLink)
+    commit()
+  } catch (error) {
+    if (replaced) {
+      fs.rmSync(moduleLink, { recursive: true, force: true })
+      fs.symlinkSync(target, moduleLink, 'dir')
+    }
+    throw error
+  } finally {
+    fs.rmSync(staging, { recursive: true, force: true })
+  }
+}
+
 export function validateCheckoutName(name: string): void {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name))
     throw new Error(

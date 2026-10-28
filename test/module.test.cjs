@@ -8,7 +8,7 @@ const { pathToFileURL } = require('node:url')
 const { scaffold, registration } = require('../dist/scaffold.js')
 const { findApp, writeJson, readJson, run } = require('../dist/common.js')
 const { preparePackage, validateSettings } = require('../dist/package.js')
-const { exportPackage, githubState, publish, publishRepository, loadConfig, saveConfig } = require('../dist/publish.js')
+const { exportPackage, githubState, publish, publishRepository, tagRelease, loadConfig, saveConfig } = require('../dist/publish.js')
 const { parse } = require('../dist/cli.js')
 
 const settings = { packageName: '@fixture/visits', version: '0.1.0', repository: '', access: 'public' }
@@ -407,6 +407,58 @@ test('dedicated repository publication creates and updates an isolated repo with
   const wrong = { ...updated, packageName: '@fixture/another' }
   assert.throws(() => publishRepository(exportPackage(app, 'visits', wrong), wrong, execute), /another package/)
   assert.equal(run('git', ['--git-dir', remote, 'rev-list', '--count', 'main'], root, { capture: true }).stdout.trim(), '2')
+})
+
+test('an npm rejection after the GitHub push names the created repository and its release commit', (context) => {
+  const { app, root } = fixture(context)
+  const remote = path.join(root, 'module.git')
+  const publication = { ...settings, repository: 'fixture/visits' }
+  const calls = []
+  function execute(command, args, cwd, options) {
+    calls.push([command, ...args])
+    if (command === 'npm' && args[0] === 'view') return { status: 1, stdout: '', stderr: 'npm error code E404' }
+    if (command === 'npm' && args[0] === 'publish') throw new Error('npm failed (exit 1). Fix the reported error and retry.')
+    if (command === 'npm') return { status: 0, stdout: 'fixture', stderr: '' }
+    if (command !== 'gh') return run(command, args, cwd, options)
+    if (args[0] === 'auth') return { status: 0, stdout: '', stderr: '' }
+    if (args[0] === 'api' && args[1] === 'user') return { status: 0, stdout: '{"login":"fixture","id":123}', stderr: '' }
+    if (args[0] === 'api') return { status: fs.existsSync(remote) ? 0 : 1, stdout: '{}', stderr: 'HTTP 404' }
+    if (args[1] === 'create') return run('git', ['init', '--bare', '--initial-branch=main', remote], root, { capture: true })
+    if (args[1] === 'clone') return run('git', ['clone', remote, args[3]], cwd, { capture: true })
+    throw new Error(`Unexpected gh command: ${args.join(' ')}`)
+  }
+  const prepared = exportPackage(app, 'visits', publication)
+  const commit = () => run('git', ['--git-dir', remote, 'rev-parse', 'main'], root, { capture: true }).stdout.trim()
+  assert.throws(() => publish(prepared, publication, execute, { expectedHead: null }), (error) => {
+    assert.match(error.message, /npm failed/)
+    assert.match(error.message, new RegExp(`repository fixture/visits was created \\(PUBLIC\\) and already has its release commit ${commit().slice(0, 12)}`))
+    assert.match(error.message, /run publish again with the same version/)
+    return true
+  })
+  assert.ok(!calls.some((call) => call.includes('git/refs')), 'a release npm rejected must not be tagged')
+})
+
+test('releases are tagged with the bare version so the generated v* workflow does not publish again', () => {
+  const sha = 'a'.repeat(40)
+  const calls = []
+  assert.deepEqual(tagRelease('fixture/visits', sha, '1.2.3', '/tmp', (command, args) => { calls.push([command, ...args]); return { status: 0, stdout: '{}', stderr: '' } }), { tag: '1.2.3' })
+  assert.deepEqual(calls, [['gh', 'api', '--method', 'POST', 'repos/fixture/visits/git/refs', '-f', 'ref=refs/tags/1.2.3', '-f', `sha=${sha}`]])
+  const existing = tagRelease('fixture/visits', sha, '1.2.3', '/tmp', () => ({ status: 1, stdout: '', stderr: 'gh: Reference already exists (HTTP 422)' }))
+  assert.match(existing.tagWarning, /release is published, but fixture\/visits has no 1\.2\.3 tag \(the tag 1\.2\.3 already exists\)/)
+  assert.match(tagRelease('fixture/visits', sha, '1.2.3', '/tmp', () => ({ status: 1, stdout: '', stderr: 'HTTP 403' })).tagWarning, /GitHub refused the request.*gh api --method POST/)
+  assert.match(tagRelease('fixture/visits', sha, '1.2.3', '/tmp', () => ({ status: 1, stdout: '', stderr: 'gh: Object does not exist (HTTP 422)' })).tagWarning, /GitHub refused the request/)
+  assert.match(tagRelease('fixture/visits', sha, '1.2.3', '/tmp', () => { throw new Error('gh api did not finish in time') }).tagWarning, /gh did not complete the request/, 'a published release never fails on its tag')
+})
+
+test('generated module README uses the tool install command and explains the Yarn age gate', (context) => {
+  const { app, destination } = fixture(context)
+  preparePackage(app, 'visits', { ...settings, repository: 'fixture/visits', version: '0.2.0' }, destination)
+  const readme = fs.readFileSync(path.join(destination, 'README.md'), 'utf8')
+  assert.match(readme, /npx create-mercato-module install @fixture\/visits\n/)
+  assert.match(readme, /npx create-mercato-module install fixture\/visits@0\.2\.0/)
+  assert.match(readme, /5 days after publication \(Yarn `npmMinimalAgeGate`\).*`--preapprove-package`/)
+  assert.match(readme, /tagged <version> without the v, so they do not start this workflow/)
+  assert.doesNotMatch(readme, /yarn mercato module add/)
 })
 
 test('publication preferences persist per module without credentials', (context) => {

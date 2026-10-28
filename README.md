@@ -34,14 +34,14 @@ You need **Node.js 24+, Yarn 4, and Docker**. On Windows, use WSL2. Already insi
 ### 1. Create an Open Mercato app
 
 ```bash
-npx create-mercato-app@develop my-app --preset empty
+npx create-mercato-app@latest my-app --preset empty
 cd my-app
 cp .env.example .env
 docker compose up -d
 yarn install
 ```
 
-Follow the scaffold prompts to choose your AI coding tools. The `develop` channel provides the framework version used for this tool's standalone installation checks. See the [Open Mercato installation guide](https://docs.openmercato.com/installation) for setup details.
+Follow the scaffold prompts to choose your AI coding tools. This tool's release checks run against the latest `create-mercato-app` release. See the [Open Mercato installation guide](https://docs.openmercato.com/installation) for setup details.
 
 ### 2. Create and build your module
 
@@ -79,6 +79,12 @@ Once npm makes the published version available, run inside the receiving app:
 npx create-mercato-module install @your-name/mercato-visits
 ```
 
+Apps created by `create-mercato-app` install npm versions only 5 days after
+publication (Yarn `npmMinimalAgeGate`). To install a new version sooner, add
+`--preapprove-package`: it adds only this package to the app's
+`npmPreapprovedPackages`. Without the option, `install` explains the wait and,
+in a terminal, asks before changing anything.
+
 `install` delegates registration and generation to Open Mercato, and also
 accepts a dedicated GitHub repository when the package is not on npm:
 
@@ -95,7 +101,8 @@ to choose one module from a multi-module package. GitHub installs use the
 current default-branch head unless `owner/repo@version-or-ref`, `owner/repo#ref`,
 or `--ref <tag-or-commit>` selects another ref. Like npm's `package@1.2.3`,
 `owner/repo@1.2.3` selects a version: it tries the exact `1.2.3` ref first,
-then `v1.2.3` only if the exact ref is missing. Prereleases such as
+then `v1.2.3` only if the exact ref is missing. `publish` tags every release
+with its bare version, so this works for repositories released by this tool. Prereleases such as
 `@1.2.3-beta.1` follow the same rule. `#ref` and `--ref` always select an exact
 Git ref. The resolved full commit is pinned in every case.
 
@@ -116,10 +123,10 @@ Keep developing locally and run the same command for later releases. The app can
 Run inside any Open Mercato app. Give `link` a repository or an npm package:
 
 ```bash
-npx create-mercato-module link pkarw/visits-example
+npx create-mercato-module link pkarw/marketing-consents
 # These work too:
-npx create-mercato-module link https://github.com/pkarw/visits-example.git
-npx create-mercato-module link @piotrkarwatka/visits
+npx create-mercato-module link https://github.com/pkarw/marketing-consents.git
+npx create-mercato-module link @piotrkarwatka/marketing-consents
 ```
 
 The npm form discovers the GitHub repository from the package's npm metadata. The package name and module ID come from the repository; no npm package name prompt or prior `init` is needed. A bare repository name uses your authenticated GitHub account unless an unsaved local module has the same name; in that legacy case, the command asks for its dedicated repository. Use `owner/repository` to remove the ambiguity. If the package has no dedicated module repository, the command explains how to fix it.
@@ -127,10 +134,10 @@ The npm form discovers the GitHub repository from the package's npm metadata. Th
 Optionally name the local checkout folder:
 
 ```bash
-npx create-mercato-module link pkarw/visits-example my-visits
+npx create-mercato-module link pkarw/marketing-consents my-consents
 ```
 
-The tool clones under `.mercato/module-repos/my-visits` (default: the module ID), links `src/modules/visits`, registers it as `@app`, and runs generation. Existing local source is backed up. The local folder name does not change the module ID, routes, or imports.
+The tool clones under `.mercato/module-repos/my-consents` (default: the module ID), links `src/modules/marketing_consents`, registers it as `@app`, and runs generation. Existing local source is backed up. The local folder name does not change the module ID, routes, or imports.
 
 Edit through the app, then release from the linked repository using the saved package and repository settings:
 
@@ -139,6 +146,8 @@ npx create-mercato-module publish visits
 ```
 
 Publication includes your linked edits, preserves repository customizations, and suggests the next patch version. `link visits` still works when the repository is saved. For a new local module, publish it with `publish visits --repo owner/repo` before linking it.
+
+To make it an ordinary local module again, run `npx create-mercato-module unlink visits`: it copies the checkout's current source into `src/modules/visits` and keeps the checkout and the earlier backup.
 
 This link is local: a fresh clone of the whole app needs the module source restored or linked again. See [repository development and PR workflow](docs/guide.md#develop-in-the-dedicated-repository-without-leaving-your-app) for details.
 
