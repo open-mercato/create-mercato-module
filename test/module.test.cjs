@@ -553,3 +553,34 @@ test('validates module/package/version/repo arguments and rejects repeated flags
   assert.throws(() => validateSettings({ ...settings, packageName: '../package' }), /npm package/)
   assert.throws(() => validateSettings({ ...settings, version: 'latest' }), /version/)
 })
+
+test('a new repository gets the module description only when GitHub can take it', (context) => {
+  for (const [description, expected] of [
+    ['Plans customer visits.', 'Plans customer visits.'],
+    ['Plans customer visits.\\x07', 'Open Mercato module: visits'],
+  ]) {
+    const { app, root, directory } = fixture(context)
+    const index = path.join(directory, 'index.ts')
+    fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  ejectable: true,\n", `  ejectable: true,\n  description: '${description}',\n`))
+    const remote = path.join(root, 'module.git')
+    const publication = { ...settings, repository: 'fixture/visits' }
+    const calls = []
+    function execute(command, args, cwd, options) {
+      calls.push([command, ...args])
+      if (command === 'npm' && args[0] === 'view') return { status: 1, stdout: '', stderr: 'npm error code E404' }
+      if (command === 'npm') return { status: 0, stdout: 'fixture', stderr: '' }
+      if (command !== 'gh') return run(command, args, cwd, options)
+      if (args[0] === 'auth') return { status: 0, stdout: '', stderr: '' }
+      if (args[0] === 'api' && args[1] === 'user') return { status: 0, stdout: '{"login":"fixture","id":123}', stderr: '' }
+      if (args[0] === 'api' && args[1] === '--method') return { status: 0, stdout: '{}', stderr: '' }
+      if (args[0] === 'api') return { status: fs.existsSync(remote) ? 0 : 1, stdout: '{}', stderr: 'HTTP 404' }
+      if (args[1] === 'create') return run('git', ['init', '--bare', '--initial-branch=main', remote], root, { capture: true })
+      if (args[1] === 'clone') return run('git', ['clone', remote, args[3]], cwd, { capture: true })
+      if (args[1] === 'edit') return { status: 0, stdout: '', stderr: '' }
+      throw new Error(`Unexpected gh command: ${args.join(' ')}`)
+    }
+    publish(exportPackage(app, 'visits', publication), publication, execute)
+    const create = calls.find((call) => call[1] === 'repo' && call[2] === 'create')
+    assert.deepEqual(create.slice(-2), ['--description', expected])
+  }
+})
