@@ -63,13 +63,14 @@
     },
     "summary": {
       "type": "string",
-      "minLength": 1,
+      "minLength": 20,
       "maxLength": 140
     },
     "whenToUse": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 240
+      "maxLength": 240,
+      "pattern": "^Use when [\\s\\S]{31,}$"
     },
     "whenNotToUse": {
       "type": "string",
@@ -136,6 +137,30 @@
         }
       },
       "additionalProperties": false
+    },
+    "screenshots": {
+      "maxItems": 6,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "src": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^screenshots\\/[a-z0-9][a-z0-9_-]{0,63}\\.(?:webp|png|jpg)$|^(?!.*(?:\\.\\.|%2[eE]))https:\\/\\/raw\\.githubusercontent\\.com\\/([A-Za-z0-9-]{1,39})\\/([A-Za-z0-9._-]{1,100})\\/[A-Za-z0-9._~%/-]+$|^https:\\/\\/github\\.com\\/user-attachments\\/assets\\/[A-Za-z0-9-]+$"
+          },
+          "alt": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "src",
+          "alt"
+        ],
+        "additionalProperties": false
+      }
     },
     "pricing": {
       "default": "free",
@@ -297,5 +322,57 @@
     "summary",
     "whenToUse"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "required": [
+        "npm"
+      ]
+    },
+    {
+      "required": [
+        "github"
+      ]
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "hold",
+              "unmaintained",
+              "delisted"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "reason"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "extends"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "provider"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      }
+    }
+  ]
 }
