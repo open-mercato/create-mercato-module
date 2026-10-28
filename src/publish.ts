@@ -862,11 +862,16 @@ function addTopics(repository: string, cwd: string, execute: Executor = run) {
 }
 
 function ensureAuthor(checkout: string, execute: Executor): void {
-  const identity = execute('git', ['var', 'GIT_AUTHOR_IDENT'], checkout, {
-    capture: true,
-    allowFailure: true,
-  })
-  if (identity.status !== 0) {
+  // A commit needs both identities. GIT_AUTHOR_NAME, which names the LICENSE
+  // holder, can set the author while Git has no committer configured.
+  const missing = ['GIT_AUTHOR_IDENT', 'GIT_COMMITTER_IDENT'].some(
+    (identity) =>
+      execute('git', ['var', identity], checkout, {
+        capture: true,
+        allowFailure: true,
+      }).status !== 0,
+  )
+  if (missing) {
     const user: { login: string; id: number } = JSON.parse(
       execute('gh', ['api', 'user'], checkout, { capture: true }).stdout,
     )

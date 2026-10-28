@@ -485,12 +485,16 @@ test('an accepted release gives the repository its topics; a refused topic never
 
 test('a repository release removes the LICENSE an earlier MIT release generated, never the author\'s own', (context) => {
   const { app, root } = fixture(context)
-  const holder = process.env.GIT_AUTHOR_NAME
-  process.env.GIT_AUTHOR_NAME = 'Ada Lovelace'
-  context.after(() => { if (holder === undefined) delete process.env.GIT_AUTHOR_NAME; else process.env.GIT_AUTHOR_NAME = holder })
+  // GIT_AUTHOR_NAME names the LICENSE holder. Without a configured Git
+  // identity, as on CI, the release commit still needs a committer.
+  const isolated = { GIT_AUTHOR_NAME: 'Ada Lovelace', GIT_AUTHOR_EMAIL: 'ada@example.com', GIT_CONFIG_GLOBAL: path.join(root, 'no-gitconfig'), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'user.useConfigOnly', GIT_CONFIG_VALUE_0: 'true' }
+  const saved = Object.fromEntries(Object.keys(isolated).map((key) => [key, process.env[key]]))
+  Object.assign(process.env, isolated)
+  context.after(() => { for (const [key, value] of Object.entries(saved)) if (value === undefined) delete process.env[key]; else process.env[key] = value })
   const remote = path.join(root, 'module.git')
   function execute(command, args, cwd, options) {
     if (command !== 'gh') return run(command, args, cwd, options)
+    if (args[0] === 'api' && args[1] === 'user') return { status: 0, stdout: '{"login":"fixture","id":123}', stderr: '' }
     if (args[0] === 'api') return { status: fs.existsSync(remote) ? 0 : 1, stdout: '{}', stderr: 'HTTP 404' }
     if (args[1] === 'create') return run('git', ['init', '--bare', '--initial-branch=main', remote], root, { capture: true })
     if (args[1] === 'clone') return run('git', ['clone', remote, args[3]], cwd, { capture: true })
