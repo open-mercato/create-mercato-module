@@ -79,7 +79,6 @@ function licenseHolder(
       const result = execute(command, args, app.directory, {
         capture: true,
         allowFailure: true,
-        timeout: 15_000,
       })
       return result.status === 0 ? usable(result.stdout) : ''
     } catch {
@@ -245,7 +244,9 @@ function packageLicense(
   settings: Settings,
   moduleLicense?: string,
 ): string {
-  return chosenLicense(app, settings, moduleLicense) || 'UNLICENSED'
+  const license = chosenLicense(app, settings, moduleLicense)
+  // npm and the LICENSE file use the SPDX spelling, so mit becomes MIT.
+  return /^mit$/i.test(license) ? 'MIT' : license || 'UNLICENSED'
 }
 
 // Printed when a package falls back to UNLICENSED because nobody chose a license.

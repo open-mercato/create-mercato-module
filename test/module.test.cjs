@@ -579,6 +579,9 @@ test('the chosen license reaches package.json, and MIT ships its LICENSE text', 
   assert.equal(unset.licenseDefaulted, true)
   assert.equal(mit.licenseDefaulted, false)
   assert.ok(!fs.existsSync(path.join(root, 'unset/LICENSE')))
+  const lower = preparePackage(app, 'visits', { ...settings, license: 'mit' }, path.join(root, 'lower'))
+  assert.equal(lower.manifest.license, 'MIT', 'mit takes the SPDX spelling')
+  assert.match(fs.readFileSync(path.join(root, 'lower/LICENSE'), 'utf8'), /^MIT License\n/, 'mit ships the LICENSE text too')
   const index = path.join(directory, 'index.ts')
   fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  license: '',", "  license: 'Apache-2.0',"))
   assert.equal(preparePackage(app, 'visits', settings, path.join(root, 'declared')).manifest.license, 'Apache-2.0')
@@ -590,6 +593,11 @@ test('the chosen license reaches package.json, and MIT ships its LICENSE text', 
   assert.equal(licenseHolder(app, settings, answers({ npm: 'grace' })), 'grace', 'the npm user when Git has no name')
   assert.equal(licenseHolder(app, settings, answers({})), '@fixture/visits authors', 'the package authors only when both are missing')
   assert.equal(licenseHolder(app, settings, () => { throw new Error('npm is missing') }), '@fixture/visits authors')
+  assert.equal(licenseHolder(app, settings, answers({ git: 'Grace\nHopper\u0007' })), 'Grace Hopper', 'control characters never reach the LICENSE')
+  assert.equal(licenseHolder(app, settings, answers({ git: 'x'.repeat(101), npm: 'grace' })), 'grace', 'an overlong name falls through')
+  const options = []
+  licenseHolder(app, settings, (command, args, cwd, option) => { options.push(option); return { status: 1, stdout: '', stderr: '' } })
+  assert.ok(options.every((option) => option.timeout === undefined), 'npm whoami keeps the default capture timeout')
   assert.doesNotThrow(() => validateSettings({ ...settings, license: '(MIT OR Apache-2.0)' }))
 })
 

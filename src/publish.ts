@@ -277,7 +277,8 @@ function exportLinkedPackage(
   // MIT package gets the generated one and any other license gets none.
   if (!fs.existsSync(path.join(checkout, 'LICENSE'))) {
     const license = path.join(prepared.destination, 'LICENSE')
-    if (manifest.license !== 'MIT') fs.rmSync(license, { force: true })
+    if (!/^mit$/i.test(String(manifest.license)))
+      fs.rmSync(license, { force: true })
     else if (!fs.existsSync(license))
       fs.writeFileSync(license, mitLicense(licenseHolder(app, settings)))
   }
