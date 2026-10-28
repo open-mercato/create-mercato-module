@@ -158,11 +158,12 @@ function validateSettings(settings: Settings): void {
     throw new Error(
       'Use an SPDX license such as MIT or Apache-2.0, or UNLICENSED for a proprietary module.',
     )
+  if (settings.repository) validateRepositoryName(settings.repository)
+}
+
+function validateRepositoryName(repository: string): void {
   if (
-    settings.repository &&
-    !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(
-      settings.repository,
-    )
+    !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repository)
   )
     throw new Error(
       'Use a GitHub repository name such as your-name/mercato-visits.',
@@ -425,6 +426,7 @@ function preparePackage(
 
 export {
   validatePackageName,
+  validateRepositoryName,
   validateSettings,
   installedVersion,
   moduleInfo,

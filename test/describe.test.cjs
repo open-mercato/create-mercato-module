@@ -182,6 +182,19 @@ test('describe explains what is missing and opens the submit page on request', (
   assert.doesNotMatch(open.stdout, /not launched/)
   const ignored = cli(['describe', 'visits'], { MERCATO_CATALOG_URL: 'javascript:alert(1)' })
   assert.match(ignored.stdout, /^# https:\/\/modules\.openmercato\.com\/submit/m, 'only http(s) origins override the catalog')
+  for (const [field, value, message] of [
+    ['packageName', '@fixture/visits\nsummary: injected', /Enter a valid npm package name/],
+    ['repository', 'fixture/visits\nsummary: injected', /Use a GitHub repository name/],
+  ]) {
+    const file = path.join(app.directory, '.mercato/module-tool.json')
+    const config = JSON.parse(fs.readFileSync(file, 'utf8'))
+    config.modules.visits = { ...config.modules.visits, ...settings, [field]: value }
+    fs.writeFileSync(file, JSON.stringify(config))
+    const edited = cli(['describe', 'visits'])
+    assert.equal(edited.status, 1, `a hand-edited ${field} is validated`)
+    assert.match(edited.output, message)
+    assert.doesNotMatch(edited.stdout, /injected/)
+  }
   assert.match(cli(['describe', 'visits', '--yes']).output, /Unknown option or missing value: --yes/)
   assert.match(cli(['describe', '../visits']).output, /snake_case/)
 })

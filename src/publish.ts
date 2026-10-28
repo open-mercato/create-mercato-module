@@ -676,8 +676,10 @@ function publishRepository(
         settings.repository!,
         settings.access === 'public' ? '--public' : '--private',
         '--description',
-        // GitHub limits repository descriptions to 350 characters.
-        prepared.manifest.description.length <= 350
+        // GitHub limits repository descriptions to 350 characters of one line.
+        prepared.manifest.description.length <= 350 &&
+          // eslint-disable-next-line no-control-regex
+          !/[\u0000-\u001f\u007f-\u009f]/.test(prepared.manifest.description)
           ? prepared.manifest.description
           : fallbackDescription(prepared.manifest.mercatoModule.id),
       ],

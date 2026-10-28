@@ -13,6 +13,7 @@ import {
   fallbackDescription,
   moduleInfo,
   validatePackageName,
+  validateRepositoryName,
 } from './package.js'
 
 // Categories of the Open Mercato Modules descriptor schema
@@ -152,6 +153,9 @@ export function describeModule(
     throw new Error(
       `Module ${id} has no saved npm package. Publish it first: npx create-mercato-module publish ${id}\nOr name the package it will be published as: npx create-mercato-module describe ${id} --package @your-name/mercato-visits`,
     )
+  // Saved settings may be edited by hand; they reach the output and --open.
+  validatePackageName(saved.packageName)
+  if (saved.repository) validateRepositoryName(saved.repository)
   if (saved.access === 'restricted')
     throw new Error(
       `${saved.packageName} is a restricted npm package. Open Mercato Modules lists public packages only.`,
