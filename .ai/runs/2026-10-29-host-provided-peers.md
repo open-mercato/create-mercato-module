@@ -40,6 +40,10 @@ Publish `@tanstack/react-query` and `@tanstack/react-table` as peer dependencies
 
 4.1 Apply the code-review findings: drop every merged peer from `dependencies` (exact pins committed by earlier releases), check repository peer ranges for runtime imports, tests and docs.
 
+### Phase 5: Reconcile current main
+
+5.1 Merge current `main`, resolve overlapping package and publication changes without losing either branch's behavior, and run the full validation gate.
+
 ## Progress
 
 PR: #18
@@ -61,3 +65,7 @@ PR: #18
 ### Phase 4: Review fixes
 
 - [x] 4.1 Apply code-review findings - 2e80d07
+
+### Phase 5: Reconcile current main
+
+- [ ] 5.1 Merge current main and resolve conflicts without losing either branch's behavior
