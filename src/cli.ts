@@ -361,7 +361,7 @@ async function main(argv = process.argv.slice(2)) {
     if (args.flags.open && !catalogOpen)
       console.error(`\n${catalogPendingNote}`)
     else if (args.flags.open && !openCatalogPage(described.submitUrl))
-      console.log(`Open ${described.submitUrl} in your browser.`)
+      console.error(`Open ${described.submitUrl} in your browser.`)
     return
   }
   if (args.command === 'install') {
