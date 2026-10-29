@@ -6,7 +6,7 @@ const path = require('node:path')
 const { satisfiesPeer, frameworkPeerWarning } = require('../dist/framework-peers.js')
 const { installFromInput } = require('../dist/install.js')
 const { scaffold } = require('../dist/scaffold.js')
-const { writeJson } = require('../dist/common.js')
+const { run, writeJson } = require('../dist/common.js')
 const { preparePackage } = require('../dist/package.js')
 
 test('peer ranges are judged for exact versions and caret ranges only', () => {
@@ -79,6 +79,27 @@ test('host-provided packages are caret peers built against the installed version
   assert.deepEqual(manifest.dependencies, { zod: '4.1.12' })
   assert.equal(manifest.peerDependencies['@open-mercato/core'], '^0.9.0', 'framework peers accept compatible releases')
   assert.equal(manifest.devDependencies['@open-mercato/core'], '0.9.0')
+})
+
+test('a consumer install reuses its compatible host-provided package without a nested copy', (context) => {
+  const { app, destination } = moduleApp(context, ['@tanstack/react-query'])
+  preparePackage(app, 'visits', { packageName: '@fixture/visits', version: '0.1.0', repository: '', access: 'public' }, destination)
+  const root = path.dirname(destination)
+  const hostPackage = path.join(root, 'react-query-host')
+  writeJson(path.join(hostPackage, 'package.json'), { name: '@tanstack/react-query', version: '5.90.3', main: 'index.js' })
+  fs.writeFileSync(path.join(hostPackage, 'index.js'), 'module.exports = { source: "host" }\n')
+  const consumer = path.join(root, 'consumer')
+  writeJson(path.join(consumer, 'package.json'), {
+    name: 'consumer',
+    private: true,
+    dependencies: {
+      '@fixture/visits': `file:${path.relative(consumer, destination)}`,
+      '@tanstack/react-query': `file:${path.relative(consumer, hostPackage)}`,
+    },
+  })
+  run('npm', ['install', '--ignore-scripts', '--offline', '--legacy-peer-deps', '--no-audit', '--no-fund', '--cache', path.join(root, 'npm-cache')], consumer, { capture: true })
+  assert.equal(JSON.parse(fs.readFileSync(path.join(consumer, 'node_modules/@tanstack/react-query/package.json'), 'utf8')).version, '5.90.3')
+  assert.equal(fs.existsSync(path.join(consumer, 'node_modules/@fixture/visits/node_modules/@tanstack/react-query')), false)
 })
 
 test('a module without host-provided imports keeps plain runtime dependencies exact', (context) => {

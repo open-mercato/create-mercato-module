@@ -44,6 +44,10 @@ Publish `@tanstack/react-query` and `@tanstack/react-table` as peer dependencies
 
 5.1 Merge current `main`, resolve overlapping package and publication changes without losing either branch's behavior, and run the full validation gate.
 
+### Phase 6: Post-review evidence
+
+6.1 Add a hermetic consumer-install regression test proving a compatible host-provided TanStack package is reused without a nested copy.
+
 ## Progress
 
 PR: #18
@@ -69,3 +73,7 @@ PR: #18
 ### Phase 5: Reconcile current main
 
 - [x] 5.1 Merge current main and resolve conflicts without losing either branch's behavior - 6b079a3
+
+### Phase 6: Post-review evidence
+
+- [ ] 6.1 Add consumer-install evidence for the host-provided peer contract
