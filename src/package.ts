@@ -12,6 +12,9 @@ import { assertNoCredentials } from './repository-safety.js'
 const ageGateNote =
   'Apps created by create-mercato-app install npm versions only 5 days after publication (Yarn npmMinimalAgeGate). To install a new version sooner, add --preapprove-package: it adds only this package to the app\'s npmPreapprovedPackages.'
 
+// The host app provides their React context and types, so a module must share its copy.
+const hostProvidedPackages = ['@tanstack/react-query', '@tanstack/react-table']
+
 const localLocator =
   /^(?:workspace:|file:|link:|portal:|patch:|git\+|git:|ssh:|https?:|github:)/
 
@@ -109,6 +112,7 @@ function preparePackage(
     }
   }
   const peers: Record<string, string> = {}
+  const development: Record<string, string> = {}
   const runtime: Record<string, string> = {}
   for (const name of [...dependencies].sort()) {
     const declared =
@@ -126,7 +130,13 @@ function preparePackage(
       name.startsWith('@open-mercato/') ||
       name.startsWith('@mikro-orm/') ||
       ['react', 'react-dom', 'next'].includes(name)
-    ;(singleton ? peers : runtime)[name] = version
+    if (hostProvidedPackages.includes(name)) {
+      peers[name] = `^${version}`
+      development[name] = version
+    } else if (singleton) {
+      peers[name] = version
+      development[name] = version
+    } else runtime[name] = version
   }
   if (fs.existsSync(destination))
     throw new Error(`Export directory already exists: ${destination}`)
@@ -165,7 +175,7 @@ function preparePackage(
     engines: { node: '>=24' },
     ...(Object.keys(runtime).length ? { dependencies: runtime } : {}),
     peerDependencies: peers,
-    devDependencies: { typescript: typescriptVersion, ...peers },
+    devDependencies: { typescript: typescriptVersion, ...development },
     publishConfig: { access: settings.access },
     ...(settings.repository ||
     (settings.auth === 'trusted' && process.env.GITHUB_REPOSITORY)
