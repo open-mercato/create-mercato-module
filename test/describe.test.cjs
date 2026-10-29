@@ -153,6 +153,36 @@ test('describe falls back to a valid summary when the module has no usable descr
   }
 })
 
+test('describe reads only the exported top-level metadata binding', (context) => {
+  const { app, index, cli } = fixture(context)
+  saveConfig(app, 'visits', settings, true)
+  const exported = "export const metadata = {\n  name: 'visits',\n  title: 'Visits',\n  description: 'Plans customer visits: routes, notes and follow-ups.',\n}\n"
+  const local = "const metadata = { title: 'Other', description: 'A local helper value that the descriptor must ignore.' }"
+  for (const [kind, helper] of [
+    ['function', `function helper() {\n  ${local}\n  return metadata\n}\n`],
+    ['block', `{\n  ${local}\n  void metadata\n}\n`],
+    ['arrow function', `export const helper = () => {\n  ${local}\n  return metadata\n}\n`],
+  ]) {
+    fs.writeFileSync(index, exported + helper)
+    const result = cli(['describe', 'visits'])
+    assert.equal(result.status, 0, result.output)
+    const entry = assertCatalogEntry(result.stdout)
+    assert.equal(entry.summary, 'Plans customer visits: routes, notes and follow-ups.', `a local metadata in a ${kind} keeps the exported description`)
+    assert.equal(entry.whenToUse, 'Use when an Open Mercato app needs the Visits module.', `a local metadata in a ${kind} keeps the exported title`)
+  }
+  fs.writeFileSync(index, "const metadata = {\n  title: 'Field Visits',\n  description: 'Plans field visits: routes, notes and follow-ups.',\n}\n\nexport { metadata }\n")
+  const named = cli(['describe', 'visits'])
+  assert.equal(named.status, 0, named.output)
+  const entry = assertCatalogEntry(named.stdout)
+  assert.equal(entry.summary, 'Plans field visits: routes, notes and follow-ups.', 'export { metadata } names the binding')
+  assert.equal(entry.whenToUse, 'Use when an Open Mercato app needs the Field Visits module.')
+  fs.writeFileSync(index, `export function helper() {\n  ${local}\n  return metadata\n}\n`)
+  const nested = cli(['describe', 'visits'])
+  assert.equal(nested.status, 0, nested.output)
+  assert.equal(assertCatalogEntry(nested.stdout).summary, 'Visits module for Open Mercato apps.', 'a nested metadata alone is no metadata')
+  assert.match(nested.stderr, /⚠️ Module visits has no description\./)
+})
+
 test('describe explains what is missing and opens the submit page on request', (context) => {
   const { app, opened, cli } = fixture(context)
   const unsaved = cli(['describe', 'visits'])
@@ -180,6 +210,13 @@ test('describe explains what is missing and opens the submit page on request', (
   assert.equal(open.status, 0, open.output)
   assert.deepEqual(JSON.parse(fs.readFileSync(opened, 'utf8')), ['http://127.0.0.1:4321/submit?npm=@fixture/visits'], 'MERCATO_CATALOG_URL names the catalog deployment')
   assert.doesNotMatch(open.stdout, /not launched/)
+  for (const name of ['open', 'xdg-open', 'explorer'])
+    fs.writeFileSync(path.join(path.dirname(opened), 'bin', name), `#!${process.execPath}\nprocess.exit(1)\n`, { mode: 0o755 })
+  const failed = cli(['describe', 'visits', '--open'], { MERCATO_CATALOG_URL: 'http://127.0.0.1:4321/' })
+  assert.equal(failed.status, 0, failed.output)
+  assertCatalogEntry(failed.stdout)
+  assert.doesNotMatch(failed.stdout, /in your browser/, 'redirected stdout stays valid YAML')
+  assert.match(failed.stderr, /^Open http:\/\/127\.0\.0\.1:4321\/submit\?npm=@fixture\/visits in your browser\.$/m)
   const ignored = cli(['describe', 'visits'], { MERCATO_CATALOG_URL: 'javascript:alert(1)' })
   assert.match(ignored.stdout, /^# https:\/\/modules\.openmercato\.com\/submit/m, 'only http(s) origins override the catalog')
   for (const [field, value, message] of [

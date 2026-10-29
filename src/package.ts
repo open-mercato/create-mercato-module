@@ -188,37 +188,59 @@ function moduleInfo(moduleRoot: string): {
   } catch {
     return {}
   }
-  const info: { title?: string; description?: string; license?: string } = {}
-  function visit(node: ts.Node): void {
+  // Only the exported top-level binding counts: `export const metadata` or a
+  // top-level `const metadata` named in `export { metadata }`. A local
+  // `metadata` inside a helper never overrides it.
+  const exported = source.statements.some(
+    (statement) =>
+      ts.isExportDeclaration(statement) &&
+      !statement.moduleSpecifier &&
+      !statement.isTypeOnly &&
+      statement.exportClause &&
+      ts.isNamedExports(statement.exportClause) &&
+      statement.exportClause.elements.some(
+        (element) =>
+          !element.isTypeOnly &&
+          (element.propertyName ?? element.name).text === 'metadata' &&
+          element.name.text === 'metadata',
+      ),
+  )
+  let declaration: ts.VariableDeclaration | undefined
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue
     if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.name.text === 'metadata' &&
-      node.initializer
-    ) {
-      let value = node.initializer
-      while (
-        ts.isAsExpression(value) ||
-        ts.isSatisfiesExpression(value) ||
-        ts.isParenthesizedExpression(value)
+      !exported &&
+      !statement.modifiers?.some(
+        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
       )
-        value = value.expression
-      if (ts.isObjectLiteralExpression(value))
-        for (const entry of value.properties)
-          if (
-            ts.isPropertyAssignment(entry) &&
-            (ts.isIdentifier(entry.name) || ts.isStringLiteralLike(entry.name)) &&
-            (entry.name.text === 'title' ||
-              entry.name.text === 'description' ||
-              entry.name.text === 'license') &&
-            ts.isStringLiteralLike(entry.initializer) &&
-            entry.initializer.text.trim()
-          )
-            info[entry.name.text] = entry.initializer.text.replace(/\s+/g, ' ').trim()
-    }
-    ts.forEachChild(node, visit)
+    )
+      continue
+    declaration = statement.declarationList.declarations.find(
+      (item) => ts.isIdentifier(item.name) && item.name.text === 'metadata',
+    )
+    if (declaration) break
   }
-  visit(source)
+  const info: { title?: string; description?: string; license?: string } = {}
+  let value = declaration?.initializer
+  while (
+    value &&
+    (ts.isAsExpression(value) ||
+      ts.isSatisfiesExpression(value) ||
+      ts.isParenthesizedExpression(value))
+  )
+    value = value.expression
+  if (value && ts.isObjectLiteralExpression(value))
+    for (const entry of value.properties)
+      if (
+        ts.isPropertyAssignment(entry) &&
+        (ts.isIdentifier(entry.name) || ts.isStringLiteralLike(entry.name)) &&
+        (entry.name.text === 'title' ||
+          entry.name.text === 'description' ||
+          entry.name.text === 'license') &&
+        ts.isStringLiteralLike(entry.initializer) &&
+        entry.initializer.text.trim()
+      )
+        info[entry.name.text] = entry.initializer.text.replace(/\s+/g, ' ').trim()
   return info
 }
 
