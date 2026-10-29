@@ -223,5 +223,6 @@ export {
   installedVersion,
   preparePackage,
   localLocator,
+  hostProvidedPackages,
   ageGateNote,
 }

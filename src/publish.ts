@@ -2,7 +2,8 @@ import type { App, Settings, ExportedPackage, Executor } from './types.js'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { readJson, writeJson, run, within } from './common.js'
-import { preparePackage, localLocator } from './package.js'
+import { preparePackage, localLocator, hostProvidedPackages } from './package.js'
+import { satisfiesPeer } from './framework-peers.js'
 import { createNpmRunner } from './npm-auth.js'
 import { linkedModuleDirectory } from './development.js'
 import type { DevelopmentLink } from './development.js'
@@ -216,6 +217,30 @@ function exportLinkedPackage(
       !Array.isArray(previous)
     )
       manifest[field] = { ...previous, ...current }
+  }
+  // A name the maintainer declared as a peer stays a peer only, and the
+  // maintainer's range for a host-provided package wins unless it excludes
+  // the version the module is built against.
+  const declaredPeers = original.peerDependencies
+  if (typeof declaredPeers === 'object' && declaredPeers !== null) {
+    const declared = declaredPeers as Record<string, unknown>
+    if (manifest.dependencies) {
+      const dependencies = { ...manifest.dependencies }
+      for (const name of Object.keys(declared)) delete dependencies[name]
+      if (Object.keys(dependencies).length) manifest.dependencies = dependencies
+      else delete manifest.dependencies
+    }
+    for (const name of hostProvidedPackages) {
+      const range = declared[name]
+      const built = prepared.manifest.devDependencies?.[name]
+      if (
+        typeof range === 'string' &&
+        built &&
+        manifest.peerDependencies &&
+        satisfiesPeer(built, range) !== false
+      )
+        manifest.peerDependencies = { ...manifest.peerDependencies, [name]: range }
+    }
   }
   for (const field of [
     'dependencies',
