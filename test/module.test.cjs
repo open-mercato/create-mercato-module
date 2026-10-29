@@ -605,6 +605,25 @@ test('the chosen license reaches package.json, and MIT ships its LICENSE text', 
   assert.doesNotThrow(() => validateSettings({ ...settings, license: '(MIT OR Apache-2.0)' }))
 })
 
+test('a local metadata in a helper never overrides the exported license', (context) => {
+  const { app, directory, root } = fixture(context)
+  const index = path.join(directory, 'index.ts')
+  const exported = fs.readFileSync(index, 'utf8').replace("  license: '',", "  license: 'UNLICENSED',")
+  const local = "const metadata = { license: 'MIT' }"
+  for (const [kind, helper] of [
+    ['function', `function helper() {\n  ${local}\n  return metadata\n}\n`],
+    ['block', `{\n  ${local}\n}\n`],
+    ['arrow function', `export const helper = () => {\n  ${local}\n  return metadata\n}\n`],
+  ]) {
+    fs.writeFileSync(index, exported + helper)
+    assert.equal(moduleInfo(directory).license, 'UNLICENSED', `a local metadata in a ${kind} keeps the exported license`)
+    const destination = path.join(root, kind.replace(' ', '-'))
+    const prepared = preparePackage(app, 'visits', settings, destination)
+    assert.equal(prepared.manifest.license, 'UNLICENSED', `a local metadata in a ${kind} does not make the package MIT`)
+    assert.ok(!fs.existsSync(path.join(destination, 'LICENSE')), `a local metadata in a ${kind} adds no MIT LICENSE`)
+  }
+})
+
 test('generated module README uses the tool install command and explains the Yarn age gate', (context) => {
   const { app, destination } = fixture(context)
   preparePackage(app, 'visits', { ...settings, repository: 'fixture/visits', version: '0.2.0' }, destination)

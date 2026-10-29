@@ -150,6 +150,16 @@ test('the wizard asks for a license once, suggesting MIT; scripts keep the modul
   assert.match(invalid.output, /Use an SPDX license such as MIT or Apache-2\.0, or UNLICENSED/)
 })
 
+test('the license prompt suggests the exported license, not a local metadata in a helper', (context) => {
+  const { app, cli } = fixture(context)
+  saveConfig(app, 'visits', settings, true)
+  const index = path.join(app.directory, 'src/modules/visits/index.ts')
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  license: '',", "  license: 'UNLICENSED',") + "function helper() {\n  const metadata = { license: 'MIT' }\n  return metadata\n}\n")
+  const result = cli(['publish', 'visits'])
+  assert.match(result.output, /PROMPT:⚖️ License .*\[UNLICENSED\]: /)
+  assert.doesNotMatch(result.output, /PROMPT:⚖️ License .*\[MIT\]/)
+})
+
 test('explicit settings are not prompted again and configure intentionally opens saved fields', (context) => {
   const { app, cli } = fixture(context)
   const supplied = cli(['publish', 'visits', '--package', settings.packageName, '--version', settings.version, '--repo', '-', '--access', 'public', '--license', 'MIT', '--auth', 'login'])
