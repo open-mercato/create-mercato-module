@@ -68,4 +68,4 @@ PR: #18
 
 ### Phase 5: Reconcile current main
 
-- [ ] 5.1 Merge current main and resolve conflicts without losing either branch's behavior
+- [x] 5.1 Merge current main and resolve conflicts without losing either branch's behavior - 6b079a3
