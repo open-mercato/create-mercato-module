@@ -7,11 +7,12 @@ const { spawnSync } = require('node:child_process')
 const { scaffold } = require('../dist/scaffold.js')
 const { loadConfig, saveConfig, saveDevelopment } = require('../dist/config.js')
 const { checkAuthentication } = require('../dist/npm-auth.js')
+const { moduleInfo } = require('../dist/package.js')
 
 const settings = { packageName: '@fixture/visits', version: '0.1.0', access: 'public', repository: '', auth: 'login' }
 
 function fixture(context) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-config-cli-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-config-cli-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const app = { directory: path.join(root, 'app'), manifest: { name: 'fixture-app', private: true, dependencies: { '@open-mercato/core': '0.9.0', '@open-mercato/shared': '0.9.0', '@open-mercato/ui': '0.9.0', react: '19.0.0' } } }
   fs.mkdirSync(path.join(app.directory, 'src/modules'), { recursive: true })
@@ -144,6 +145,37 @@ test('dry-run skips authentication even when npm login is unavailable', (context
   assert.ok(!fs.existsSync(path.join(app.directory, '.mercato/module-tool.json')))
 })
 
+test('init asks for a description in a terminal, takes --description in scripts, and publish warns without one', (context) => {
+  const { root, app, cli } = fixture(context)
+  const answers = path.join(root, 'answers.cjs')
+  fs.writeFileSync(answers, `Object.defineProperty(process.stdin,'isTTY',{value:true});const replies=['Too short.',"Plans the team's customer visits and follow-ups."];require('node:readline/promises').createInterface=()=>({question:async(label)=>{console.log('PROMPT:'+label);return replies.shift()??''},close(){}})\n`)
+  const asked = spawnSync(process.execPath, ['--require', answers, path.resolve(__dirname, '../dist/cli.js'), 'init', 'visit_plans', '--no-generate'], { cwd: app.directory, encoding: 'utf8' })
+  assert.equal(asked.status, 0, asked.stderr)
+  assert.equal((asked.stdout.match(/PROMPT:📝 What does the module do\?/g) || []).length, 2, 'an unusable answer is asked again')
+  assert.match(asked.stdout, /Write 20 to 140 characters \(this has 10\)\./)
+  assert.equal(moduleInfo(path.join(app.directory, 'src/modules/visit_plans')).description, "Plans the team's customer visits and follow-ups.")
+  const scripted = cli(['init', 'visit_notes', '--no-generate', '--description', 'Keeps notes for every customer visit.'], false)
+  assert.equal(scripted.status, 0, scripted.output)
+  assert.doesNotMatch(scripted.output, /PROMPT:/)
+  assert.equal(moduleInfo(path.join(app.directory, 'src/modules/visit_notes')).description, 'Keeps notes for every customer visit.')
+  const rejected = cli(['init', 'visit_links', '--no-generate', '--description', 'See https://example.com for the visits.'], false)
+  assert.equal(rejected.status, 1)
+  assert.match(rejected.output, /Write plain text: no links[\s\S]*No files were changed\./)
+  assert.ok(!fs.existsSync(path.join(app.directory, 'src/modules/visit_links')))
+  const bare = cli(['publish', 'visits', '--package', settings.packageName, '--dry-run'], false)
+  assert.equal(bare.status, 0, bare.output)
+  assert.match(bare.output, /⚠️ Module visits has no description\. Set description in the metadata in src\/modules\/visits\/index\.ts \(one sentence, 20 to 140 characters\): it becomes the catalog summary and the npm description of the next version you publish\.\n/)
+  const described = cli(['publish', 'visit_notes', '--package', '@fixture/visit-notes', '--dry-run'], false)
+  assert.equal(described.status, 0, described.output)
+  assert.doesNotMatch(described.output, /description/)
+  const notes = path.join(app.directory, 'src/modules/visit_notes/index.ts')
+  fs.writeFileSync(notes, fs.readFileSync(notes, 'utf8').replace('Keeps notes for every customer visit.', 'Visit notes.'))
+  const short = cli(['publish', 'visit_notes', '--package', '@fixture/visit-notes', '--dry-run'], false)
+  assert.match(short.output, /⚠️ The description of visit_notes cannot be the catalog summary: Write 20 to 140 characters \(this has 12\)\. Set description in the metadata in src\/modules\/visit_notes\/index\.ts/, 'publish warns like describe')
+  const restricted = cli(['publish', 'visit_notes', '--package', '@fixture/visit-notes', '--access', 'restricted', '--dry-run'], false)
+  assert.doesNotMatch(restricted.output, /description/, 'the catalog summary rule does not apply to restricted packages')
+})
+
 test('publication needs the package name retyped interactively and explicit approval options otherwise', (context) => {
   const { app, cli } = fixture(context)
   const arguments_ = ['publish', 'visits', '--package', settings.packageName, '--version', settings.version, '--repo', '-', '--auth', 'login']
@@ -162,6 +194,7 @@ test('publication needs the package name retyped interactively and explicit appr
   const confirmed = cli(arguments_)
   assert.equal(confirmed.status, 0, confirmed.output)
   assert.match(confirmed.output, /Submitted @fixture\/visits@0\.1\.0/)
+  assert.match(confirmed.output, /Add it to the catalog: https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits/)
   assert.equal(JSON.parse(fs.readFileSync(process.env.FIXTURE_REGISTRY, 'utf8'))[0], 'publish')
   assert.equal(loadConfig(app).modules.visits.lastPublishedVersion, '0.1.0')
   delete process.env.FIXTURE_CONFIRMATION

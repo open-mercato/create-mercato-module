@@ -140,7 +140,7 @@ node test/release-e2e/fixture.mts /tmp/mercato-fixture-source
 
 The writer creates `src/modules/release_checks` and refuses to overwrite an existing directory. It includes a React hook page, authenticated API handler, relative import, MikroORM entity, translations, runtime asset, table migration, and migration snapshot. The writer does not register the module or run migrations; the full local rehearsal applies the migration during app initialization. The publishing tool exports the existing module directly.
 
-Publish that module using the version of this tool under review, with an npm scope where you have private publication access. Save the exact package version and matching Git commit. Pass those values to `run.mts`. Consumer apps should use the same pinned framework version as the source app because generated packages intentionally use exact framework peers.
+Publish that module using the version of this tool under review, with an npm scope where you have private publication access. Save the exact package version and matching Git commit. Pass those values to `run.mts`. Generated packages accept compatible framework releases through caret peers and keep the source app's exact versions as development dependencies.
 
 If the registry is still processing a new publication, wait until `npm view <package>@<version> version` returns that exact version. Do not overwrite or republish the same immutable version.
 

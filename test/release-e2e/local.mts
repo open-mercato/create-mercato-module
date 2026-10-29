@@ -16,6 +16,12 @@ import { main as runLanes, redact, pinFixtureYarn, freePort } from './run.mts'
 const packageName = '@mercato-e2e/release-checks'
 const repository = 'mercato-e2e/release-checks'
 const versions = ['0.0.1', '0.0.2']
+// The fixture has what publish asks every module for, so a release made only
+// by this tool prints no warning.
+export const fixtureDescription = 'Checks that a released module installs, generates and runs in a new app.'
+export function publishArguments(version: string): string[] {
+  return ['--package', packageName, '--version', version, '--repo', repository, '--access', 'restricted', '--auth', 'token']
+}
 
 type Options = { registry: string; results: string; createApp: string; databaseUrl?: string }
 
@@ -191,7 +197,7 @@ export async function main(args: string[]): Promise<void> {
     pinFixtureYarn(sourceApp)
     await command('install-source-app', yarn, ['install'], sourceApp)
     // The published module starts as a real `init` scaffold and gains a page, API, entity and assets.
-    await command('init-module', process.execPath, [toolBin, 'init', fixtureContract.moduleId], sourceApp)
+    await command('init-module', process.execPath, [toolBin, 'init', fixtureContract.moduleId, '--description', fixtureDescription], sourceApp)
     assert.match(fs.readFileSync(path.join(sourceApp, 'src/modules.ts'), 'utf8'), new RegExp(`id: '${fixtureContract.moduleId}', from: '@app'`), 'init must register the new module')
     writeFixture(sourceApp, { extend: true })
     await command('generate-source-app', yarn, ['generate'], sourceApp)
@@ -203,7 +209,7 @@ export async function main(args: string[]): Promise<void> {
       assert.equal(tagged, head, `Tag ${version} must point to its release commit`)
     }
     for (const [index, version] of versions.entries()) {
-      const output = await command(`publish-${version}`, process.execPath, [toolBin, 'publish', fixtureContract.moduleId, '--package', packageName, '--version', version, '--repo', repository, '--access', 'restricted', '--auth', 'token', '--yes'], sourceApp)
+      const output = await command(`publish-${version}`, process.execPath, [toolBin, 'publish', fixtureContract.moduleId, ...publishArguments(version), '--yes'], sourceApp)
       assert.match(output, /Using the local test registry/, 'Publication must target the local registry')
       assert.match(output, index === 0 ? /new private repository will be created/ : /existing private repository/, 'The summary must state what happens to the repository')
       assert.doesNotMatch(output, /⚠️/, 'A repository released only by this tool needs no extra approval')

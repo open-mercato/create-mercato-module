@@ -46,7 +46,7 @@ export function githubRepository(input: string): string {
     !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repository)
   )
     throw new Error(
-      'Use a GitHub repository URL or owner/repo, for example https://github.com/pkarw/marketing-consents.',
+      'Use a GitHub repository URL or owner/repo, for example https://github.com/your-org/your-module.',
     )
   return repository
 }
@@ -60,7 +60,7 @@ export function npmPackageLocator(input: string): NpmPackageLocator | undefined 
     )
   if (!match?.groups || match.groups.name.length > 214)
     throw new Error(
-      'Use an npm package name, for example @piotrkarwatka/marketing-consents.',
+      'Use an npm package name, for example @fastwhitecat/integration-ksef-direct.',
     )
   return { packageName: match.groups.name, specifier }
 }

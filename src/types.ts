@@ -7,12 +7,16 @@ import type { DevelopmentLink } from './development.js'
 export interface PackageManifest {
   name?: string
   version?: string
+  description?: string
+  keywords?: string[]
   license?: string
   dependencies?: Record<string, string>
   devDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
   scripts?: Record<string, string>
   repository?: { type: string; url: string }
+  homepage?: string
+  bugs?: { url: string }
   mercatoModule?: { id: string; formatVersion: number }
 }
 
@@ -43,6 +47,8 @@ export interface Config {
 export interface GeneratedManifest extends PackageManifest {
   name: string
   version: string
+  description: string
+  keywords: string[]
   mercatoModule: { id: string; formatVersion: number }
 }
 

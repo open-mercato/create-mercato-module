@@ -9,7 +9,7 @@ const { exportPackage } = require('../dist/publish.js')
 
 test('packed module installs and is discovered by the real standalone Mercato CLI, including eject', { skip: !process.env.OPEN_MERCATO_ROOT }, (context) => {
   const framework = fs.realpathSync(process.env.OPEN_MERCATO_ROOT)
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-real-cli-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-real-cli-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const version = readJson(path.join(framework, 'packages/core/package.json')).version
   function linkPackages(directory) {

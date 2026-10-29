@@ -77,7 +77,7 @@ test('host-provided packages are caret peers built against the installed version
   assert.equal(manifest.devDependencies['@tanstack/react-query'], '5.90.2')
   assert.equal(manifest.devDependencies['@tanstack/react-table'], '8.21.3')
   assert.deepEqual(manifest.dependencies, { zod: '4.1.12' })
-  assert.equal(manifest.peerDependencies['@open-mercato/core'], '0.9.0', 'framework peers stay exact')
+  assert.equal(manifest.peerDependencies['@open-mercato/core'], '^0.9.0', 'framework peers accept compatible releases')
   assert.equal(manifest.devDependencies['@open-mercato/core'], '0.9.0')
 })
 

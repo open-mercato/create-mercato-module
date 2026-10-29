@@ -7,14 +7,15 @@ const { spawnSync } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
 const { scaffold, registration } = require('../dist/scaffold.js')
 const { findApp, writeJson, readJson, run } = require('../dist/common.js')
-const { preparePackage, validateSettings } = require('../dist/package.js')
-const { exportPackage, githubState, publish, publishRepository, tagRelease, loadConfig, saveConfig } = require('../dist/publish.js')
+const { preparePackage, validateSettings, moduleInfo, npmInstallLocator } = require('../dist/package.js')
+const { addTopics, exportPackage, githubState, publish, publishRepository, tagRelease, loadConfig, saveConfig } = require('../dist/publish.js')
 const { parse } = require('../dist/cli.js')
+const { installFromInput } = require('../dist/install.js')
 
 const settings = { packageName: '@fixture/visits', version: '0.1.0', repository: '', access: 'public' }
 
 function fixture(context) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-module-test-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-module-test-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const app = { directory: path.join(root, 'app'), manifest: { name: 'sandbox-app', private: true, dependencies: { '@open-mercato/core': '0.9.0', '@open-mercato/shared': '0.9.0', '@open-mercato/ui': '0.9.0', react: '19.2.8', 'fixture-library': '^1.2.0' } } }
   writeJson(path.join(app.directory, 'package.json'), app.manifest)
@@ -47,6 +48,9 @@ test('init registers and localizes a working page; refuses duplicate modules wit
   assert.equal(readJson(path.join(directory, 'i18n/en.json'))['visits.title'], 'Visits')
   assert.throws(() => scaffold(app, 'visits'), /already exists/)
   assert.equal(fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8'), before)
+  const described = scaffold(app, 'visit_notes', "Keeps the team's notes \\ for visits.")
+  assert.match(fs.readFileSync(path.join(described, 'index.ts'), 'utf8'), /version: '0\.1\.0',\n {2}description: 'Keeps the team\\'s notes \\\\ for visits\.',\n {2}ejectable: true,/)
+  assert.equal(moduleInfo(described).description, "Keeps the team's notes \\ for visits.")
 })
 
 test('init and publish outside an Open Mercato app show actionable guidance and leave files untouched', (context) => {
@@ -68,6 +72,7 @@ test('init and publish outside an Open Mercato app show actionable guidance and 
   }
   const help = spawnSync(process.execPath, [path.join(__dirname, '../dist/cli.js'), '--help'], { cwd: unrelated, encoding: 'utf8' })
   assert.equal(help.status, 0)
+  assert.match(help.stdout, /npx create-mercato-module install @fastwhitecat\/integration-ksef-direct@0\.1\.8\n/, 'the npm example is a module the catalog verifies')
 })
 
 test('recognizes app subdirectories and distinguishes missing dependencies from an unrelated project', (context) => {
@@ -101,8 +106,12 @@ test('package contains only the selected module, both source/dist, assets and mi
   assert.ok(!fs.existsSync(path.join(destination, 'src/modules/other')))
   assert.ok(!fs.existsSync(path.join(destination, '.env')))
   assert.ok(!fs.existsSync(path.join(destination, 'src/modules/visits/__tests__')))
-  assert.equal(prepared.manifest.peerDependencies['@open-mercato/core'], '0.9.0')
+  assert.equal(prepared.manifest.peerDependencies['@open-mercato/core'], '^0.9.0', 'peers accept later compatible framework releases')
+  assert.equal(prepared.manifest.devDependencies['@open-mercato/core'], '0.9.0', 'the module repository builds against the app version')
   assert.equal(prepared.manifest.license, 'UNLICENSED')
+  assert.equal(prepared.manifest.description, 'Open Mercato module: visits')
+  assert.deepEqual(readJson(path.join(destination, 'package.json')).keywords, ['open-mercato', 'open-mercato-module'])
+  assert.equal(prepared.manifest.homepage, undefined, 'no repository, no homepage')
   fs.symlinkSync(path.resolve(__dirname, '../node_modules'), path.join(destination, 'node_modules'))
   fs.rmSync(path.join(destination, 'dist'), { recursive: true })
   run(process.execPath, ['build.cjs'], destination, { capture: true })
@@ -164,7 +173,7 @@ test('packages host module presence checks without freezing the publishing app c
   const original = addFile(directory, 'lib/available.ts', source)
   const prepared = preparePackage(app, 'visits', settings, destination)
   assert.equal(fs.readFileSync(original, 'utf8'), source)
-  assert.equal(prepared.manifest.peerDependencies['@open-mercato/shared'], '0.9.0')
+  assert.equal(prepared.manifest.peerDependencies['@open-mercato/shared'], '^0.9.0')
   const shared = path.join(destination, 'node_modules/@open-mercato/shared')
   writeJson(path.join(shared, 'package.json'), { name: '@open-mercato/shared', type: 'module', exports: { './lib/modules/registry': './registry.js' } })
   fs.writeFileSync(path.join(shared, 'registry.js'), 'let modules = []; export const getModules = () => modules; export const registerModules = (next) => { modules = next }\n')
@@ -436,6 +445,40 @@ test('an npm rejection after the GitHub push names the created repository and it
     return true
   })
   assert.ok(!calls.some((call) => call.includes('git/refs')), 'a release npm rejected must not be tagged')
+  assert.ok(!calls.some((call) => call[1] === 'repo' && call[2] === 'edit'), 'topics follow an accepted release')
+})
+
+test('an accepted release gives the repository its topics; a refused topic never fails the release', (context) => {
+  const { app, root } = fixture(context)
+  const remote = path.join(root, 'module.git')
+  const publication = { ...settings, repository: 'fixture/visits' }
+  for (const topicsStatus of [0, 1]) {
+    const calls = []
+    function execute(command, args, cwd, options) {
+      calls.push([command, ...args])
+      if (command === 'npm' && args[0] === 'view') return { status: 1, stdout: '', stderr: 'npm error code E404' }
+      if (command === 'npm') return { status: 0, stdout: 'fixture', stderr: '' }
+      if (command !== 'gh') return run(command, args, cwd, options)
+      if (args[0] === 'auth') return { status: 0, stdout: '', stderr: '' }
+      if (args[0] === 'api' && args[1] === 'user') return { status: 0, stdout: '{"login":"fixture","id":123}', stderr: '' }
+      if (args[0] === 'api' && args[1] === '--method') return { status: 0, stdout: '{}', stderr: '' }
+      if (args[0] === 'api') return { status: fs.existsSync(remote) ? 0 : 1, stdout: '{}', stderr: 'HTTP 404' }
+      if (args[1] === 'create') return run('git', ['init', '--bare', '--initial-branch=main', remote], root, { capture: true })
+      if (args[1] === 'clone') return run('git', ['clone', remote, args[3]], cwd, { capture: true })
+      if (args[1] === 'edit') return { status: topicsStatus, stdout: '', stderr: topicsStatus ? 'HTTP 403' : '' }
+      throw new Error(`Unexpected gh command: ${args.join(' ')}`)
+    }
+    const version = { ...publication, version: `0.1.${topicsStatus}` }
+    const released = publish(exportPackage(app, 'visits', version), version, execute)
+    assert.equal(released.tag, version.version)
+    const create = calls.find((call) => call[1] === 'repo' && call[2] === 'create')
+    if (create) assert.deepEqual(create.slice(-2), ['--description', 'Open Mercato module: visits'])
+    const published = calls.findIndex((call) => call[0] === 'npm' && call[1] === 'publish')
+    const topics = calls.findIndex((call) => call[1] === 'repo' && call[2] === 'edit')
+    assert.ok(topics > published, 'topics follow npm publication')
+    assert.deepEqual(calls[topics], ['gh', 'repo', 'edit', 'fixture/visits', '--add-topic', 'open-mercato-module', '--add-topic', 'open-mercato'])
+  }
+  assert.doesNotThrow(() => addTopics('fixture/visits', root, () => { throw new Error('gh did not finish in time') }))
 })
 
 test('releases are tagged with the bare version so the generated v* workflow does not publish again', () => {
@@ -450,6 +493,17 @@ test('releases are tagged with the bare version so the generated v* workflow doe
   assert.match(tagRelease('fixture/visits', sha, '1.2.3', '/tmp', () => { throw new Error('gh api did not finish in time') }).tagWarning, /gh did not complete the request/, 'a published release never fails on its tag')
 })
 
+test('package metadata takes the module description and links the dedicated repository', (context) => {
+  const { app, directory, destination } = fixture(context)
+  const index = path.join(directory, 'index.ts')
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  ejectable: true,\n", "  ejectable: true,\n  description: 'Plans customer visits.',\n"))
+  const prepared = preparePackage(app, 'visits', { ...settings, repository: 'fixture/visits' }, destination)
+  assert.equal(prepared.manifest.description, 'Plans customer visits.')
+  assert.deepEqual(prepared.manifest.keywords, ['open-mercato', 'open-mercato-module'])
+  assert.equal(prepared.manifest.homepage, 'https://github.com/fixture/visits#readme')
+  assert.deepEqual(prepared.manifest.bugs, { url: 'https://github.com/fixture/visits/issues' })
+})
+
 test('generated module README uses the tool install command and explains the Yarn age gate', (context) => {
   const { app, destination } = fixture(context)
   preparePackage(app, 'visits', { ...settings, repository: 'fixture/visits', version: '0.2.0' }, destination)
@@ -459,6 +513,30 @@ test('generated module README uses the tool install command and explains the Yar
   assert.match(readme, /5 days after publication \(Yarn `npmMinimalAgeGate`\).*`--preapprove-package`/)
   assert.match(readme, /tagged <version> without the v, so they do not start this workflow/)
   assert.doesNotMatch(readme, /yarn mercato module add/)
+  assert.match(readme, /## Open Mercato Modules\n\nList this module in \[Open Mercato Modules\]\(https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits\)/)
+  assert.match(readme, /`npx create-mercato-module describe visits` prints its catalog entry/)
+  assert.doesNotMatch(readme, /!\[|\/badge\//, 'no catalog badge before the module is listed')
+  const restricted = path.join(destination, '..', 'restricted')
+  preparePackage(app, 'visits', { ...settings, access: 'restricted' }, restricted)
+  assert.doesNotMatch(fs.readFileSync(path.join(restricted, 'README.md'), 'utf8'), /Open Mercato Modules/, 'the catalog lists public packages only')
+})
+
+test('generated commands name an unscoped package with npm: so install does not take it for a GitHub repository', (context) => {
+  const { app, destination } = fixture(context)
+  preparePackage(app, 'visits', { ...settings, packageName: 'mercato-visits' }, destination)
+  const readme = fs.readFileSync(path.join(destination, 'README.md'), 'utf8')
+  assert.match(readme, /npx create-mercato-module install npm:mercato-visits\n/)
+  assert.match(readme, /npx create-mercato-module link npm:mercato-visits\n/)
+  assert.equal(npmInstallLocator('@fixture/visits'), '@fixture/visits')
+  for (const version of ['', '@0.1.0']) {
+    const calls = []
+    installFromInput(app, `${npmInstallLocator('mercato-visits')}${version}`, {}, (command, args) => {
+      calls.push([command, ...args])
+      if (command === 'gh') throw new Error('an npm package must not reach GitHub')
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    assert.deepEqual(calls, [['yarn', 'mercato', 'module', 'add', `mercato-visits${version}`, '--allow-third-party']])
+  }
 })
 
 test('publication preferences persist per module without credentials', (context) => {
@@ -474,4 +552,35 @@ test('validates module/package/version/repo arguments and rejects repeated flags
   assert.throws(() => validateSettings({ ...settings, repository: 'owner/repo;rm -rf /' }), /GitHub repository/)
   assert.throws(() => validateSettings({ ...settings, packageName: '../package' }), /npm package/)
   assert.throws(() => validateSettings({ ...settings, version: 'latest' }), /version/)
+})
+
+test('a new repository gets the module description only when GitHub can take it', (context) => {
+  for (const [description, expected] of [
+    ['Plans customer visits.', 'Plans customer visits.'],
+    ['Plans customer visits.\\x07', 'Open Mercato module: visits'],
+  ]) {
+    const { app, root, directory } = fixture(context)
+    const index = path.join(directory, 'index.ts')
+    fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  ejectable: true,\n", `  ejectable: true,\n  description: '${description}',\n`))
+    const remote = path.join(root, 'module.git')
+    const publication = { ...settings, repository: 'fixture/visits' }
+    const calls = []
+    function execute(command, args, cwd, options) {
+      calls.push([command, ...args])
+      if (command === 'npm' && args[0] === 'view') return { status: 1, stdout: '', stderr: 'npm error code E404' }
+      if (command === 'npm') return { status: 0, stdout: 'fixture', stderr: '' }
+      if (command !== 'gh') return run(command, args, cwd, options)
+      if (args[0] === 'auth') return { status: 0, stdout: '', stderr: '' }
+      if (args[0] === 'api' && args[1] === 'user') return { status: 0, stdout: '{"login":"fixture","id":123}', stderr: '' }
+      if (args[0] === 'api' && args[1] === '--method') return { status: 0, stdout: '{}', stderr: '' }
+      if (args[0] === 'api') return { status: fs.existsSync(remote) ? 0 : 1, stdout: '{}', stderr: 'HTTP 404' }
+      if (args[1] === 'create') return run('git', ['init', '--bare', '--initial-branch=main', remote], root, { capture: true })
+      if (args[1] === 'clone') return run('git', ['clone', remote, args[3]], cwd, { capture: true })
+      if (args[1] === 'edit') return { status: 0, stdout: '', stderr: '' }
+      throw new Error(`Unexpected gh command: ${args.join(' ')}`)
+    }
+    publish(exportPackage(app, 'visits', publication), publication, execute)
+    const create = calls.find((call) => call[1] === 'repo' && call[2] === 'create')
+    assert.deepEqual(create.slice(-2), ['--description', expected])
+  }
 })

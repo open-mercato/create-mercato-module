@@ -1,5 +1,6 @@
 import type { App, Settings, PreparedPackage } from './types.js'
 import * as fs from 'node:fs'
+import * as ts from 'typescript'
 import { version as typescriptVersion } from 'typescript'
 import * as path from 'node:path'
 import { createRequire } from 'node:module'
@@ -15,19 +16,59 @@ const ageGateNote =
 // The host app provides their React context and types, so a module must share its copy.
 const hostProvidedPackages = ['@tanstack/react-query', '@tanstack/react-table']
 
+// Open Mercato Modules (the module catalog) and npm search find modules by
+// these keywords; the catalog also reads the GitHub topics of the same names.
+const moduleKeywords = ['open-mercato', 'open-mercato-module']
+
+// The public Open Mercato Modules site. Until it launches, printed links carry
+// catalogPendingNote; set catalogLaunched once the site answers.
+const publicCatalogUrl = 'https://modules.openmercato.com'
+const catalogLaunched = false
+// MERCATO_CATALOG_URL points the tool at another deployment of the catalog,
+// such as a local copy of the site. Only http(s) origins are accepted.
+const catalogOverride = /^https?:\/\/[^\s/]+(?:\/[^\s]*)?$/.test(
+  process.env.MERCATO_CATALOG_URL ?? '',
+)
+  ? process.env.MERCATO_CATALOG_URL!.replace(/\/+$/, '')
+  : ''
+const catalogUrl = catalogOverride || publicCatalogUrl
+const catalogOpen = catalogLaunched || Boolean(catalogOverride)
+const catalogPendingNote =
+  'Open Mercato Modules has not launched yet, so this link does not open until it does.'
+
+// The npm description of a module without one in its metadata. Tools treat it
+// as missing: a linked repository's package.json keeps it from its first export.
+function fallbackDescription(id: string): string {
+  return `Open Mercato module: ${id}`
+}
+
+function catalogSubmitUrl(packageName: string, origin = catalogUrl): string {
+  return `${origin}/submit?npm=${packageName}`
+}
+
+// install and link read a bare name as a repository of the signed-in GitHub
+// user, so printed commands name an unscoped package with the npm: prefix.
+function npmInstallLocator(packageName: string): string {
+  return packageName.startsWith('@') ? packageName : `npm:${packageName}`
+}
+
 const localLocator =
   /^(?:workspace:|file:|link:|portal:|patch:|git\+|git:|ssh:|https?:|github:)/
 
-function validateSettings(settings: Settings): void {
+function validatePackageName(packageName: string): void {
   if (
     !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(
-      settings.packageName || '',
+      packageName || '',
     ) ||
-    settings.packageName.length > 214
+    packageName.length > 214
   )
     throw new Error(
-      'Enter a valid npm package name, for example @your-name/visits.',
+      'Enter a valid npm package name, for example @your-name/mercato-visits.',
     )
+}
+
+function validateSettings(settings: Settings): void {
+  validatePackageName(settings.packageName)
   if (
     !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(
       settings.version || '',
@@ -38,7 +79,7 @@ function validateSettings(settings: Settings): void {
     throw new Error('Access must be public or restricted.')
   if (settings.access === 'restricted' && !settings.packageName.startsWith('@'))
     throw new Error(
-      'Private npm packages need a scope. Use a name such as @your-name/visits with --access restricted.',
+      'Private npm packages need a scope. Use a name such as @your-name/mercato-visits with --access restricted.',
     )
   if (!['auto', 'login', 'token', 'trusted'].includes(settings.auth || 'auto'))
     throw new Error(
@@ -52,15 +93,85 @@ function validateSettings(settings: Settings): void {
     throw new Error(
       'Use an npm tag such as latest, next, or beta. Tags cannot be version numbers or version ranges.',
     )
+  if (settings.repository) validateRepositoryName(settings.repository)
+}
+
+function validateRepositoryName(repository: string): void {
   if (
-    settings.repository &&
-    !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(
-      settings.repository,
-    )
+    !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repository)
   )
     throw new Error(
       'Use a GitHub repository name such as your-name/mercato-visits.',
     )
+}
+
+// Plain string fields of the module's `metadata` export (Open Mercato
+// ModuleInfo), read from the syntax tree without running module code.
+function moduleInfo(moduleRoot: string): { title?: string; description?: string } {
+  let source: ts.SourceFile
+  try {
+    const file = path.join(moduleRoot, 'index.ts')
+    source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+    )
+  } catch {
+    return {}
+  }
+  // Only the exported top-level binding counts: `export const metadata` or a
+  // top-level `const metadata` named in `export { metadata }`. A local
+  // `metadata` inside a helper never overrides it.
+  const exported = source.statements.some(
+    (statement) =>
+      ts.isExportDeclaration(statement) &&
+      !statement.moduleSpecifier &&
+      !statement.isTypeOnly &&
+      statement.exportClause &&
+      ts.isNamedExports(statement.exportClause) &&
+      statement.exportClause.elements.some(
+        (element) =>
+          !element.isTypeOnly &&
+          (element.propertyName ?? element.name).text === 'metadata' &&
+          element.name.text === 'metadata',
+      ),
+  )
+  let declaration: ts.VariableDeclaration | undefined
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    if (
+      !exported &&
+      !statement.modifiers?.some(
+        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+      )
+    )
+      continue
+    declaration = statement.declarationList.declarations.find(
+      (item) => ts.isIdentifier(item.name) && item.name.text === 'metadata',
+    )
+    if (declaration) break
+  }
+  const info: { title?: string; description?: string } = {}
+  let value = declaration?.initializer
+  while (
+    value &&
+    (ts.isAsExpression(value) ||
+      ts.isSatisfiesExpression(value) ||
+      ts.isParenthesizedExpression(value))
+  )
+    value = value.expression
+  if (value && ts.isObjectLiteralExpression(value))
+    for (const entry of value.properties)
+      if (
+        ts.isPropertyAssignment(entry) &&
+        (ts.isIdentifier(entry.name) || ts.isStringLiteralLike(entry.name)) &&
+        (entry.name.text === 'title' || entry.name.text === 'description') &&
+        ts.isStringLiteralLike(entry.initializer) &&
+        entry.initializer.text.trim()
+      )
+        info[entry.name.text] = entry.initializer.text.replace(/\s+/g, ' ').trim()
+  return info
 }
 
 function installedVersion(app: App, name: string): string {
@@ -112,7 +223,7 @@ function preparePackage(
     }
   }
   const peers: Record<string, string> = {}
-  const development: Record<string, string> = {}
+  const built: Record<string, string> = {}
   const runtime: Record<string, string> = {}
   for (const name of [...dependencies].sort()) {
     const declared =
@@ -130,12 +241,12 @@ function preparePackage(
       name.startsWith('@open-mercato/') ||
       name.startsWith('@mikro-orm/') ||
       ['react', 'react-dom', 'next'].includes(name)
-    if (hostProvidedPackages.includes(name)) {
+    if (hostProvidedPackages.includes(name) || singleton) {
+      // Apps on later compatible framework releases accept the module without
+      // Yarn peer warnings. Host-provided packages also have to share the app's
+      // React context and types. The repository builds against the exact copy.
       peers[name] = `^${version}`
-      development[name] = version
-    } else if (singleton) {
-      peers[name] = version
-      development[name] = version
+      built[name] = version
     } else runtime[name] = version
   }
   if (fs.existsSync(destination))
@@ -152,10 +263,16 @@ function preparePackage(
     if (rewritten.has(file)) fs.writeFileSync(output, rewritten.get(file)!)
     else fs.copyFileSync(file, output)
   }
+  const repository =
+    settings.repository ||
+    (settings.auth === 'trusted' && process.env.GITHUB_REPOSITORY) ||
+    ''
   const manifest = {
     name: settings.packageName,
     version: settings.version,
-    description: `Open Mercato module: ${id}`,
+    description:
+      moduleInfo(sourceRoot).description || fallbackDescription(id),
+    keywords: [...moduleKeywords],
     license: app.manifest.license || 'UNLICENSED',
     type: 'module',
     main: './dist/index.js',
@@ -175,15 +292,16 @@ function preparePackage(
     engines: { node: '>=24' },
     ...(Object.keys(runtime).length ? { dependencies: runtime } : {}),
     peerDependencies: peers,
-    devDependencies: { typescript: typescriptVersion, ...development },
+    devDependencies: { typescript: typescriptVersion, ...built },
     publishConfig: { access: settings.access },
-    ...(settings.repository ||
-    (settings.auth === 'trusted' && process.env.GITHUB_REPOSITORY)
+    ...(repository
       ? {
           repository: {
             type: 'git',
-            url: `git+https://github.com/${settings.repository || process.env.GITHUB_REPOSITORY}.git`,
+            url: `git+https://github.com/${repository}.git`,
           },
+          homepage: `https://github.com/${repository}#readme`,
+          bugs: { url: `https://github.com/${repository}/issues` },
         }
       : {}),
     mercatoModule: { id, formatVersion: 1 },
@@ -212,17 +330,27 @@ function preparePackage(
   )
   fs.writeFileSync(
     path.join(destination, 'README.md'),
-    `# ${settings.packageName}\n\nInstall in an Open Mercato app:\n\n\`\`\`sh\nnpx create-mercato-module install ${settings.packageName}\n\`\`\`\n\n${ageGateNote.replace('--preapprove-package', '`--preapprove-package`').replace('npmMinimalAgeGate', '`npmMinimalAgeGate`').replace("app's npmPreapprovedPackages", "app's `npmPreapprovedPackages`")}\n\n${settings.repository ? `Or install from this repository; \`@<version>\` selects a release tagged by create-mercato-module:\n\n\`\`\`sh\nnpx create-mercato-module install ${settings.repository}\nnpx create-mercato-module install ${settings.repository}@${settings.version}\n\`\`\`\n\n` : ''}Develop in your existing app and publish another version with create-mercato-module. To make this repository the source of your module while keeping the same app for development:\n\n\`\`\`sh\nnpx create-mercato-module link ${settings.repository || settings.packageName}\n\`\`\`\n\nThe tool checks out this repo in the app's .mercato/module-repos/${id} directory, backs up the original module, and links src/modules/${id} to the checkout. Edits in the app are edits in this repository.\n\n## Trusted Publishing\n\nConfigure this package's trusted publisher on npmjs.com for the GitHub owner, repository, and workflow filename publish.yml. Then dispatch the included GitHub Actions workflow or push a v<version> tag matching package.json. Releases published with create-mercato-module are tagged <version> without the v, so they do not start this workflow, and the workflow skips a version that is already on npm. For private dependencies, set a read-only NPM_READ_TOKEN repository secret.\n\nSee [create-mercato-module](https://github.com/open-mercato/create-mercato-module) for authentication, release tests, and development details.\n`,
+    `# ${settings.packageName}\n\nInstall in an Open Mercato app:\n\n\`\`\`sh\nnpx create-mercato-module install ${npmInstallLocator(settings.packageName)}\n\`\`\`\n\n${ageGateNote.replace('--preapprove-package', '`--preapprove-package`').replace('npmMinimalAgeGate', '`npmMinimalAgeGate`').replace("app's npmPreapprovedPackages", "app's `npmPreapprovedPackages`")}\n\n${settings.repository ? `Or install from this repository; \`@<version>\` selects a release tagged by create-mercato-module:\n\n\`\`\`sh\nnpx create-mercato-module install ${settings.repository}\nnpx create-mercato-module install ${settings.repository}@${settings.version}\n\`\`\`\n\n` : ''}Develop in your existing app and publish another version with create-mercato-module. To make this repository the source of your module while keeping the same app for development:\n\n\`\`\`sh\nnpx create-mercato-module link ${settings.repository || npmInstallLocator(settings.packageName)}\n\`\`\`\n\nThe tool checks out this repo in the app's .mercato/module-repos/${id} directory, backs up the original module, and links src/modules/${id} to the checkout. Edits in the app are edits in this repository.\n\n${settings.access === 'public' ? `## Open Mercato Modules\n\nList this module in [Open Mercato Modules](${catalogSubmitUrl(settings.packageName, publicCatalogUrl)}) so people and coding agents can find it. In the app you develop it in, \`npx create-mercato-module describe ${id}\` prints its catalog entry.\n\n` : ''}## Trusted Publishing\n\nConfigure this package's trusted publisher on npmjs.com for the GitHub owner, repository, and workflow filename publish.yml. Then dispatch the included GitHub Actions workflow or push a v<version> tag matching package.json. Releases published with create-mercato-module are tagged <version> without the v, so they do not start this workflow, and the workflow skips a version that is already on npm. For private dependencies, set a read-only NPM_READ_TOKEN repository secret.\n\nSee [create-mercato-module](https://github.com/open-mercato/create-mercato-module) for authentication, release tests, and development details.\n`,
   )
   build(destination)
   return { destination, manifest, fileCount: files.length }
 }
 
 export {
+  validatePackageName,
+  validateRepositoryName,
   validateSettings,
   installedVersion,
+  moduleInfo,
   preparePackage,
   localLocator,
   hostProvidedPackages,
   ageGateNote,
+  moduleKeywords,
+  catalogUrl,
+  catalogOpen,
+  catalogPendingNote,
+  catalogSubmitUrl,
+  fallbackDescription,
+  npmInstallLocator,
 }

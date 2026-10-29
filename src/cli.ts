@@ -1,8 +1,17 @@
 import type { Settings, SavedSettings } from './types.js'
 import { createInterface } from 'node:readline/promises'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 import { findApp, validateId, run } from './common.js'
 import { scaffold } from './scaffold.js'
-import { ageGateNote } from './package.js'
+import {
+  ageGateNote,
+  catalogOpen,
+  catalogPendingNote,
+  catalogSubmitUrl,
+  catalogUrl,
+  npmInstallLocator,
+} from './package.js'
 import { validateSettings } from './package.js'
 import {
   exportPackage,
@@ -16,6 +25,13 @@ import { isUnconfiguredLocalModule, linkFromInput } from './link.js'
 import { validateCheckoutName, unlinkDevelopment } from './development.js'
 import { checkAuthentication, resolveRegistry } from './npm-auth.js'
 import {
+  describeModule,
+  descriptionProblem,
+  descriptionWarning,
+  moduleDescription,
+  openCatalogPage,
+} from './describe.js'
+import {
   installFromInput,
   GitRepositoryApprovalRequired,
   PackageQuarantined,
@@ -26,22 +42,22 @@ const help = `Create and publish one module from an existing Open Mercato app.
   npx create-mercato-module init visits
   npx create-mercato-module publish visits
   npx create-mercato-module install <repo-or-npm-package>
-  npx create-mercato-module install pkarw/marketing-consents
+  npx create-mercato-module install @fastwhitecat/integration-ksef-direct@0.1.8
   npx create-mercato-module install your-name/mercato-visits@1.2.3
-  npx create-mercato-module install @piotrkarwatka/marketing-consents
   npx create-mercato-module link <repo-or-npm-package> [local-name]
-  npx create-mercato-module link pkarw/marketing-consents
-  npx create-mercato-module link @piotrkarwatka/marketing-consents
-  npx create-mercato-module unlink marketing_consents
+  npx create-mercato-module link your-org/your-module
+  npx create-mercato-module link @your-org/your-module
+  npx create-mercato-module unlink your_module
+  npx create-mercato-module describe visits
 
 Existing modules can be published directly; init is optional.
 Settings are saved per module in .mercato/module-tool.json.
 
 Publish options:
-  --package @your-name/visits  npm package name
+  --package @your-name/mercato-visits  npm package name
   --version 0.1.0             a new npm version
   --tag beta                  npm release channel (stable: latest; prerelease: next)
-  --repo your-name/visits     optional dedicated GitHub repository; - skips GitHub
+  --repo your-name/mercato-visits  optional dedicated GitHub repository; - skips GitHub
   --access public|restricted  npm and new GitHub repo visibility (default public)
   --auth auto|login|token|trusted  npm authentication (default auto)
   --configure                edit saved settings in the interactive wizard
@@ -58,13 +74,19 @@ Link options:
   Package name and module ID are read from the repository.
   Existing unsaved local module IDs prompt for --repo to preserve the legacy form.
   local-name optionally names the checkout folder; the module ID stays the same.
-  --package @your-name/visits  optional package identity check
-  --repo your-name/visits     repository override for link <module_id>
+  --package @your-name/mercato-visits  optional package identity check
+  --repo your-name/mercato-visits  repository override for link <module_id>
   --no-generate              link without running yarn generate
 
 Unlink:
   Makes a linked module local again: copies the checkout's current source into
   src/modules/<module_id> and forgets the link. The checkout and backup are kept.
+
+Describe:
+  Prints the module's Open Mercato Modules entry (YAML) from its saved
+  publish settings, to list it at ${catalogUrl}/submit${catalogOpen ? '' : '\n  (not launched yet)'}.
+  --open                     also open the submit page for the package
+  --package @your-name/mercato-visits  describe it before the first publish
 
 Install options:
   Repository URL, owner/repo, or repo name (your GitHub account).
@@ -72,7 +94,7 @@ Install options:
   Numeric @versions try the exact ref, then v<version> only if it is missing.
   Scoped npm packages and npm:package-name install from npm.
   Package name and module ID are discovered automatically.
-  --package @your-name/visits  optional package identity check
+  --package @your-name/mercato-visits  optional package identity check
   --module module_id         choose one module from a multi-module package
   --ref tag|branch|commit    pin an exact Git ref; must match a locator ref
   --eject                    copy ejectable module source into src/modules
@@ -81,6 +103,9 @@ Install options:
                              if its version is younger than the app's npmMinimalAgeGate
 
 Init options:
+  --description "Plans customer visits and their follow-ups."
+                             one sentence, 20 to 140 characters, for npm and the catalog
+                             (asked in a terminal; Enter skips)
   --no-generate              create/register the module without running yarn generate
 
 Nothing is published without approval: interactively you retype the package name;
@@ -107,9 +132,13 @@ function parse(argv: string[]): ParsedArguments {
     return { help: true }
   const [command, ...rest] = argv
   const positional: string[] = []
-  if (!['init', 'publish', 'install', 'link', 'unlink'].includes(command))
+  if (
+    !['init', 'publish', 'install', 'link', 'unlink', 'describe'].includes(
+      command,
+    )
+  )
     throw new Error(
-      'Choose init, publish, install, link, or unlink. Run with --help for examples.',
+      'Choose init, publish, install, link, unlink, or describe. Run with --help for examples.',
     )
   const flags: Flags = {}
   const booleans =
@@ -127,7 +156,9 @@ function parse(argv: string[]): ParsedArguments {
         ? ['eject', 'approve-git-repository', 'preapprove-package']
         : command === 'unlink'
           ? []
-          : ['no-generate']
+          : command === 'describe'
+            ? ['open']
+            : ['no-generate']
   const values =
     command === 'publish'
       ? ['package', 'version', 'repo', 'access', 'auth', 'tag']
@@ -135,7 +166,11 @@ function parse(argv: string[]): ParsedArguments {
         ? ['package', 'repo']
         : command === 'install'
           ? ['package', 'module', 'ref']
-          : []
+          : command === 'describe'
+            ? ['package']
+            : command === 'init'
+              ? ['description']
+              : []
   for (let index = 0; index < rest.length; index += 1) {
     if (!rest[index].startsWith('-')) {
       positional.push(rest[index])
@@ -213,7 +248,35 @@ async function main(argv = process.argv.slice(2)) {
   if (args.help) return console.log(help)
   const app = findApp()
   if (args.command === 'init') {
-    const directory = scaffold(app, args.id)
+    let description = String(args.flags.description ?? '').trim()
+    const problem = description && descriptionProblem(description)
+    if (problem)
+      throw new Error(`${problem} No files were changed.`)
+    if (
+      !args.flags.description &&
+      process.stdin.isTTY &&
+      !fs.existsSync(path.join(app.directory, 'src/modules', args.id))
+    ) {
+      const prompt = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      })
+      try {
+        for (;;) {
+          description = (
+            await prompt.question(
+              '📝 What does the module do? One sentence, 20 to 140 characters, for npm and Open Mercato Modules (Enter to skip): ',
+            )
+          ).trim()
+          const answerProblem = description && descriptionProblem(description)
+          if (!answerProblem) break
+          console.log(answerProblem)
+        }
+      } finally {
+        prompt.close()
+      }
+    }
+    const directory = scaffold(app, args.id, description)
     console.log(`✅ Created ${directory}\n🧩 Registered in src/modules.ts.`)
     if (!args.flags['no-generate']) run('yarn', ['generate'], app.directory)
     console.log(
@@ -236,7 +299,7 @@ async function main(argv = process.argv.slice(2)) {
     try {
       if (!input)
         throw new Error(
-          'Provide a GitHub repository or npm package: npx create-mercato-module link pkarw/marketing-consents',
+          'Provide a GitHub repository or npm package: npx create-mercato-module link your-org/your-module',
         )
       if (
         !args.flags.repo &&
@@ -287,6 +350,20 @@ async function main(argv = process.argv.slice(2)) {
     )
     return
   }
+  if (args.command === 'describe') {
+    const described = describeModule(
+      app,
+      args.id,
+      args.flags.package ? String(args.flags.package) : undefined,
+    )
+    process.stdout.write(described.yaml)
+    if (described.warning) console.error(`\n${described.warning}`)
+    if (args.flags.open && !catalogOpen)
+      console.error(`\n${catalogPendingNote}`)
+    else if (args.flags.open && !openCatalogPage(described.submitUrl))
+      console.error(`Open ${described.submitUrl} in your browser.`)
+    return
+  }
   if (args.command === 'install') {
     let input = args.id
     if (!input && process.stdin.isTTY) {
@@ -304,7 +381,7 @@ async function main(argv = process.argv.slice(2)) {
     }
     if (!input)
       throw new Error(
-        'Provide a GitHub repository or npm package: npx create-mercato-module install pkarw/marketing-consents',
+        'Provide a GitHub repository or npm package: npx create-mercato-module install @fastwhitecat/integration-ksef-direct@0.1.8',
       )
     const options = {
       eject: Boolean(args.flags.eject),
@@ -381,7 +458,7 @@ async function main(argv = process.argv.slice(2)) {
       const configure = Boolean(args.flags.configure)
       if (!args.flags.package && (configure || !previous.packageName))
         settings.packageName = await ask(
-          '📦 npm package (for example @your-name/visits)',
+          '📦 npm package (for example @your-name/mercato-visits)',
           settings.packageName,
         )
       if (!args.flags.version && (configure || !previous.version))
@@ -420,8 +497,8 @@ async function main(argv = process.argv.slice(2)) {
       : !repository
         ? settings.repository
         : repository.state === 'missing'
-          ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created before npm publication; it stays if npm rejects the package; tagged ${settings.version} once npm accepts it)`
-          : `${settings.repository} (existing ${repository.private ? 'private' : 'PUBLIC'} repository; tagged ${settings.version} once npm accepts it)`
+          ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created before npm publication; it stays if npm rejects the package; tagged ${settings.version} and given the open-mercato-module and open-mercato topics once npm accepts it)`
+          : `${settings.repository} (existing ${repository.private ? 'private' : 'PUBLIC'} repository; tagged ${settings.version} and given the open-mercato-module and open-mercato topics once npm accepts it)`
     console.log(
       `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
     )
@@ -429,6 +506,16 @@ async function main(argv = process.argv.slice(2)) {
     for (const risk of risks)
       console.log(`\n⚠️ ${risk.message}\n   Option: --${risk.flag}`)
     for (const note of prepared.notes ?? []) console.log(`\nℹ️ ${note}`)
+    const descriptionNote = descriptionWarning(
+      args.id,
+      prepared.manifest.description,
+      moduleDescription(app, args.id, previous.development).file,
+      settings.access === 'public',
+    )
+    if (descriptionNote)
+      console.log(
+        `\n${descriptionNote}${prompt ? ' To include it in this version, cancel below, set it and publish again.' : ''}`,
+      )
     if (args.flags['dry-run'])
       return console.log(
         `\n✅ Dry run complete. No npm/GitHub publication or app Git changes.${settings.repository ? '\nℹ️ GitHub checks (repository visibility, unreleased commits, branch) run when you publish.' : ''}`,
@@ -468,7 +555,7 @@ async function main(argv = process.argv.slice(2)) {
       console.log(`\n🏷️ Tagged ${settings.repository} ${released.tag}.`)
     if (released.tagWarning) console.log(`\n⚠️ ${released.tagWarning}`)
     console.log(
-      `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  npx create-mercato-module install ${settings.packageName}@${settings.version}${released.tag ? `\n  npx create-mercato-module install ${settings.repository}@${released.tag}` : ''}\n⏳ ${ageGateNote}`,
+      `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  npx create-mercato-module install ${npmInstallLocator(settings.packageName)}@${settings.version}${released.tag ? `\n  npx create-mercato-module install ${settings.repository}@${released.tag}` : ''}\n⏳ ${ageGateNote}${settings.access === 'public' ? `\n📚 Add it to the catalog: ${catalogSubmitUrl(settings.packageName)}${catalogOpen ? '' : `\n   ${catalogPendingNote}`}\n   Print its catalog entry: npx create-mercato-module describe ${args.id}` : ''}`,
     )
   } finally {
     prompt?.close()

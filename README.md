@@ -50,7 +50,7 @@ npx create-mercato-module init visits
 yarn setup
 ```
 
-`init` creates `src/modules/visits`, registers it as `@app`, and runs generation. `yarn setup` initializes your new app and starts its development server; leave it running. Open `/backend/visits` using the app credentials printed in the terminal, then build your feature in `src/modules/visits`.
+`init` asks for a one-sentence description, which npm and the catalog show, then creates `src/modules/visits`, registers it as `@app`, and runs generation. `yarn setup` initializes your new app and starts its development server; leave it running. Open `/backend/visits` using the app credentials printed in the terminal, then build your feature in `src/modules/visits`.
 
 The scaffold is a starting point: one page and its translations. From here you will probably want a coding agent to build the module out. The app already carries agent instructions (`AGENTS.md`) for the tools you chose in step 1, so open the app in your agent once `yarn setup` is running and describe the feature, for example: "In `src/modules/visits`, add a Visit entity with a list page and a create form." Keep the dev server running so you can check each change at `/backend/visits`.
 
@@ -69,15 +69,19 @@ npx create-mercato-module publish visits
 
 The wizard asks for the npm package name, version, optional GitHub repository, and public or restricted access. It builds an archive, shows the destinations and any warnings, and publishes only after you retype the package name. Complete npm's 2FA verification when requested.
 
+Give the package a name of its own, such as `@your-name/mercato-visits`. A name that only repeats a module ID, such as `@your-name/visits`, can match a module already listed in [Open Mercato Modules](#list-your-module-in-the-catalog), and the catalog then asks a curator to check the name before listing it.
+
 Settings are remembered in `.mercato/module-tool.json`; later releases reuse them and default to the next stable patch version. Use `--configure` to change them. Your app's module, other modules, and Git origin stay in place.
 
-### 4. Install it in another app
+### 4. Install a published module in another app
 
-Once npm makes the published version available, run inside the receiving app:
+Run inside the receiving app, for example with a module already on npm:
 
 ```bash
-npx create-mercato-module install @your-name/mercato-visits
+npx create-mercato-module install @fastwhitecat/integration-ksef-direct@0.1.8
 ```
+
+Your own module installs the same way under its package name, such as `@your-name/mercato-visits`, once npm makes the published version available.
 
 Apps created by `create-mercato-app` install npm versions only 5 days after
 publication (Yarn `npmMinimalAgeGate`). To install a new version sooner, add
@@ -123,10 +127,10 @@ Keep developing locally and run the same command for later releases. The app can
 Run inside any Open Mercato app. Give `link` a repository or an npm package:
 
 ```bash
-npx create-mercato-module link pkarw/marketing-consents
+npx create-mercato-module link your-org/your-module
 # These work too:
-npx create-mercato-module link https://github.com/pkarw/marketing-consents.git
-npx create-mercato-module link @piotrkarwatka/marketing-consents
+npx create-mercato-module link https://github.com/your-org/your-module.git
+npx create-mercato-module link @your-org/your-module
 ```
 
 The npm form discovers the GitHub repository from the package's npm metadata. The package name and module ID come from the repository; no npm package name prompt or prior `init` is needed. A bare repository name uses your authenticated GitHub account unless an unsaved local module has the same name; in that legacy case, the command asks for its dedicated repository. Use `owner/repository` to remove the ambiguity. If the package has no dedicated module repository, the command explains how to fix it.
@@ -134,20 +138,20 @@ The npm form discovers the GitHub repository from the package's npm metadata. Th
 Optionally name the local checkout folder:
 
 ```bash
-npx create-mercato-module link pkarw/marketing-consents my-consents
+npx create-mercato-module link your-org/your-module my-checkout
 ```
 
-The tool clones under `.mercato/module-repos/my-consents` (default: the module ID), links `src/modules/marketing_consents`, registers it as `@app`, and runs generation. Existing local source is backed up. The local folder name does not change the module ID, routes, or imports.
+The tool clones under `.mercato/module-repos/my-checkout` (default: the module ID), links `src/modules/your_module` (the module ID the repository declares), registers it as `@app`, and runs generation. Existing local source is backed up. The local folder name does not change the module ID, routes, or imports.
 
-Edit through the app, then release from the linked repository using the saved package and repository settings:
+Edit through the app, then release from the linked repository using the saved package and repository settings (this needs push access to the repository and publish rights for its npm package):
 
 ```bash
-npx create-mercato-module publish visits
+npx create-mercato-module publish your_module
 ```
 
-Publication includes your linked edits, preserves repository customizations, and suggests the next patch version. `link visits` still works when the repository is saved. For a new local module, publish it with `publish visits --repo owner/repo` before linking it.
+Publication includes your linked edits, preserves repository customizations, and suggests the next patch version. `link your_module` still works when the repository is saved. For a new local module of your own, such as `visits`, publish it with `publish visits --repo owner/repo` before linking it.
 
-To make it an ordinary local module again, run `npx create-mercato-module unlink visits`: it copies the checkout's current source into `src/modules/visits` and keeps the checkout and the earlier backup.
+To make it an ordinary local module again, run `npx create-mercato-module unlink your_module`: it copies the checkout's current source into `src/modules/your_module` and keeps the checkout and the earlier backup.
 
 This link is local: a fresh clone of the whole app needs the module source restored or linked again. See [repository development and PR workflow](docs/guide.md#develop-in-the-dedicated-repository-without-leaving-your-app) for details.
 
@@ -172,6 +176,16 @@ npx create-mercato-module publish visits \
 
 This builds a real `.tgz` under `.mercato/module-publish/`, without login or publication. See the [command reference](docs/guide.md#command-reference) for repository, version, access, and automation options.
 
+## List your module in the catalog
+
+Open Mercato Modules, the catalog at modules.openmercato.com, will list official and community modules for people and coding agents. It has not launched yet, so its links do not open; until it does, npm search finds your package by its keywords. Prepare the entry now and submit it once the site opens. After launch, the link that `publish` prints after a public release adds yours. To prepare the entry yourself:
+
+```bash
+npx create-mercato-module describe visits
+```
+
+It prints the catalog entry from your saved publish settings; `--open` also opens the submit page. The catalog site has not launched yet: until it does, the printed links say so and `--open` does not open them. Published packages carry the `open-mercato` and `open-mercato-module` keywords, and dedicated repositories get the `open-mercato-module` and `open-mercato` topics.
+
 ## Documentation
 
 | Topic | Guide |
@@ -180,6 +194,7 @@ This builds a real `.tgz` under `.mercato/module-publish/`, without login or pub
 | Login and npm tokens | [Authentication](docs/guide.md#authentication) |
 | GitHub Actions without a write token | [Trusted Publishing](docs/guide.md#npm-trusted-publishing) |
 | Contents, dependencies, and portable imports | [Package contents](docs/guide.md#what-ships-in-the-package) |
+| List your module in Open Mercato Modules | [List your module](docs/guide.md#list-your-module) |
 | Errors mentioning `.mercato/generated` | [Generated-import errors](docs/guide.md#an-error-mentions-mercatogenerated) |
 | Settings, Git, and releases | [Release behavior](docs/guide.md#how-git-and-releases-work) |
 | Run the unreleased GitHub version | [GitHub installation](docs/guide.md#try-the-github-version) |

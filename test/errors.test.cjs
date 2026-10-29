@@ -18,5 +18,5 @@ test('generated entity field import error identifies author source and explains 
 })
 
 test('private package validation explains scoped npm name before attempting publication', () => {
-  assert.throws(() => validateSettings({ packageName: 'visits', version: '0.1.0', access: 'restricted' }), /Private npm packages need a scope[\s\S]*@your-name\/visits/)
+  assert.throws(() => validateSettings({ packageName: 'visits', version: '0.1.0', access: 'restricted' }), /Private npm packages need a scope[\s\S]*@your-name\/mercato-visits/)
 })

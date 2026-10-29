@@ -6,7 +6,7 @@ const path = require('node:path')
 const { validateMutablePaths, repositoryFingerprint, assertNoCredentials } = require('../dist/repository-safety.js')
 
 function fixture(context) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-repo-safety-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-repo-safety-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const checkout = path.join(root, 'repository')
   const outside = path.join(root, 'outside')
