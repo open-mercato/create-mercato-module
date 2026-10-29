@@ -50,4 +50,4 @@ Publish `@tanstack/react-query` and `@tanstack/react-table` as peer dependencies
 
 ### Phase 3: Documentation
 
-- [ ] 3.1 CHANGELOG entry and BACKWARD_COMPATIBILITY.md note
+- [x] 3.1 CHANGELOG entry and BACKWARD_COMPATIBILITY.md note - c90cfa1
