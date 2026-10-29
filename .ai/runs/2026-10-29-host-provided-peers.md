@@ -76,4 +76,4 @@ PR: #18
 
 ### Phase 6: Post-review evidence
 
-- [ ] 6.1 Add consumer-install evidence for the host-provided peer contract
+- [x] 6.1 Add consumer-install evidence for the host-provided peer contract - 628aa34
