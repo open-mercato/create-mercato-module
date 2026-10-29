@@ -36,6 +36,10 @@ Publish `@tanstack/react-query` and `@tanstack/react-table` as peer dependencies
 
 3.1 CHANGELOG entry and BACKWARD_COMPATIBILITY.md note.
 
+### Phase 4: Review fixes
+
+4.1 Apply the code-review findings: drop every merged peer from `dependencies` (exact pins committed by earlier releases), check repository peer ranges for runtime imports, tests and docs.
+
 ## Progress
 
 > Convention: `- [ ]` pending, `- [x]` done. Append ` - <commit sha>` when a step lands. Do not rename step titles.
@@ -51,3 +55,7 @@ Publish `@tanstack/react-query` and `@tanstack/react-table` as peer dependencies
 ### Phase 3: Documentation
 
 - [x] 3.1 CHANGELOG entry and BACKWARD_COMPATIBILITY.md note - c90cfa1
+
+### Phase 4: Review fixes
+
+- [x] 4.1 Apply code-review findings - 2e80d07
