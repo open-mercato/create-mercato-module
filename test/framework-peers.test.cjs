@@ -5,6 +5,9 @@ const os = require('node:os')
 const path = require('node:path')
 const { satisfiesPeer, frameworkPeerWarning } = require('../dist/framework-peers.js')
 const { installFromInput } = require('../dist/install.js')
+const { scaffold } = require('../dist/scaffold.js')
+const { writeJson } = require('../dist/common.js')
+const { preparePackage } = require('../dist/package.js')
 
 test('peer ranges are judged for exact versions and caret ranges only', () => {
   for (const [version, range, expected] of [
@@ -51,10 +54,6 @@ test('npm installation prints the framework warning once', (context) => {
   installFromInput({ directory, manifest: {} }, '@fixture/visits', { warn: (message) => warnings.push(message) }, () => ({ status: 0, stdout: '', stderr: '' }))
   assert.equal(warnings.filter((message) => message.includes('other Open Mercato versions')).length, 1)
 })
-
-const { scaffold } = require('../dist/scaffold.js')
-const { writeJson } = require('../dist/common.js')
-const { preparePackage } = require('../dist/package.js')
 
 function moduleApp(context, imports) {
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'host-peers-'))
