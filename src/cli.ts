@@ -10,7 +10,9 @@ import {
   catalogPendingNote,
   catalogSubmitUrl,
   catalogUrl,
+  moduleInfo,
   npmInstallLocator,
+  unchosenLicenseWarning,
 } from './package.js'
 import { validateSettings } from './package.js'
 import {
@@ -19,6 +21,9 @@ import {
   publish,
   inspectRepository,
   publicationRisks,
+  ignoredLicenseWarning,
+  repositoryLicense,
+  adoptRepositoryLicense,
 } from './publish.js'
 import { loadConfig, saveConfig, removeDevelopment } from './config.js'
 import { isUnconfiguredLocalModule, linkFromInput } from './link.js'
@@ -59,6 +64,8 @@ Publish options:
   --tag beta                  npm release channel (stable: latest; prerelease: next)
   --repo your-name/mercato-visits  optional dedicated GitHub repository; - skips GitHub
   --access public|restricted  npm and new GitHub repo visibility (default public)
+  --license MIT               SPDX license; UNLICENSED means proprietary
+                              (the wizard suggests MIT; default: module or app license)
   --auth auto|login|token|trusted  npm authentication (default auto)
   --configure                edit saved settings in the interactive wizard
   --dry-run                  build a local .tgz; no GitHub/npm writes or login needed
@@ -161,7 +168,7 @@ function parse(argv: string[]): ParsedArguments {
             : ['no-generate']
   const values =
     command === 'publish'
-      ? ['package', 'version', 'repo', 'access', 'auth', 'tag']
+      ? ['package', 'version', 'repo', 'access', 'auth', 'tag', 'license']
       : command === 'link'
         ? ['package', 'repo']
         : command === 'install'
@@ -240,6 +247,9 @@ function publicationSettings(
         : String(flags.repo),
     access: String(flags.access || '') || previous.access || 'public',
     auth: String(flags.auth || '') || previous.auth || 'auto',
+    ...(flags.license || previous.license
+      ? { license: String(flags.license || '') || previous.license }
+      : {}),
   }
 }
 
@@ -476,6 +486,24 @@ async function main(argv = process.argv.slice(2)) {
           '🔐 Access: public or restricted',
           settings.access,
         )
+      // A linked repository keeps its own license.
+      if (
+        !previous.development &&
+        !args.flags.license &&
+        (configure || !previous.license)
+      )
+        settings.license = await ask(
+          '⚖️ License (SPDX, e.g. MIT; UNLICENSED means proprietary)',
+          settings.license ||
+            moduleInfo(path.join(app.directory, 'src/modules', args.id))
+              .license ||
+            app.manifest.license ||
+            'MIT',
+        )
+      else if (previous.development && !args.flags.license && configure)
+        console.log(
+          `⚖️ License: a linked module keeps the license in its repository's package.json. To change it, edit the license field in ${previous.development.checkoutPath}/package.json.`,
+        )
     }
     if (settings.repository === '-') settings.repository = ''
     settings.tag = releaseTag(settings.version, previous, args.flags.tag)
@@ -485,13 +513,25 @@ async function main(argv = process.argv.slice(2)) {
         checkAuthentication(app.directory, settings)
       console.log('🐙 GitHub authentication ready.')
     }
-    const prepared = previous.development
+    let prepared = previous.development
       ? exportLinkedPackage(app, args.id, settings, previous.development)
       : exportPackage(app, args.id, settings)
     const repository =
       !args.flags['dry-run'] && settings.repository
         ? inspectRepository(settings.repository, app.directory)
         : undefined
+    // The release keeps a LICENSE the author wrote in the dedicated repository.
+    // An MIT archive approved below carries the same file; for another license
+    // the summary warns that the repository file stays and npm does not get it.
+    if (repository?.head && !prepared.linkedCheckout) {
+      const license = repositoryLicense(
+        settings.repository!,
+        repository.head,
+        app.directory,
+      )
+      if (license !== undefined)
+        prepared = adoptRepositoryLicense(prepared, settings, license)
+    }
     const destination = !settings.repository
       ? 'skip'
       : !repository
@@ -500,12 +540,24 @@ async function main(argv = process.argv.slice(2)) {
           ? `${settings.repository} (new ${settings.access === 'public' ? 'PUBLIC' : 'private'} repository will be created before npm publication; it stays if npm rejects the package; tagged ${settings.version} and given the open-mercato-module and open-mercato topics once npm accepts it)`
           : `${settings.repository} (existing ${repository.private ? 'private' : 'PUBLIC'} repository; tagged ${settings.version} and given the open-mercato-module and open-mercato topics once npm accepts it)`
     console.log(
-      `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
+      `\n🧩 Module:     ${args.id} (${prepared.fileCount} source files)\n📦 Package:    ${settings.packageName}@${settings.version}\n🏷️ npm tag:    ${settings.tag}\n🔐 Access:     ${settings.access}\n⚖️ License:    ${prepared.manifest.license ?? 'none'}${prepared.licenseDefaulted ? ' (no license chosen)' : ''}\n🔑 npm auth:   ${settings.auth}\n🐙 GitHub:     ${destination}\n📁 Archive:    ${prepared.archive}\n🔎 Integrity:  ${prepared.integrity}`,
     )
     const risks = publicationRisks(prepared, settings, repository)
     for (const risk of risks)
       console.log(`\n⚠️ ${risk.message}\n   Option: --${risk.flag}`)
     for (const note of prepared.notes ?? []) console.log(`\nℹ️ ${note}`)
+    for (const warning of prepared.warnings ?? [])
+      console.log(`\n⚠️ ${warning}`)
+    if (prepared.licenseDefaulted)
+      console.log(`\n⚠️ ${unchosenLicenseWarning(settings.packageName)}`)
+    if (
+      previous.development &&
+      args.flags.license &&
+      String(args.flags.license) !== prepared.manifest.license
+    )
+      console.log(
+        `\n⚠️ ${ignoredLicenseWarning(String(args.flags.license), String(prepared.manifest.license ?? 'none'), previous.development.checkoutPath)}`,
+      )
     const descriptionNote = descriptionWarning(
       args.id,
       prepared.manifest.description,

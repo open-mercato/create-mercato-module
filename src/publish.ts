@@ -7,6 +7,9 @@ import {
   localLocator,
   moduleKeywords,
   fallbackDescription,
+  licenseHolder,
+  mitLicense,
+  generatedMitLicense,
 } from './package.js'
 import { createNpmRunner } from './npm-auth.js'
 import { linkedModuleDirectory } from './development.js'
@@ -270,6 +273,15 @@ function exportLinkedPackage(
       fs.copyFileSync(file, path.join(prepared.destination, name))
     }
   }
+  // The repository keeps its own license; without its own LICENSE text, an
+  // MIT package gets the generated one and any other license gets none.
+  if (!fs.existsSync(path.join(checkout, 'LICENSE'))) {
+    const license = path.join(prepared.destination, 'LICENSE')
+    if (!/^mit$/i.test(String(manifest.license)))
+      fs.rmSync(license, { force: true })
+    else if (!fs.existsSync(license))
+      fs.writeFileSync(license, mitLicense(licenseHolder(app, settings)))
+  }
   const workflow = path.join(checkout, '.github/workflows/publish.yml')
   const notes =
     fs.existsSync(workflow) &&
@@ -283,13 +295,31 @@ function exportLinkedPackage(
       'The module changed while packaging. Retry to build one consistent release.',
     )
   return {
-    ...packPrepared({ ...prepared, manifest }, workspace),
+    ...packPrepared(
+      {
+        ...prepared,
+        manifest,
+        licenseDefaulted:
+          prepared.licenseDefaulted && original.license === undefined,
+      },
+      workspace,
+    ),
     linkedCheckout: checkout,
     linkedFingerprint: fingerprint,
     linkedBranch,
     installScripts,
     notes,
   }
+}
+
+// A linked release takes the license in the repository's package.json, so a
+// --license that names another one has no effect and must say so.
+function ignoredLicenseWarning(
+  requested: string,
+  repositoryLicense: string,
+  checkoutPath: string,
+): string {
+  return `--license ${requested} has no effect on this release: the module is linked to its repository, and linked releases keep the license in the repository's package.json, ${repositoryLicense}.\n   To publish under ${requested}, change the license field in ${checkoutPath}/package.json from ${repositoryLicense} to ${requested}, commit it and publish again.`
 }
 
 function assertLinkedRepository(
@@ -538,6 +568,82 @@ function publicationRisks(
   return risks
 }
 
+// The LICENSE at a commit of the dedicated repository, or undefined when the
+// repository has none.
+function repositoryLicense(
+  repository: string,
+  commit: string,
+  cwd: string,
+  execute: Executor = run,
+): string | undefined {
+  const result = execute(
+    'gh',
+    [
+      'api',
+      `repos/${repository}/contents/LICENSE?ref=${encodeURIComponent(commit)}`,
+      '-H',
+      'Accept: application/vnd.github.raw',
+    ],
+    cwd,
+    { capture: true, allowFailure: true },
+  )
+  if (result.status === 0) return result.stdout
+  if (/HTTP 404/.test(result.stderr || '')) return undefined
+  throw new Error(
+    'Cannot read the LICENSE of the GitHub repository; nothing was published.',
+  )
+}
+
+// publishRepository keeps a LICENSE the author wrote in the dedicated
+// repository and replaces only the text this tool wrote for the same holder.
+// An MIT package ships the LICENSE the repository keeps, so both say the same.
+// A package under another license never carries it: the file may grant rights
+// the license field does not, so the summary warns about the mismatch instead.
+function adoptRepositoryLicense(
+  prepared: ExportedPackage,
+  settings: Settings,
+  text: string,
+  execute: Executor = run,
+): ExportedPackage {
+  if (
+    generatedMitLicense(
+      text,
+      licenseHolder({ directory: prepared.workspace }, settings, execute),
+    )
+  )
+    return prepared
+  if (prepared.manifest.license !== 'MIT')
+    return {
+      ...prepared,
+      warnings: [
+        ...(prepared.warnings ?? []),
+        keptLicenseWarning(
+          settings.repository!,
+          String(prepared.manifest.license ?? 'UNLICENSED'),
+        ),
+      ],
+    }
+  const license = path.join(prepared.destination, 'LICENSE')
+  if (fs.existsSync(license) && fs.readFileSync(license, 'utf8') === text)
+    return prepared
+  assertNoCredentials('LICENSE', text)
+  fs.writeFileSync(license, text)
+  fs.rmSync(prepared.archive, { force: true })
+  return {
+    ...packPrepared(prepared, prepared.workspace),
+    notes: [
+      ...(prepared.notes ?? []),
+      `${settings.repository} keeps its own LICENSE, so the npm package carries that file.`,
+    ],
+  }
+}
+
+// Printed when the dedicated repository keeps a LICENSE of its own and the
+// package goes out under a license other than MIT.
+function keptLicenseWarning(repository: string, license: string): string {
+  return `${repository} keeps its own LICENSE, but this package is published as ${license}, so the npm package does not carry that file.\n   The release leaves the repository LICENSE as it is. If it no longer applies, edit or remove it in ${repository}; if it does, publish with the license it grants, such as --license MIT.`
+}
+
 function githubState(repository: string, cwd: string, execute: Executor = run) {
   const result = execute('gh', ['api', `repos/${repository}`], cwd, {
     capture: true,
@@ -639,10 +745,28 @@ function publishRepository(
     '.gitignore',
     '.github/workflows/publish.yml',
   ]
+  // The release writes LICENSE where the repository has none, and replaces or
+  // removes only the one this tool wrote for the same holder. A LICENSE the
+  // author wrote stays, even when it is the standard MIT text.
+  const license = path.join(checkout, 'LICENSE')
+  if (
+    fs.lstatSync(license, { throwIfNoEntry: false })?.isFile()
+      ? generatedMitLicense(
+          fs.readFileSync(license, 'utf8'),
+          licenseHolder({ directory: prepared.workspace }, settings, execute),
+        )
+      : fs.existsSync(path.join(prepared.destination, 'LICENSE'))
+  )
+    owned.push('LICENSE')
   validateMutablePaths(checkout, owned)
   for (const name of owned) {
     const destination = path.join(checkout, name)
     fs.rmSync(destination, { recursive: true, force: true })
+    if (
+      name === 'LICENSE' &&
+      !fs.existsSync(path.join(prepared.destination, name))
+    )
+      continue
     fs.mkdirSync(path.dirname(destination), { recursive: true })
     fs.cpSync(path.join(prepared.destination, name), destination, {
       recursive: true,
@@ -738,11 +862,16 @@ function addTopics(repository: string, cwd: string, execute: Executor = run) {
 }
 
 function ensureAuthor(checkout: string, execute: Executor): void {
-  const identity = execute('git', ['var', 'GIT_AUTHOR_IDENT'], checkout, {
-    capture: true,
-    allowFailure: true,
-  })
-  if (identity.status !== 0) {
+  // A commit needs both identities. GIT_AUTHOR_NAME, which names the LICENSE
+  // holder, can set the author while Git has no committer configured.
+  const missing = ['GIT_AUTHOR_IDENT', 'GIT_COMMITTER_IDENT'].some(
+    (identity) =>
+      execute('git', ['var', identity], checkout, {
+        capture: true,
+        allowFailure: true,
+      }).status !== 0,
+  )
+  if (missing) {
     const user: { login: string; id: number } = JSON.parse(
       execute('gh', ['api', 'user'], checkout, { capture: true }).stdout,
     )
@@ -905,6 +1034,10 @@ export {
   preflight,
   publish,
   exportLinkedPackage,
+  ignoredLicenseWarning,
+  repositoryLicense,
+  adoptRepositoryLicense,
+  keptLicenseWarning,
   packEntries,
   tagRelease,
 }

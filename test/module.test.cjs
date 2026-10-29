@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
 const { scaffold, registration } = require('../dist/scaffold.js')
 const { findApp, writeJson, readJson, run } = require('../dist/common.js')
-const { preparePackage, validateSettings, moduleInfo, npmInstallLocator } = require('../dist/package.js')
+const { preparePackage, validateSettings, moduleInfo, licenseHolder, mitLicense, generatedMitLicense, npmInstallLocator, validLicenseExpression } = require('../dist/package.js')
 const { addTopics, exportPackage, githubState, publish, publishRepository, tagRelease, loadConfig, saveConfig } = require('../dist/publish.js')
 const { parse } = require('../dist/cli.js')
 const { installFromInput } = require('../dist/install.js')
@@ -45,11 +45,12 @@ test('init registers and localizes a working page; refuses duplicate modules wit
   const before = fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8')
   assert.match(before, /id: 'visits', from: '@app'/)
   assert.match(fs.readFileSync(path.join(directory, 'backend/visits/page.meta.ts'), 'utf8'), /requireAuth: true/)
+  assert.match(fs.readFileSync(path.join(directory, 'index.ts'), 'utf8'), /version: '0\.1\.0',\n {2}description: '',\n {2}license: '',\n/)
   assert.equal(readJson(path.join(directory, 'i18n/en.json'))['visits.title'], 'Visits')
   assert.throws(() => scaffold(app, 'visits'), /already exists/)
   assert.equal(fs.readFileSync(path.join(app.directory, 'src/modules.ts'), 'utf8'), before)
   const described = scaffold(app, 'visit_notes', "Keeps the team's notes \\ for visits.")
-  assert.match(fs.readFileSync(path.join(described, 'index.ts'), 'utf8'), /version: '0\.1\.0',\n {2}description: 'Keeps the team\\'s notes \\\\ for visits\.',\n {2}ejectable: true,/)
+  assert.match(fs.readFileSync(path.join(described, 'index.ts'), 'utf8'), /version: '0\.1\.0',\n {2}description: 'Keeps the team\\'s notes \\\\ for visits\.',\n {2}license: '',\n {2}ejectable: true,/)
   assert.equal(moduleInfo(described).description, "Keeps the team's notes \\ for visits.")
 })
 
@@ -376,7 +377,7 @@ test('dedicated repository publication creates and updates an isolated repo with
   run('git', ['remote', 'add', 'origin', 'https://example.com/whole-app.git'], app.directory, { capture: true })
   const before = run('git', ['status', '--porcelain'], app.directory, { capture: true }).stdout
   const remote = path.join(root, 'module.git')
-  const publication = { ...settings, repository: 'fixture/visits' }
+  const publication = { ...settings, repository: 'fixture/visits', license: 'MIT' }
   let creations = 0
   function execute(command, args, cwd, options) {
     if (command !== 'gh') return run(command, args, cwd, options)
@@ -393,6 +394,7 @@ test('dedicated repository publication creates and updates an isolated repo with
   publishRepository(first, publication, execute)
   assert.equal(creations, 1)
   assert.equal(JSON.parse(run('git', ['--git-dir', remote, 'show', 'main:package.json'], root, { capture: true }).stdout).name, settings.packageName)
+  assert.match(run('git', ['--git-dir', remote, 'show', 'main:LICENSE'], root, { capture: true }).stdout, /^MIT License/)
   const updated = { ...publication, version: '0.1.1' }
   addFile(directory, 'new-feature.ts', 'export const enabled = true\n')
   const remoteHead = () => run('git', ['--git-dir', remote, 'rev-parse', 'main'], root, { capture: true }).stdout.trim()
@@ -481,6 +483,58 @@ test('an accepted release gives the repository its topics; a refused topic never
   assert.doesNotThrow(() => addTopics('fixture/visits', root, () => { throw new Error('gh did not finish in time') }))
 })
 
+test('a repository release removes the LICENSE an earlier MIT release generated, never the author\'s own', (context) => {
+  const { app, root } = fixture(context)
+  // GIT_AUTHOR_NAME names the LICENSE holder. Without a configured Git
+  // identity, as on CI, the release commit still needs a committer.
+  const isolated = { GIT_AUTHOR_NAME: 'Ada Lovelace', GIT_AUTHOR_EMAIL: 'ada@example.com', GIT_CONFIG_GLOBAL: path.join(root, 'no-gitconfig'), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'user.useConfigOnly', GIT_CONFIG_VALUE_0: 'true' }
+  const saved = Object.fromEntries(Object.keys(isolated).map((key) => [key, process.env[key]]))
+  Object.assign(process.env, isolated)
+  context.after(() => { for (const [key, value] of Object.entries(saved)) if (value === undefined) delete process.env[key]; else process.env[key] = value })
+  const remote = path.join(root, 'module.git')
+  function execute(command, args, cwd, options) {
+    if (command !== 'gh') return run(command, args, cwd, options)
+    if (args[0] === 'api' && args[1] === 'user') return { status: 0, stdout: '{"login":"fixture","id":123}', stderr: '' }
+    if (args[0] === 'api') return { status: fs.existsSync(remote) ? 0 : 1, stdout: '{}', stderr: 'HTTP 404' }
+    if (args[1] === 'create') return run('git', ['init', '--bare', '--initial-branch=main', remote], root, { capture: true })
+    if (args[1] === 'clone') return run('git', ['clone', remote, args[3]], cwd, { capture: true })
+    throw new Error(`Unexpected gh command: ${args.join(' ')}`)
+  }
+  const show = (file) => run('git', ['--git-dir', remote, 'show', `main:${file}`], root, { capture: true, allowFailure: true })
+  const release = (version, license) => {
+    const publication = { ...settings, repository: 'fixture/visits', version, license }
+    publishRepository(exportPackage(app, 'visits', publication), publication, execute)
+  }
+  release('0.2.0', 'MIT')
+  assert.match(show('LICENSE').stdout, /^MIT License/)
+  release('0.2.1', 'UNLICENSED')
+  assert.equal(JSON.parse(show('package.json').stdout).license, 'UNLICENSED')
+  assert.notEqual(show('LICENSE').status, 0, 'the MIT grant must not outlive the MIT license')
+  const author = path.join(root, 'author')
+  run('git', ['clone', '-q', remote, author], root, { capture: true })
+  const authorLicense = (text) => {
+    run('git', ['pull', '-q', '--ff-only'], author, { capture: true })
+    fs.writeFileSync(path.join(author, 'LICENSE'), text)
+    run('git', ['add', 'LICENSE'], author, { capture: true })
+    run('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-qm', 'Add our terms'], author, { capture: true })
+    run('git', ['push', '-q', 'origin', 'main'], author, { capture: true })
+  }
+  authorLicense('Copyright (c) 2026 Fixture Ltd. All rights reserved.\n')
+  release('0.2.2', 'UNLICENSED')
+  assert.equal(JSON.parse(show('package.json').stdout).version, '0.2.2')
+  assert.equal(show('LICENSE').stdout, 'Copyright (c) 2026 Fixture Ltd. All rights reserved.\n', 'a LICENSE the author wrote stays')
+  const handWritten = mitLicense('Fixture Ltd.', 2025)
+  authorLicense(handWritten)
+  release('0.2.3', 'MIT')
+  assert.equal(JSON.parse(show('package.json').stdout).license, 'MIT')
+  assert.equal(show('LICENSE').stdout, handWritten, 'a release does not overwrite an MIT LICENSE the author wrote')
+  release('0.2.4', 'UNLICENSED')
+  assert.equal(show('LICENSE').stdout, handWritten, 'nor removes it when the license changes')
+  authorLicense(mitLicense('Ada Lovelace', 2024))
+  release('0.2.5', 'UNLICENSED')
+  assert.notEqual(show('LICENSE').status, 0, 'the text this tool wrote in an earlier year still goes')
+})
+
 test('releases are tagged with the bare version so the generated v* workflow does not publish again', () => {
   const sha = 'a'.repeat(40)
   const calls = []
@@ -496,12 +550,89 @@ test('releases are tagged with the bare version so the generated v* workflow doe
 test('package metadata takes the module description and links the dedicated repository', (context) => {
   const { app, directory, destination } = fixture(context)
   const index = path.join(directory, 'index.ts')
-  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  ejectable: true,\n", "  ejectable: true,\n  description: 'Plans customer visits.',\n"))
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  description: '',", "  description: 'Plans customer visits.',"))
   const prepared = preparePackage(app, 'visits', { ...settings, repository: 'fixture/visits' }, destination)
   assert.equal(prepared.manifest.description, 'Plans customer visits.')
   assert.deepEqual(prepared.manifest.keywords, ['open-mercato', 'open-mercato-module'])
   assert.equal(prepared.manifest.homepage, 'https://github.com/fixture/visits#readme')
   assert.deepEqual(prepared.manifest.bugs, { url: 'https://github.com/fixture/visits/issues' })
+})
+
+test('only the exact text the tool writes, holder line included, counts as a generated LICENSE', () => {
+  const generated = mitLicense('Ada Lovelace')
+  assert.equal(generatedMitLicense(generated, 'Ada Lovelace'), true)
+  assert.equal(generatedMitLicense(mitLicense('Ada Lovelace', 2024), 'Ada Lovelace'), true, 'a release from an earlier year')
+  assert.equal(generatedMitLicense(generated, 'Grace Hopper'), false, 'the standard MIT text naming another holder is hand-written')
+  assert.equal(generatedMitLicense(generated.replace('MIT License\n', 'The MIT License (MIT)\n'), 'Ada Lovelace'), false)
+  assert.equal(generatedMitLicense(generated.replace('\n', '\r\n'), 'Ada Lovelace'), false)
+  assert.equal(generatedMitLicense(generated.replace('Copyright (c) ', 'Copyright (c) 2023-'), 'Ada Lovelace'), false)
+  assert.equal(generatedMitLicense(`${generated}\nPortions copyright (c) 2026 Grace Hopper.\n`, 'Ada Lovelace'), false)
+  assert.equal(generatedMitLicense('', 'Ada Lovelace'), false)
+})
+
+test('the chosen license reaches package.json, and MIT ships its LICENSE text', (context) => {
+  const { app, directory, root } = fixture(context)
+  const author = process.env.GIT_AUTHOR_NAME
+  process.env.GIT_AUTHOR_NAME = 'Ada Lovelace'
+  context.after(() => { if (author === undefined) delete process.env.GIT_AUTHOR_NAME; else process.env.GIT_AUTHOR_NAME = author })
+  const mit = preparePackage(app, 'visits', { ...settings, license: 'MIT' }, path.join(root, 'mit'))
+  assert.equal(mit.manifest.license, 'MIT')
+  assert.match(fs.readFileSync(path.join(root, 'mit/LICENSE'), 'utf8'), /^MIT License\n\nCopyright \(c\) \d{4} Ada Lovelace\n/, 'the Git author holds the copyright')
+  const unset = preparePackage(app, 'visits', settings, path.join(root, 'unset'))
+  assert.equal(unset.manifest.license, 'UNLICENSED', 'no choice keeps the earlier default')
+  assert.equal(unset.licenseDefaulted, true)
+  assert.equal(mit.licenseDefaulted, false)
+  assert.ok(!fs.existsSync(path.join(root, 'unset/LICENSE')))
+  const lower = preparePackage(app, 'visits', { ...settings, license: 'mit' }, path.join(root, 'lower'))
+  assert.equal(lower.manifest.license, 'MIT', 'mit takes the SPDX spelling')
+  assert.match(fs.readFileSync(path.join(root, 'lower/LICENSE'), 'utf8'), /^MIT License\n/, 'mit ships the LICENSE text too')
+  const index = path.join(directory, 'index.ts')
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  license: '',", "  license: 'Apache-2.0',"))
+  assert.equal(preparePackage(app, 'visits', settings, path.join(root, 'declared')).manifest.license, 'Apache-2.0')
+  assert.ok(!fs.existsSync(path.join(root, 'declared/LICENSE')), 'only the MIT text ships with the tool')
+  assert.throws(() => validateSettings({ ...settings, license: 'MIT; rm -rf /' }), /SPDX license/)
+  delete process.env.GIT_AUTHOR_NAME
+  const answers = (replies) => (command) => ({ status: replies[command] === undefined ? 1 : 0, stdout: `${replies[command] ?? ''}\n`, stderr: '' })
+  assert.equal(licenseHolder(app, settings, answers({ git: 'Grace Hopper', npm: 'grace' })), 'Grace Hopper')
+  assert.equal(licenseHolder(app, settings, answers({ npm: 'grace' })), 'grace', 'the npm user when Git has no name')
+  assert.equal(licenseHolder(app, settings, answers({})), '@fixture/visits authors', 'the package authors only when both are missing')
+  assert.equal(licenseHolder(app, settings, () => { throw new Error('npm is missing') }), '@fixture/visits authors')
+  assert.equal(licenseHolder(app, settings, answers({ git: 'Grace\nHopper\u0007' })), 'Grace Hopper', 'control characters never reach the LICENSE')
+  assert.equal(licenseHolder(app, settings, answers({ git: 'x'.repeat(101), npm: 'grace' })), 'grace', 'an overlong name falls through')
+  const options = []
+  licenseHolder(app, settings, (command, args, cwd, option) => { options.push(option); return { status: 1, stdout: '', stderr: '' } })
+  assert.ok(options.every((option) => option.timeout === undefined), 'npm whoami keeps the default capture timeout')
+  assert.doesNotThrow(() => validateSettings({ ...settings, license: '(MIT OR Apache-2.0)' }))
+})
+
+test('a local metadata in a helper never overrides the exported license', (context) => {
+  const { app, directory, root } = fixture(context)
+  const index = path.join(directory, 'index.ts')
+  const exported = fs.readFileSync(index, 'utf8').replace("  license: '',", "  license: 'UNLICENSED',")
+  const local = "const metadata = { license: 'MIT' }"
+  for (const [kind, helper] of [
+    ['function', `function helper() {\n  ${local}\n  return metadata\n}\n`],
+    ['block', `{\n  ${local}\n}\n`],
+    ['arrow function', `export const helper = () => {\n  ${local}\n  return metadata\n}\n`],
+  ]) {
+    fs.writeFileSync(index, exported + helper)
+    assert.equal(moduleInfo(directory).license, 'UNLICENSED', `a local metadata in a ${kind} keeps the exported license`)
+    const destination = path.join(root, kind.replace(' ', '-'))
+    const prepared = preparePackage(app, 'visits', settings, destination)
+    assert.equal(prepared.manifest.license, 'UNLICENSED', `a local metadata in a ${kind} does not make the package MIT`)
+    assert.ok(!fs.existsSync(path.join(destination, 'LICENSE')), `a local metadata in a ${kind} adds no MIT LICENSE`)
+  }
+})
+
+test('license settings accept any valid SPDX expression and refuse unbalanced or malformed ones', () => {
+  for (const license of ['MIT', '(MIT OR Apache-2.0)', '((MIT OR Apache-2.0) AND BSD-3-Clause)', 'MIT AND (Apache-2.0 OR (BSD-3-Clause AND ISC))', 'Apache-2.0 WITH LLVM-exception', 'GPL-2.0+', 'LicenseRef-Custom', 'UNLICENSED']) {
+    assert.equal(validLicenseExpression(license), true, license)
+    assert.doesNotThrow(() => validateSettings({ ...settings, license }), license)
+  }
+  for (const license of ['(MIT', 'MIT)', 'MIT AND', 'AND MIT', 'MIT  OR Apache-2.0', ' MIT', 'MIT ', '( MIT )', '()', 'MIT WITH', 'MIT WITH (LLVM-exception)', 'MIT Apache-2.0', 'MIT; echo', `MIT OR ${'A'.repeat(95)}`]) {
+    assert.throws(() => validateSettings({ ...settings, license }), /SPDX license/, license)
+  }
+  assert.equal(validLicenseExpression(`MIT OR ${'A'.repeat(95)}`), true, 'the 100-character cap belongs to the setting check')
 })
 
 test('generated module README uses the tool install command and explains the Yarn age gate', (context) => {

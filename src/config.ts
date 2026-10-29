@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { App, Config, SavedSettings, Settings } from './types.js'
 import type { DevelopmentLink } from './development.js'
 import { validateId } from './common.js'
+import { settingLicense } from './package.js'
 
 function exists(file: string): boolean {
   try {
@@ -81,6 +82,7 @@ function settingsFrom(value: unknown): SavedSettings {
     'repository',
     'auth',
     'tag',
+    'license',
     'lastPublishedVersion',
   ] as const
   for (const key of keys) {
@@ -191,6 +193,23 @@ export function saveDevelopment(
   writeConfig(app, config)
 }
 
+function repositoryLicense(
+  app: App,
+  development: DevelopmentLink,
+): string | undefined {
+  try {
+    const manifest: unknown = JSON.parse(
+      fs.readFileSync(
+        path.join(app.directory, development.checkoutPath, 'package.json'),
+        'utf8',
+      ),
+    )
+    return record(manifest) ? settingLicense(manifest.license) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function removeDevelopment(app: App, id: string): void {
   validateId(id)
   const config = loadConfig(app)
@@ -199,6 +218,10 @@ export function removeDevelopment(app: App, id: string): void {
     throw new Error(`Module ${id} has no development link to remove.`)
   const settings: Partial<SavedSettings> = { ...previous }
   delete settings.development
+  // Linked releases took the repository's license, so later releases from the
+  // app keep it rather than fall back to the module, the app or UNLICENSED.
+  const license = repositoryLicense(app, previous.development)
+  if (license) settings.license = license
   // link saved the repository's released version; without it the next publish
   // from the app would propose that same, already published version.
   settings.lastPublishedVersion ??= previous.version

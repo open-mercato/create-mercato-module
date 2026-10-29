@@ -67,7 +67,7 @@ gh auth login # only if you want a dedicated GitHub repository
 npx create-mercato-module publish visits
 ```
 
-The wizard asks for the npm package name, version, optional GitHub repository, and public or restricted access. It builds an archive, shows the destinations and any warnings, and publishes only after you retype the package name. Complete npm's 2FA verification when requested.
+The wizard asks for the npm package name, version, optional GitHub repository, public or restricted access, and the license (it suggests MIT; `UNLICENSED` keeps the module proprietary). Scripts pass `--license MIT`; without it and without a license in the module or app, the package is published as `UNLICENSED` and `publish` warns about it. An MIT package and its dedicated repository get a `LICENSE` file; for any other license, such as Apache-2.0, the tool sets the `license` field only, so add the `LICENSE` text to the repository yourself. It builds an archive, shows the destinations and any warnings, and publishes only after you retype the package name. Complete npm's 2FA verification when requested.
 
 Give the package a name of its own, such as `@your-name/mercato-visits`. A name that only repeats a module ID, such as `@your-name/visits`, can match a module already listed in [Open Mercato Modules](#list-your-module-in-the-catalog), and the catalog then asks a curator to check the name before listing it.
 

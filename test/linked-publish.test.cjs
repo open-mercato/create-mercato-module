@@ -39,6 +39,41 @@ function fixture(context) {
   return { app, settings, metadata, checkout }
 }
 
+test('linked publication keeps the repository license and never ships a LICENSE that contradicts it', context => {
+  const { app, settings, metadata, checkout } = fixture(context)
+  const prepared = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1', license: 'MIT' }, metadata)
+  assert.equal(prepared.manifest.license, 'UNLICENSED', 'the repository package.json license wins')
+  assert.equal(prepared.licenseDefaulted, false, 'the repository chose it')
+  assert.ok(!fs.existsSync(path.join(prepared.destination, 'LICENSE')))
+  const manifest = readJson(path.join(checkout, 'package.json'))
+  delete manifest.license
+  writeJson(path.join(checkout, 'package.json'), manifest)
+  const unchosen = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1' }, metadata)
+  assert.equal(unchosen.manifest.license, 'UNLICENSED')
+  assert.equal(unchosen.licenseDefaulted, true, 'neither the repository nor the settings name a license')
+  const licensed = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1', license: 'MIT' }, metadata)
+  assert.equal(licensed.manifest.license, 'MIT')
+  assert.equal(licensed.licenseDefaulted, false)
+  assert.match(fs.readFileSync(path.join(licensed.destination, 'LICENSE'), 'utf8'), /^MIT License/)
+})
+
+test('a linked repository that names MIT without a LICENSE file ships the MIT text; its own LICENSE wins', context => {
+  const { app, settings, metadata, checkout } = fixture(context)
+  const manifest = readJson(path.join(checkout, 'package.json'))
+  for (const license of ['MIT', 'Apache-2.0']) {
+    writeJson(path.join(checkout, 'package.json'), { ...manifest, license })
+    const prepared = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1' }, metadata)
+    assert.equal(prepared.manifest.license, license)
+    const file = path.join(prepared.destination, 'LICENSE')
+    if (license === 'MIT') assert.match(fs.readFileSync(file, 'utf8'), /^MIT License\n\nCopyright \(c\) \d{4} /, 'an MIT package carries its notice')
+    else assert.ok(!fs.existsSync(file), 'the tool writes no text for other licenses')
+  }
+  writeJson(path.join(checkout, 'package.json'), { ...manifest, license: 'MIT' })
+  fs.writeFileSync(path.join(checkout, 'LICENSE'), 'MIT License\n\nCopyright (c) 2026 Fixture Ltd.\n')
+  const own = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1' }, metadata)
+  assert.equal(fs.readFileSync(path.join(own.destination, 'LICENSE'), 'utf8'), 'MIT License\n\nCopyright (c) 2026 Fixture Ltd.\n')
+})
+
 test('linked publication releases app edits, preserves repository customization and leaves app Git untouched', context => {
   const { app, settings, metadata, checkout } = fixture(context)
   const version = { ...settings, version: '0.1.1' }

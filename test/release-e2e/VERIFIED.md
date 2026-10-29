@@ -1,5 +1,24 @@
 # Verified release scenarios
 
+## Local release checks: passed (2026-10-25)
+
+`npm run test:release:local` ran once against the throwaway Verdaccio registry and Postgres from [the harness instructions](README.md), with `--create-app create-mercato-app@0.9.0` and `--database-url`, after the fixture got a description (`init --description`) and a license (`publish --license MIT`).
+
+| Input | Version |
+| --- | --- |
+| Node | 24.21.0 |
+| npm | 12.1.0 |
+| Yarn in the fresh apps | 4.18.1 (`packageManager` pinned by the harness) |
+| Clean app scaffold | `create-mercato-app@0.9.0`, `@open-mercato/core` 0.9.0 |
+| Tool | create-mercato-module 0.5.1 with the unreleased description and license changes |
+
+All 20 local stages and all 37 consumer stages passed:
+
+- Releases 0.0.1 and 0.0.2 printed no warning, so the harness's no-warning assertion holds with the description and no-license warnings in place. The summaries showed `⚖️ License:    MIT`.
+- The run without approval published nothing; the npm-linked checkout released 0.0.3 with the repository's MIT license.
+- The npm lane installed `@mercato-e2e/release-checks@0.0.3` with `--preapprove-package` after the age gate refused it; the package carried its `LICENSE`. The GitHub lane installed `mercato-e2e/release-checks@0.0.3` from the local Git stand-in with github.com blocked for Yarn.
+- Both consumer apps served the module page and API through Next.js, and the full app initialized against the database and answered the signed-in admin (`GET /api/release_checks/status 200`).
+
 Recorded on 2026-10-09 against the current tool implementation. This records actual executions; it does not imply unexecuted release lanes passed.
 
 | Input | Version |

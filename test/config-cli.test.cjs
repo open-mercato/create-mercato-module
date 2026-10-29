@@ -114,25 +114,62 @@ test('authentication checks npm and selected GitHub before any package work', (c
 
 test('repeat publication uses saved settings, auto-bumps version and only asks for confirmation', (context) => {
   const { app, cli } = fixture(context)
-  saveConfig(app, 'visits', settings, true)
+  saveConfig(app, 'visits', { ...settings, license: 'MIT' }, true)
   const result = cli(['publish', 'visits'])
   assert.equal(result.status, 1, 'the unanswered confirmation cancels the publication')
   assert.match(result.output, /@fixture\/visits@0\.1\.1/)
   assert.equal((result.output.match(/PROMPT:/g) || []).length, 1)
   assert.match(result.output, /PROMPT:.*Publish this module/s)
+  assert.match(result.output, /⚖️ License: +MIT/)
   assert.equal(loadConfig(app).modules.visits.lastPublishedVersion, '0.1.0')
+})
+
+test('the wizard asks for a license once, suggesting MIT; scripts keep the module or app license', (context) => {
+  const { app, cli } = fixture(context)
+  saveConfig(app, 'visits', settings, true)
+  const result = cli(['publish', 'visits'])
+  assert.equal(result.status, 1, result.output)
+  assert.equal((result.output.match(/PROMPT:/g) || []).length, 2, 'settings saved before the license question ask it once')
+  assert.match(result.output, /PROMPT:⚖️ License \(SPDX, e\.g\. MIT; UNLICENSED means proprietary\) \[MIT\]: /)
+  assert.match(result.output, /⚖️ License: +MIT/)
+  const script = cli(['publish', 'visits', '--dry-run'], false)
+  assert.equal(script.status, 0, script.output)
+  assert.match(script.output, /⚖️ License: +UNLICENSED \(no license chosen\)/, 'without the wizard nothing changes the license')
+  assert.match(script.output, /⚠️ No license chosen, so @fixture\/visits is published as UNLICENSED: proprietary, others get no right to use it, and no LICENSE file is added\.\n {3}To publish it as open source, rerun with --license MIT \(or another SPDX license, such as Apache-2\.0\)\.\n {3}The license is saved for later releases; change it with --license or --configure\./, 'scripts are told loudly instead of getting a silent choice')
+  const index = path.join(app.directory, 'src/modules/visits/index.ts')
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  license: '',", "  license: 'Apache-2.0',"))
+  const declared = cli(['publish', 'visits', '--dry-run'], false)
+  assert.match(declared.output, /⚖️ License: +Apache-2\.0\n/, 'the module metadata license applies')
+  assert.doesNotMatch(declared.output, /No license chosen/)
+  assert.match(cli(['publish', 'visits'], true).output, /PROMPT:⚖️ License .*\[Apache-2\.0\]/, 'and the wizard suggests it')
+  const chosen = cli(['publish', 'visits', '--license', 'UNLICENSED', '--dry-run'], false)
+  assert.match(chosen.output, /⚖️ License: +UNLICENSED\n/)
+  assert.doesNotMatch(chosen.output, /No license chosen/, 'a chosen UNLICENSED is not warned about')
+  const invalid = cli(['publish', 'visits', '--license', 'MIT; echo', '--dry-run'], false)
+  assert.equal(invalid.status, 1)
+  assert.match(invalid.output, /Use an SPDX license such as MIT or Apache-2\.0, or UNLICENSED/)
+})
+
+test('the license prompt suggests the exported license, not a local metadata in a helper', (context) => {
+  const { app, cli } = fixture(context)
+  saveConfig(app, 'visits', settings, true)
+  const index = path.join(app.directory, 'src/modules/visits/index.ts')
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  license: '',", "  license: 'UNLICENSED',") + "function helper() {\n  const metadata = { license: 'MIT' }\n  return metadata\n}\n")
+  const result = cli(['publish', 'visits'])
+  assert.match(result.output, /PROMPT:⚖️ License .*\[UNLICENSED\]: /)
+  assert.doesNotMatch(result.output, /PROMPT:⚖️ License .*\[MIT\]/)
 })
 
 test('explicit settings are not prompted again and configure intentionally opens saved fields', (context) => {
   const { app, cli } = fixture(context)
-  const supplied = cli(['publish', 'visits', '--package', settings.packageName, '--version', settings.version, '--repo', '-', '--access', 'public', '--auth', 'login'])
+  const supplied = cli(['publish', 'visits', '--package', settings.packageName, '--version', settings.version, '--repo', '-', '--access', 'public', '--license', 'MIT', '--auth', 'login'])
   assert.equal(supplied.status, 1, supplied.output)
   assert.equal((supplied.output.match(/PROMPT:/g) || []).length, 1)
   saveConfig(app, 'visits', settings, true)
   const configured = cli(['publish', 'visits', '--configure'])
   assert.equal(configured.status, 1, configured.output)
-  assert.equal((configured.output.match(/PROMPT:/g) || []).length, 5)
-  assert.match(configured.output, /📦 npm package|🔖 Version|🐙 Dedicated GitHub|🔐 Access/)
+  assert.equal((configured.output.match(/PROMPT:/g) || []).length, 6)
+  assert.match(configured.output, /📦 npm package|🔖 Version|🐙 Dedicated GitHub|🔐 Access|⚖️ License/)
 })
 
 test('dry-run skips authentication even when npm login is unavailable', (context) => {
@@ -195,6 +232,11 @@ test('publication needs the package name retyped interactively and explicit appr
   assert.equal(confirmed.status, 0, confirmed.output)
   assert.match(confirmed.output, /Submitted @fixture\/visits@0\.1\.0/)
   assert.match(confirmed.output, /Add it to the catalog: https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits/)
+  const archive = JSON.parse(fs.readFileSync(process.env.FIXTURE_REGISTRY, 'utf8'))[1]
+  const tar = (flags, ...members) => spawnSync('tar', [flags, archive, ...members], { encoding: 'utf8' }).stdout
+  assert.equal(JSON.parse(tar('-xOzf', 'package/package.json')).license, 'MIT', 'the suggested MIT license was accepted')
+  assert.match(tar('-tzf'), /^package\/LICENSE$/m)
+  assert.equal(loadConfig(app).modules.visits.license, 'MIT')
   assert.equal(JSON.parse(fs.readFileSync(process.env.FIXTURE_REGISTRY, 'utf8'))[0], 'publish')
   assert.equal(loadConfig(app).modules.visits.lastPublishedVersion, '0.1.0')
   delete process.env.FIXTURE_CONFIRMATION

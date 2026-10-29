@@ -32,6 +32,8 @@ export interface Settings {
   repository?: string
   auth?: string
   tag?: string
+  // SPDX expression or UNLICENSED; unset keeps the module or app license.
+  license?: string
 }
 
 export interface SavedSettings extends Settings {
@@ -56,6 +58,9 @@ export interface PreparedPackage {
   destination: string
   manifest: GeneratedManifest
   fileCount: number
+  // No setting, module metadata, app or repository names a license, so the
+  // package falls back to UNLICENSED.
+  licenseDefaulted?: boolean
 }
 
 export interface ExportedPackage extends PreparedPackage {
@@ -67,6 +72,8 @@ export interface ExportedPackage extends PreparedPackage {
   linkedBranch?: string
   installScripts?: string[]
   notes?: string[]
+  // Shown with a warning sign in the publish summary.
+  warnings?: string[]
 }
 
 export type RunOptions = Omit<

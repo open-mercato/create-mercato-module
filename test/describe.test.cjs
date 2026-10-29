@@ -115,7 +115,7 @@ test('the contract checker rejects entries the catalog rejects', () => {
 
 test('describe prints a catalog entry from saved settings and the module metadata', (context) => {
   const { app, index, cli } = fixture(context)
-  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  ejectable: true,\n", "  ejectable: true,\n  description: 'Plans customer visits: routes, notes and follow-ups.',\n"))
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("  description: '',", "  description: 'Plans customer visits: routes, notes and follow-ups.',"))
   saveConfig(app, 'visits', settings, true)
   const before = fs.readFileSync(path.join(app.directory, '.mercato/module-tool.json'), 'utf8')
   const result = cli(['describe', 'visits'])

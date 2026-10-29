@@ -1,10 +1,10 @@
-import type { App, Settings, PreparedPackage } from './types.js'
+import type { App, Settings, PreparedPackage, Executor } from './types.js'
 import * as fs from 'node:fs'
 import * as ts from 'typescript'
 import { version as typescriptVersion } from 'typescript'
 import * as path from 'node:path'
 import { createRequire } from 'node:module'
-import { readJson, writeJson, moduleDirectory } from './common.js'
+import { readJson, writeJson, moduleDirectory, run } from './common.js'
 import { filesIn, rewriteSource, build, codePattern } from './build.js'
 import { createPublishWorkflow } from './workflow.js'
 import { assertNoCredentials } from './repository-safety.js'
@@ -49,6 +49,131 @@ function npmInstallLocator(packageName: string): string {
   return packageName.startsWith('@') ? packageName : `npm:${packageName}`
 }
 
+// An SPDX license expression such as MIT, (MIT OR Apache-2.0) or
+// ((MIT OR Apache-2.0) AND BSD-3-Clause), or UNLICENSED. Single spaces
+// separate words; parentheses nest to any depth and must balance.
+function validLicenseExpression(value: string): boolean {
+  const tokens: string[] = []
+  const spaced: boolean[] = []
+  const token = /\(|\)|[A-Za-z0-9][A-Za-z0-9.+-]*/y
+  let index = 0
+  while (index < value.length) {
+    const space = value[index] === ' '
+    if (space) index++
+    token.lastIndex = index
+    const match = token.exec(value)
+    if (!match) return false
+    tokens.push(match[0])
+    spaced.push(space)
+    index = token.lastIndex
+  }
+  // A space goes between words and around operators, never inside
+  // parentheses or at either end.
+  for (let item = 0; item < tokens.length; item++)
+    if (
+      spaced[item] !==
+      (item > 0 && tokens[item - 1] !== '(' && tokens[item] !== ')')
+    )
+      return false
+  const operators = new Set(['AND', 'OR', 'WITH'])
+  let position = 0
+  const identifier = (): boolean => {
+    const word = tokens[position]
+    if (word === undefined || word === '(' || word === ')') return false
+    if (operators.has(word)) return false
+    position++
+    return true
+  }
+  // expression := and (OR and)*; and := with (AND with)*;
+  // with := atom (WITH exception)?; atom := id | ( expression )
+  const atom = (): boolean => {
+    if (tokens[position] !== '(') return identifier()
+    position++
+    if (!expression() || tokens[position] !== ')') return false
+    position++
+    return true
+  }
+  const withException = (): boolean => {
+    if (!atom()) return false
+    if (tokens[position] !== 'WITH') return true
+    position++
+    return identifier()
+  }
+  const conjunction = (): boolean => {
+    if (!withException()) return false
+    while (tokens[position] === 'AND') {
+      position++
+      if (!withException()) return false
+    }
+    return true
+  }
+  const expression = (): boolean => {
+    if (!conjunction()) return false
+    while (tokens[position] === 'OR') {
+      position++
+      if (!conjunction()) return false
+    }
+    return true
+  }
+  return expression() && position === tokens.length
+}
+
+// A license publish accepts as a setting, or undefined.
+function settingLicense(value: unknown): string | undefined {
+  return typeof value === 'string' &&
+    value.length <= 100 &&
+    validLicenseExpression(value)
+    ? value
+    : undefined
+}
+
+// The copyright holder of a generated LICENSE: the Git author name, then the
+// npm user, and only when both are missing the package's authors.
+function licenseHolder(
+  app: Pick<App, 'directory'>,
+  settings: Pick<Settings, 'packageName'>,
+  execute: Executor = run,
+): string {
+  const usable = (value: string | undefined) => {
+    // eslint-disable-next-line no-control-regex
+    const line = (value ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()
+    return line.length <= 100 ? line : ''
+  }
+  const ask = (command: string, args: string[]) => {
+    try {
+      const result = execute(command, args, app.directory, {
+        capture: true,
+        allowFailure: true,
+      })
+      return result.status === 0 ? usable(result.stdout) : ''
+    } catch {
+      return ''
+    }
+  }
+  return (
+    usable(process.env.GIT_AUTHOR_NAME) ||
+    ask('git', ['config', 'user.name']) ||
+    ask('npm', ['whoami']) ||
+    `${settings.packageName} authors`
+  )
+}
+
+function mitLicense(
+  holder: string,
+  year: number | string = new Date().getFullYear(),
+): string {
+  return `MIT License\n\nCopyright (c) ${year} ${holder}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n`
+}
+
+// Whether a LICENSE is exactly the text mitLicense writes for this holder, in
+// the year of any earlier release, so a release may replace or remove it. Any
+// other text is the author's, including the standard MIT text with another
+// holder line, and stays.
+function generatedMitLicense(text: string, holder: string): boolean {
+  const year = /^Copyright \(c\) (\d{4}) /m.exec(text)?.[1]
+  return year !== undefined && text === mitLicense(holder, year)
+}
+
 const localLocator =
   /^(?:workspace:|file:|link:|portal:|patch:|git\+|git:|ssh:|https?:|github:)/
 
@@ -90,6 +215,13 @@ function validateSettings(settings: Settings): void {
     throw new Error(
       'Use an npm tag such as latest, next, or beta. Tags cannot be version numbers or version ranges.',
     )
+  if (
+    settings.license &&
+    !settingLicense(settings.license)
+  )
+    throw new Error(
+      'Use an SPDX license such as MIT or Apache-2.0, or UNLICENSED for a proprietary module.',
+    )
   if (settings.repository) validateRepositoryName(settings.repository)
 }
 
@@ -104,7 +236,11 @@ function validateRepositoryName(repository: string): void {
 
 // Plain string fields of the module's `metadata` export (Open Mercato
 // ModuleInfo), read from the syntax tree without running module code.
-function moduleInfo(moduleRoot: string): { title?: string; description?: string } {
+function moduleInfo(moduleRoot: string): {
+  title?: string
+  description?: string
+  license?: string
+} {
   let source: ts.SourceFile
   try {
     const file = path.join(moduleRoot, 'index.ts')
@@ -149,7 +285,7 @@ function moduleInfo(moduleRoot: string): { title?: string; description?: string 
     )
     if (declaration) break
   }
-  const info: { title?: string; description?: string } = {}
+  const info: { title?: string; description?: string; license?: string } = {}
   let value = declaration?.initializer
   while (
     value &&
@@ -163,12 +299,44 @@ function moduleInfo(moduleRoot: string): { title?: string; description?: string 
       if (
         ts.isPropertyAssignment(entry) &&
         (ts.isIdentifier(entry.name) || ts.isStringLiteralLike(entry.name)) &&
-        (entry.name.text === 'title' || entry.name.text === 'description') &&
+        (entry.name.text === 'title' ||
+          entry.name.text === 'description' ||
+          entry.name.text === 'license') &&
         ts.isStringLiteralLike(entry.initializer) &&
         entry.initializer.text.trim()
       )
         info[entry.name.text] = entry.initializer.text.replace(/\s+/g, ' ').trim()
   return info
+}
+
+// The publish setting, then the module's metadata, then the app's license;
+// empty when none of them names one.
+function chosenLicense(
+  app: App,
+  settings: Settings,
+  moduleLicense?: string,
+): string {
+  return (
+    settings.license ||
+    settingLicense(moduleLicense) ||
+    app.manifest.license ||
+    ''
+  )
+}
+
+function packageLicense(
+  app: App,
+  settings: Settings,
+  moduleLicense?: string,
+): string {
+  const license = chosenLicense(app, settings, moduleLicense)
+  // npm and the LICENSE file use the SPDX spelling, so mit becomes MIT.
+  return /^mit$/i.test(license) ? 'MIT' : license || 'UNLICENSED'
+}
+
+// Printed when a package falls back to UNLICENSED because nobody chose a license.
+function unchosenLicenseWarning(packageName: string): string {
+  return `No license chosen, so ${packageName} is published as UNLICENSED: proprietary, others get no right to use it, and no LICENSE file is added.\n   To publish it as open source, rerun with --license MIT (or another SPDX license, such as Apache-2.0).\n   The license is saved for later releases; change it with --license or --configure. Versions already on npm keep the license they were published with.`
 }
 
 function installedVersion(app: App, name: string): string {
@@ -263,13 +431,13 @@ function preparePackage(
     settings.repository ||
     (settings.auth === 'trusted' && process.env.GITHUB_REPOSITORY) ||
     ''
+  const info = moduleInfo(sourceRoot)
   const manifest = {
     name: settings.packageName,
     version: settings.version,
-    description:
-      moduleInfo(sourceRoot).description || fallbackDescription(id),
+    description: info.description || fallbackDescription(id),
     keywords: [...moduleKeywords],
-    license: app.manifest.license || 'UNLICENSED',
+    license: packageLicense(app, settings, info.license),
     type: 'module',
     main: './dist/index.js',
     files: ['src', 'dist', 'types', 'build.cjs', 'README.md'],
@@ -311,6 +479,11 @@ function preparePackage(
     path.join(destination, 'src/.npmignore'),
     '**/__tests__/\n**/__integration__/\n**/__mocks__/\n**/*.test.*\n**/*.spec.*\n**/*.typecheck.*\n**/node_modules/\n**/.git/\n',
   )
+  if (manifest.license === 'MIT')
+    fs.writeFileSync(
+      path.join(destination, 'LICENSE'),
+      mitLicense(licenseHolder(app, settings)),
+    )
   fs.copyFileSync(
     path.join(__dirname, 'build.js'),
     path.join(destination, 'build.cjs'),
@@ -329,7 +502,12 @@ function preparePackage(
     `# ${settings.packageName}\n\nInstall in an Open Mercato app:\n\n\`\`\`sh\nnpx create-mercato-module install ${npmInstallLocator(settings.packageName)}\n\`\`\`\n\n${ageGateNote.replace('--preapprove-package', '`--preapprove-package`').replace('npmMinimalAgeGate', '`npmMinimalAgeGate`').replace("app's npmPreapprovedPackages", "app's `npmPreapprovedPackages`")}\n\n${settings.repository ? `Or install from this repository; \`@<version>\` selects a release tagged by create-mercato-module:\n\n\`\`\`sh\nnpx create-mercato-module install ${settings.repository}\nnpx create-mercato-module install ${settings.repository}@${settings.version}\n\`\`\`\n\n` : ''}Develop in your existing app and publish another version with create-mercato-module. To make this repository the source of your module while keeping the same app for development:\n\n\`\`\`sh\nnpx create-mercato-module link ${settings.repository || npmInstallLocator(settings.packageName)}\n\`\`\`\n\nThe tool checks out this repo in the app's .mercato/module-repos/${id} directory, backs up the original module, and links src/modules/${id} to the checkout. Edits in the app are edits in this repository.\n\n${settings.access === 'public' ? `## Open Mercato Modules\n\nList this module in [Open Mercato Modules](${catalogSubmitUrl(settings.packageName, publicCatalogUrl)}) so people and coding agents can find it. In the app you develop it in, \`npx create-mercato-module describe ${id}\` prints its catalog entry.\n\n` : ''}## Trusted Publishing\n\nConfigure this package's trusted publisher on npmjs.com for the GitHub owner, repository, and workflow filename publish.yml. Then dispatch the included GitHub Actions workflow or push a v<version> tag matching package.json. Releases published with create-mercato-module are tagged <version> without the v, so they do not start this workflow, and the workflow skips a version that is already on npm. For private dependencies, set a read-only NPM_READ_TOKEN repository secret.\n\nSee [create-mercato-module](https://github.com/open-mercato/create-mercato-module) for authentication, release tests, and development details.\n`,
   )
   build(destination)
-  return { destination, manifest, fileCount: files.length }
+  return {
+    destination,
+    manifest,
+    fileCount: files.length,
+    licenseDefaulted: !chosenLicense(app, settings, info.license),
+  }
 }
 
 export {
@@ -338,6 +516,13 @@ export {
   validateSettings,
   installedVersion,
   moduleInfo,
+  packageLicense,
+  licenseHolder,
+  settingLicense,
+  validLicenseExpression,
+  mitLicense,
+  generatedMitLicense,
+  unchosenLicenseWarning,
   preparePackage,
   localLocator,
   ageGateNote,

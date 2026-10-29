@@ -10,6 +10,7 @@ const { preparePackage } = require('../dist/package.js')
 const { parse } = require('../dist/cli.js')
 const { githubRepository } = require('../dist/link.js')
 const { loadConfig } = require('../dist/config.js')
+const { saveConfig } = require('../dist/publish.js')
 const { unlinkDevelopment } = require('../dist/development.js')
 
 // All fixtures are created locally. Only gh's transport and npm's metadata /
@@ -23,13 +24,14 @@ function fixture(context, options = {}) {
   fs.writeFileSync(path.join(app.directory, 'src/modules/visits/index.ts'), "export const metadata = { name: 'visits', title: 'Repository visits', version: '0.1.0' }\n")
   fs.writeFileSync(path.join(app.directory, 'src/modules.ts'), "// Preserve other modules\nexport const enabledModules = [{ id: 'auth', from: '@open-mercato/core' }]\n")
   for (const [name, version] of Object.entries(app.manifest.dependencies)) writeJson(path.join(app.directory, 'node_modules', name, 'package.json'), { name, version })
-  const settings = { packageName: options.packageName || '@fixture/visits', repository: 'release-checks/visits-example', version: '0.1.0', access: 'public' }
+  const settings = { packageName: options.packageName || '@fixture/visits', repository: 'release-checks/visits-example', version: '0.1.0', access: 'public', ...(options.license ? { license: options.license } : {}) }
   const exported = path.join(root, 'export')
   preparePackage(app, 'visits', settings, exported)
   fs.writeFileSync(path.join(exported, 'README.md'), '# Keep custom documentation\n')
   fs.mkdirSync(path.join(exported, 'src/modules/visits/__tests__'))
   fs.writeFileSync(path.join(exported, 'src/modules/visits/__tests__/author.test.ts'), 'export const authorTest = true\n')
   if (options.remoteManifest !== undefined) writeJson(path.join(exported, 'package.json'), options.remoteManifest)
+  if (options.licenseText !== undefined) fs.writeFileSync(path.join(exported, 'LICENSE'), options.licenseText)
   run('git', ['init', '-q', '-b', 'main'], exported, { capture: true })
   run('git', ['add', '.'], exported, { capture: true })
   run('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-qm', 'Module snapshot'], exported, { capture: true })
@@ -352,6 +354,95 @@ test('unlink makes a linked module local again from the checkout and keeps check
   const again = cli(['unlink', 'visits'])
   assert.equal(again.status, 1)
   assert.match(again.output, /not linked to a repository checkout/)
+})
+
+test('link keeps the saved license, and unlink keeps the license the linked releases used', context => {
+  const { app, cli } = fixture(context, { license: 'MIT', localSource: true, registration: "export const enabledModules = [{ id: 'visits', from: '@app' }]\n" })
+  saveConfig(app, 'visits', { packageName: '@fixture/visits', version: '0.1.0', access: 'public', license: 'Apache-2.0' }, false)
+  assert.equal(cli(['link', 'visits', '--repo', 'release-checks/visits-example', '--no-generate']).status, 0)
+  assert.equal(loadConfig(app).modules.visits.license, 'Apache-2.0', 'link must not forget the chosen license')
+  const linked = cli(['publish', 'visits', '--dry-run'])
+  assert.equal(linked.status, 0, linked.output)
+  assert.match(linked.output, /⚖️ License: {4}MIT\n/, 'the repository license wins while linked')
+  assert.equal(cli(['unlink', 'visits']).status, 0)
+  assert.equal(loadConfig(app).modules.visits.license, 'MIT')
+  const local = cli(['publish', 'visits', '--dry-run', '--yes'])
+  assert.equal(local.status, 0, local.output)
+  assert.match(local.output, /⚖️ License: {4}MIT\n/, 'the next release from the app keeps the license')
+  assert.doesNotMatch(local.output, /No license chosen/)
+})
+
+test('unlink keeps a nested SPDX license from the repository, and the next scripted publish uses it', context => {
+  const license = '((MIT OR Apache-2.0) AND BSD-3-Clause)'
+  const { app, cli } = fixture(context, { license })
+  assert.equal(cli(['link', 'release-checks/visits-example', '--no-generate']).status, 0)
+  assert.equal(loadConfig(app).modules.visits.license, undefined, 'no license was saved before the link')
+  assert.equal(cli(['unlink', 'visits']).status, 0)
+  assert.equal(loadConfig(app).modules.visits.license, license, 'unlink saves the license the linked releases used')
+  const local = cli(['publish', 'visits', '--dry-run', '--yes'])
+  assert.equal(local.status, 0, local.output)
+  assert.match(local.output, /⚖️ License: {4}\(\(MIT OR Apache-2\.0\) AND BSD-3-Clause\)\n/, 'the next release from the app keeps the license')
+  assert.doesNotMatch(local.output, /No license chosen|Use an SPDX license/)
+})
+
+test('publish --license warns when a linked repository keeps another license', context => {
+  const { app, cli } = fixture(context, { license: 'MIT' })
+  assert.equal(cli(['link', 'release-checks/visits-example', '--no-generate']).status, 0)
+  const other = cli(['publish', 'visits', '--dry-run', '--license', 'Apache-2.0'])
+  assert.equal(other.status, 0, other.output)
+  assert.match(other.output, /⚖️ License: {4}MIT\n/, 'the repository license wins while linked')
+  const file = `${loadConfig(app).modules.visits.development.checkoutPath}/package.json`
+  assert.ok(other.output.includes(`⚠️ --license Apache-2.0 has no effect on this release: the module is linked to its repository, and linked releases keep the license in the repository's package.json, MIT.\n   To publish under Apache-2.0, change the license field in ${file} from MIT to Apache-2.0, commit it and publish again.`), other.output)
+  const same = cli(['publish', 'visits', '--dry-run', '--license', 'MIT'])
+  assert.equal(same.status, 0, same.output)
+  assert.doesNotMatch(same.output, /has no effect/, 'a matching license needs no warning')
+  const preload = path.join(app.directory, '..', 'interactive.cjs')
+  fs.writeFileSync(preload, `Object.defineProperty(process.stdin,'isTTY',{value:true});require('node:readline/promises').createInterface=()=>({question:async(label)=>{console.log('PROMPT:'+label);return ''},close(){}})\n`)
+  const configured = cli(['publish', 'visits', '--configure'], { NODE_OPTIONS: `--require ${preload}` })
+  assert.equal(configured.status, 1, configured.output)
+  assert.doesNotMatch(configured.output, /PROMPT:⚖️ License/, 'a linked module has no license question')
+  assert.ok(configured.output.includes(`⚖️ License: a linked module keeps the license in its repository's package.json. To change it, edit the license field in ${file}.`), configured.output)
+})
+
+test('linked releases of an MIT repository ship the repository LICENSE, not generated text', context => {
+  const own = 'MIT License\n\nCopyright (c) 2025 Fixture Ltd.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software.\n'
+  const { app, cli, bare, published } = fixture(context, { license: 'MIT', licenseText: own })
+  assert.equal(cli(['link', 'release-checks/visits-example', '--no-generate']).status, 0)
+  const released = cli(['publish', 'visits', '--yes'])
+  assert.equal(released.status, 0, released.output)
+  const archive = JSON.parse(fs.readFileSync(published, 'utf8'))[1]
+  assert.equal(run('tar', ['-xOzf', archive, 'package/LICENSE'], app.directory, { capture: true }).stdout, own, 'the npm archive carries the repository LICENSE')
+  assert.equal(run('git', ['--git-dir', bare, 'show', 'main:LICENSE'], app.directory, { capture: true }).stdout, own, 'the repository keeps its LICENSE')
+})
+
+test('a release from the app ships the LICENSE its dedicated repository keeps', context => {
+  const own = 'MIT License\n\nCopyright (c) 2025 Fixture Ltd.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software.\n'
+  const { app, cli, bare, published } = fixture(context, { license: 'MIT', licenseText: own, localSource: true })
+  const released = cli(['publish', 'visits', '--package', '@fixture/visits', '--repo', 'release-checks/visits-example', '--version', '0.1.1', '--license', 'MIT', '--yes', '--overwrite-repo'])
+  assert.equal(released.status, 0, released.output)
+  assert.match(released.output, /release-checks\/visits-example keeps its own LICENSE, so the npm package carries that file\./)
+  const archive = JSON.parse(fs.readFileSync(published, 'utf8'))[1]
+  assert.equal(run('tar', ['-xOzf', archive, 'package/LICENSE'], app.directory, { capture: true }).stdout, own, 'npm and the repository carry the same LICENSE')
+  assert.equal(run('git', ['--git-dir', bare, 'show', 'main:LICENSE'], app.directory, { capture: true }).stdout, own)
+})
+
+test('a release under another license never ships the MIT LICENSE its dedicated repository keeps, and warns', context => {
+  const own = 'MIT License\n\nCopyright (c) 2025 Fixture Ltd.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software.\n'
+  for (const license of ['UNLICENSED', 'Apache-2.0', undefined]) {
+    const { app, cli, bare, published } = fixture(context, { license: 'MIT', licenseText: own, localSource: true })
+    const released = cli(['publish', 'visits', '--package', '@fixture/visits', '--repo', 'release-checks/visits-example', '--version', '0.1.1', ...(license ? ['--license', license] : []), '--yes', '--overwrite-repo'])
+    assert.equal(released.status, 0, released.output)
+    const shown = license ?? 'UNLICENSED'
+    assert.ok(released.output.includes(`⚖️ License:    ${shown}${license ? '' : ' (no license chosen)'}`), released.output)
+    assert.ok(released.output.includes(`⚠️ release-checks/visits-example keeps its own LICENSE, but this package is published as ${shown}, so the npm package does not carry that file.`), released.output)
+    assert.doesNotMatch(released.output, /so the npm package carries that file/)
+    if (!license) assert.match(released.output, /No license chosen, so @fixture\/visits is published as UNLICENSED/)
+    const archive = JSON.parse(fs.readFileSync(published, 'utf8'))[1]
+    assert.equal(JSON.parse(run('tar', ['-xOzf', archive, 'package/package.json'], app.directory, { capture: true }).stdout).license, shown)
+    const listing = run('tar', ['-tzf', archive], app.directory, { capture: true }).stdout.split('\n')
+    assert.ok(!listing.includes('package/LICENSE'), `a ${shown} package carries no MIT grant`)
+    assert.equal(run('git', ['--git-dir', bare, 'show', 'main:LICENSE'], app.directory, { capture: true }).stdout, own, 'the repository keeps its LICENSE')
+  }
 })
 
 test('unlink restores the link when saving settings fails', context => {

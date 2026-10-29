@@ -33,11 +33,11 @@ if (args[0] === 'api' && args[1] === 'user') {
   process.exit(0)
 }
 
-const contents = args[0] === 'api' ? /^repos\/([^/]+\/[^/]+)\/contents\/package\.json(?:\?ref=([0-9a-f]{40}))?$/.exec(args[1] ?? '') : null
+const contents = args[0] === 'api' ? /^repos\/([^/]+\/[^/]+)\/contents\/(package\.json|LICENSE)(?:\?ref=([0-9a-f]{40}))?$/.exec(args[1] ?? '') : null
 if (contents) {
   const directory = repository(contents[1])
   if (!fs.existsSync(directory)) fail('gh: Not Found (HTTP 404)')
-  const file = git(['show', `${contents[2] ?? 'main'}:package.json`], directory)
+  const file = git(['show', `${contents[3] ?? 'main'}:${contents[2]}`], directory)
   if (file.status !== 0) fail('gh: Not Found (HTTP 404)')
   process.stdout.write(file.stdout)
   process.exit(0)
