@@ -42,11 +42,11 @@ Publish `@tanstack/react-query` and `@tanstack/react-table` as peer dependencies
 
 ### Phase 1: Host-provided peers
 
-- [ ] 1.1 Add hostProvidedPackages and route them to caret peers plus exact dev dependencies
+- [x] 1.1 Add hostProvidedPackages and route them to caret peers plus exact dev dependencies - fa627c7
 
 ### Phase 2: Linked release keeps peer choice
 
-- [ ] 2.1 Drop repository-declared peers from merged dependencies
+- [x] 2.1 Drop repository-declared peers from merged dependencies - 59c6480
 
 ### Phase 3: Documentation
 
