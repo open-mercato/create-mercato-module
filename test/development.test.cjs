@@ -12,7 +12,7 @@ const { run, writeJson } = require('../dist/common.js')
 const settings = { repository: 'fixture/mercato-visits', packageName: '@fixture/visits' }
 
 function fixture(context, options = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-source-link-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-source-link-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const directory = path.join(root, 'app')
   const remote = path.join(root, 'remote')

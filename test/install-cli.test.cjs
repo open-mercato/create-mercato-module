@@ -11,7 +11,7 @@ const commit = '0123456789abcdef0123456789abcdef01234567'
 
 function fixture(context, options = {}) {
   const commits = options.commits ?? {}
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-install-cli-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-install-cli-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const app = path.join(root, 'app')
   const binary = path.join(root, 'bin')

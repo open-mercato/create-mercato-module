@@ -2,7 +2,12 @@ import type { App, Settings, ExportedPackage, Executor } from './types.js'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { readJson, writeJson, run, within } from './common.js'
-import { preparePackage, localLocator } from './package.js'
+import {
+  preparePackage,
+  localLocator,
+  moduleKeywords,
+  fallbackDescription,
+} from './package.js'
 import { createNpmRunner } from './npm-auth.js'
 import { linkedModuleDirectory } from './development.js'
 import type { DevelopmentLink } from './development.js'
@@ -191,17 +196,31 @@ function exportLinkedPackage(
       'This module repository is marked private: true in package.json, which blocks npm publication. Remove that field to publish; use --access restricted for a private npm package.',
     )
   const manifest = { ...original, ...prepared.manifest }
+  // The repository's own description wins; an empty one, or the fallback its
+  // first export wrote, gives way to the description in the module metadata.
+  if (
+    typeof original.description === 'string' &&
+    original.description.trim() &&
+    original.description !== fallbackDescription(id)
+  )
+    manifest.description = original.description
   for (const field of [
-    'description',
     'license',
     'author',
-    'keywords',
     'homepage',
     'bugs',
   ]) {
     if (original[field] !== undefined)
       (manifest as Record<string, unknown>)[field] = original[field]
   }
+  // The repository's own keywords stay; the catalog keywords are always added.
+  if (Array.isArray(original.keywords))
+    manifest.keywords = [
+      ...new Set([
+        ...moduleKeywords,
+        ...original.keywords.filter((keyword) => typeof keyword === 'string'),
+      ]),
+    ]
   for (const field of [
     'dependencies',
     'peerDependencies',
@@ -552,7 +571,12 @@ function publishRepository(
         settings.repository!,
         settings.access === 'public' ? '--public' : '--private',
         '--description',
-        `Open Mercato module: ${prepared.manifest.mercatoModule.id}`,
+        // GitHub limits repository descriptions to 350 characters of one line.
+        prepared.manifest.description.length <= 350 &&
+          // eslint-disable-next-line no-control-regex
+          !/[\u0000-\u001f\u007f-\u009f]/.test(prepared.manifest.description)
+          ? prepared.manifest.description
+          : fallbackDescription(prepared.manifest.mercatoModule.id),
       ],
       prepared.workspace,
     )
@@ -690,6 +714,27 @@ function tagRelease(
       ? `the tag ${version} already exists`
       : 'GitHub refused the request',
   )
+}
+
+// Topics let people and Open Mercato Modules find module repositories on
+// GitHub. Adding a topic twice changes nothing. Best effort, like the tag: npm
+// already has the release.
+const repositoryTopics = ['open-mercato-module', 'open-mercato']
+
+function addTopics(repository: string, cwd: string, execute: Executor = run) {
+  try {
+    execute(
+      'gh',
+      [
+        'repo',
+        'edit',
+        repository,
+        ...repositoryTopics.flatMap((topic) => ['--add-topic', topic]),
+      ],
+      cwd,
+      { capture: true, allowFailure: true },
+    )
+  } catch {}
 }
 
 function ensureAuthor(checkout: string, execute: Executor): void {
@@ -837,21 +882,21 @@ function publish(
     npm.close()
   }
   if (!release) return {}
-  return {
-    commit: release.commit,
-    ...tagRelease(
-      settings.repository!,
-      release.commit,
-      settings.version,
-      prepared.destination,
-      execute,
-    ),
-  }
+  const tagged = tagRelease(
+    settings.repository!,
+    release.commit,
+    settings.version,
+    prepared.destination,
+    execute,
+  )
+  addTopics(settings.repository!, prepared.destination, execute)
+  return { commit: release.commit, ...tagged }
 }
 
 export { loadConfig, saveConfig } from './config.js'
 
 export {
+  addTopics,
   exportPackage,
   githubState,
   inspectRepository,

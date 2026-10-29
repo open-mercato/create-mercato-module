@@ -15,7 +15,7 @@ const { unlinkDevelopment } = require('../dist/development.js')
 // All fixtures are created locally. Only gh's transport and npm's metadata /
 // submission are replaced; cloning, editing, packing, commits and pushes are real.
 function fixture(context, options = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mercato-link-cli-'))
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mercato-link-cli-'))
   context.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const app = { directory: path.join(root, 'app'), manifest: { name: 'fixture-app', private: true, dependencies: { '@open-mercato/core': '0.9.0', '@open-mercato/shared': '0.9.0', '@open-mercato/ui': '0.9.0', react: '19.0.0' } } }
   writeJson(path.join(app.directory, 'package.json'), app.manifest)
@@ -161,13 +161,28 @@ test('CLI switches an installed package registration to @app and publishes a new
   const released = cli(['publish', 'visits', '--yes'])
   assert.equal(released.status, 0, released.output)
   assert.match(run('git', ['--git-dir', bare, 'show', 'main:dist/modules/visits/new.js'], app.directory, { capture: true }).stdout, /New linked feature/)
-  assert.match(released.output, /🐙 GitHub: +release-checks\/visits-example \(existing PUBLIC repository; tagged 0\.1\.1 once npm accepts it\)/, 'the approval summary discloses the tag')
+  assert.match(released.output, /🐙 GitHub: +release-checks\/visits-example \(existing PUBLIC repository; tagged 0\.1\.1 and given the open-mercato-module and open-mercato topics once npm accepts it\)/, 'the approval summary discloses the tag and topics')
+  assert.deepEqual(JSON.parse(fs.readFileSync(`${bare}.json`, 'utf8')).topics, ['open-mercato-module', 'open-mercato'])
+  assert.match(released.output, /📚 Add it to the catalog: https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits\n {3}Open Mercato Modules has not launched yet, so this link does not open until it does\.\n {3}Print its catalog entry: npx create-mercato-module describe visits/)
+  const described = cli(['describe', 'visits'])
+  assert.equal(described.status, 0, described.output)
+  assert.match(described.stdout, /^npm: "@fixture\/visits"\ngithub: release-checks\/visits-example$/m, 'a linked module is described from its saved repository')
+  assert.match(described.stdout, /^summary: Repository visits module for Open Mercato apps\. # TODO/m)
   assert.match(released.output, /Tagged release-checks\/visits-example 0\.1\.1/)
   assert.match(released.output, /npx create-mercato-module install @fixture\/visits@0\.1\.1\n {2}npx create-mercato-module install release-checks\/visits-example@0\.1\.1/)
   assert.match(released.output, /5 days after publication \(Yarn npmMinimalAgeGate\).*--preapprove-package/)
   assert.doesNotMatch(released.output, /yarn mercato module add/)
   const tagged = (ref) => run('git', ['--git-dir', bare, 'rev-parse', `${ref}^{commit}`], app.directory, { capture: true }).stdout.trim()
   assert.equal(tagged('0.1.1'), tagged('main'), 'install owner/repo@0.1.1 must find the release commit')
+})
+
+test('CLI release summary names an unscoped package with npm: so the printed install command reaches npm', context => {
+  const { cli } = fixture(context, { packageName: 'visits' })
+  const linked = cli(['link', 'npm:visits', '--no-generate'])
+  assert.equal(linked.status, 0, linked.output)
+  const released = cli(['publish', 'visits', '--yes'])
+  assert.equal(released.status, 0, released.output)
+  assert.match(released.output, /npx create-mercato-module install npm:visits@0\.1\.1\n {2}npx create-mercato-module install release-checks\/visits-example@0\.1\.1/)
 })
 
 test('CLI reads npm 12 repository metadata, which npm wraps in an array', context => {

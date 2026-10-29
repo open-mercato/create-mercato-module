@@ -10,6 +10,8 @@ Surfaces other people and their stored data depend on. A breaking change to any 
 | Published package layout | `src/package.ts`, `src/build.ts` | Changing `exports`, the `src`/`dist`/`types` layout, the `mercatoModule` marker, or peer-dependency rules | Apps install these packages; keep existing import paths resolving. `mercatoModule.formatVersion` changes only with a consumer-side plan |
 | Dedicated repository contents | `src/publish.ts`, `src/workflow.ts` | Changing owned paths, the `Release <package>@<version>` commit subject, or the `Mercato-Source:` trailer | Old repositories must stay publishable; new checks treat missing markers as "unknown", not as an error |
 | Generated workflow | `src/workflow.ts` | Changing triggers, required secrets, or the trusted-publishing contract | Existing repositories keep their workflow; document what users must update |
+| Catalog metadata | `src/package.ts` keywords, `src/publish.ts` repository topics | Removing or renaming the `open-mercato` or `open-mercato-module` keyword or topic | Open Mercato Modules and npm search find modules by them; add new keywords next to them |
+| `describe` output | `src/describe.ts` | Renaming or removing a field, or printing YAML the catalog's descriptor schema rejects | The catalog takes this YAML as a descriptor; `test/describe.test.cjs` checks it against a copy of `descriptor-1.json` |
 | Runtime requirement | `package.json` `engines` | Raising the minimum Node version | Release notes and a version bump |
 
 `dist/` module exports are not a supported programmatic API; only the CLI is.

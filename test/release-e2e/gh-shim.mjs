@@ -90,6 +90,18 @@ if (args[0] === 'repo' && args[1] === 'create') {
   process.exit(0)
 }
 
+// gh repo edit <owner>/<repo> --add-topic <topic> [--add-topic <topic>...]
+if (args[0] === 'repo' && args[1] === 'edit') {
+  const directory = repository(args[2])
+  if (!fs.existsSync(directory)) fail('gh: Not Found (HTTP 404)')
+  const options = args.slice(3)
+  if (!options.length || options.length % 2 || options.some((value, index) => index % 2 === 0 ? value !== '--add-topic' : !/^[a-z0-9][a-z0-9-]{0,49}$/.test(value))) fail(`gh shim: unsupported repo edit ${args.join(' ')}`)
+  const details = JSON.parse(fs.readFileSync(`${directory}.json`, 'utf8'))
+  const topics = [...new Set([...(details.topics ?? []), ...options.filter((_, index) => index % 2 === 1)])]
+  fs.writeFileSync(`${directory}.json`, JSON.stringify({ ...details, topics }))
+  process.exit(0)
+}
+
 if (args[0] === 'repo' && args[1] === 'clone' && args[3]) {
   const directory = repository(args[2])
   if (!fs.existsSync(directory)) fail('gh: Not Found (HTTP 404)')
