@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
 const { scaffold, registration } = require('../dist/scaffold.js')
 const { findApp, writeJson, readJson, run } = require('../dist/common.js')
-const { preparePackage, validateSettings, moduleInfo, licenseHolder, mitLicense, generatedMitLicense, npmInstallLocator } = require('../dist/package.js')
+const { preparePackage, validateSettings, moduleInfo, licenseHolder, mitLicense, generatedMitLicense, npmInstallLocator, validLicenseExpression } = require('../dist/package.js')
 const { addTopics, exportPackage, githubState, publish, publishRepository, tagRelease, loadConfig, saveConfig } = require('../dist/publish.js')
 const { parse } = require('../dist/cli.js')
 const { installFromInput } = require('../dist/install.js')
@@ -622,6 +622,17 @@ test('a local metadata in a helper never overrides the exported license', (conte
     assert.equal(prepared.manifest.license, 'UNLICENSED', `a local metadata in a ${kind} does not make the package MIT`)
     assert.ok(!fs.existsSync(path.join(destination, 'LICENSE')), `a local metadata in a ${kind} adds no MIT LICENSE`)
   }
+})
+
+test('license settings accept any valid SPDX expression and refuse unbalanced or malformed ones', () => {
+  for (const license of ['MIT', '(MIT OR Apache-2.0)', '((MIT OR Apache-2.0) AND BSD-3-Clause)', 'MIT AND (Apache-2.0 OR (BSD-3-Clause AND ISC))', 'Apache-2.0 WITH LLVM-exception', 'GPL-2.0+', 'LicenseRef-Custom', 'UNLICENSED']) {
+    assert.equal(validLicenseExpression(license), true, license)
+    assert.doesNotThrow(() => validateSettings({ ...settings, license }), license)
+  }
+  for (const license of ['(MIT', 'MIT)', 'MIT AND', 'AND MIT', 'MIT  OR Apache-2.0', ' MIT', 'MIT ', '( MIT )', '()', 'MIT WITH', 'MIT WITH (LLVM-exception)', 'MIT Apache-2.0', 'MIT; echo', `MIT OR ${'A'.repeat(95)}`]) {
+    assert.throws(() => validateSettings({ ...settings, license }), /SPDX license/, license)
+  }
+  assert.equal(validLicenseExpression(`MIT OR ${'A'.repeat(95)}`), true, 'the 100-character cap belongs to the setting check')
 })
 
 test('generated module README uses the tool install command and explains the Yarn age gate', (context) => {

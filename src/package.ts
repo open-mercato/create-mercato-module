@@ -49,15 +49,80 @@ function npmInstallLocator(packageName: string): string {
   return packageName.startsWith('@') ? packageName : `npm:${packageName}`
 }
 
-// An SPDX license expression such as MIT or (MIT OR Apache-2.0), or UNLICENSED.
-const licensePattern =
-  /^\(?[A-Za-z0-9][A-Za-z0-9.+-]*\)?(?: (?:AND|OR|WITH) \(?[A-Za-z0-9][A-Za-z0-9.+-]*\)?)*$/
+// An SPDX license expression such as MIT, (MIT OR Apache-2.0) or
+// ((MIT OR Apache-2.0) AND BSD-3-Clause), or UNLICENSED. Single spaces
+// separate words; parentheses nest to any depth and must balance.
+function validLicenseExpression(value: string): boolean {
+  const tokens: string[] = []
+  const spaced: boolean[] = []
+  const token = /\(|\)|[A-Za-z0-9][A-Za-z0-9.+-]*/y
+  let index = 0
+  while (index < value.length) {
+    const space = value[index] === ' '
+    if (space) index++
+    token.lastIndex = index
+    const match = token.exec(value)
+    if (!match) return false
+    tokens.push(match[0])
+    spaced.push(space)
+    index = token.lastIndex
+  }
+  // A space goes between words and around operators, never inside
+  // parentheses or at either end.
+  for (let item = 0; item < tokens.length; item++)
+    if (
+      spaced[item] !==
+      (item > 0 && tokens[item - 1] !== '(' && tokens[item] !== ')')
+    )
+      return false
+  const operators = new Set(['AND', 'OR', 'WITH'])
+  let position = 0
+  const identifier = (): boolean => {
+    const word = tokens[position]
+    if (word === undefined || word === '(' || word === ')') return false
+    if (operators.has(word)) return false
+    position++
+    return true
+  }
+  // expression := and (OR and)*; and := with (AND with)*;
+  // with := atom (WITH exception)?; atom := id | ( expression )
+  const atom = (): boolean => {
+    if (tokens[position] !== '(') return identifier()
+    position++
+    if (!expression() || tokens[position] !== ')') return false
+    position++
+    return true
+  }
+  const withException = (): boolean => {
+    if (!atom()) return false
+    if (tokens[position] !== 'WITH') return true
+    position++
+    return identifier()
+  }
+  const conjunction = (): boolean => {
+    if (!withException()) return false
+    while (tokens[position] === 'AND') {
+      position++
+      if (!withException()) return false
+    }
+    return true
+  }
+  const expression = (): boolean => {
+    if (!conjunction()) return false
+    while (tokens[position] === 'OR') {
+      position++
+      if (!conjunction()) return false
+    }
+    return true
+  }
+  return expression() && position === tokens.length
+}
 
 // A license publish accepts as a setting, or undefined.
 function settingLicense(value: unknown): string | undefined {
   return typeof value === 'string' &&
     value.length <= 100 &&
-    licensePattern.test(value)
+    validLicenseExpression(value)
     ? value
     : undefined
 }
@@ -253,9 +318,7 @@ function chosenLicense(
 ): string {
   return (
     settings.license ||
-    (moduleLicense && licensePattern.test(moduleLicense)
-      ? moduleLicense
-      : '') ||
+    settingLicense(moduleLicense) ||
     app.manifest.license ||
     ''
   )
@@ -456,6 +519,7 @@ export {
   packageLicense,
   licenseHolder,
   settingLicense,
+  validLicenseExpression,
   mitLicense,
   generatedMitLicense,
   unchosenLicenseWarning,

@@ -372,6 +372,19 @@ test('link keeps the saved license, and unlink keeps the license the linked rele
   assert.doesNotMatch(local.output, /No license chosen/)
 })
 
+test('unlink keeps a nested SPDX license from the repository, and the next scripted publish uses it', context => {
+  const license = '((MIT OR Apache-2.0) AND BSD-3-Clause)'
+  const { app, cli } = fixture(context, { license })
+  assert.equal(cli(['link', 'release-checks/visits-example', '--no-generate']).status, 0)
+  assert.equal(loadConfig(app).modules.visits.license, undefined, 'no license was saved before the link')
+  assert.equal(cli(['unlink', 'visits']).status, 0)
+  assert.equal(loadConfig(app).modules.visits.license, license, 'unlink saves the license the linked releases used')
+  const local = cli(['publish', 'visits', '--dry-run', '--yes'])
+  assert.equal(local.status, 0, local.output)
+  assert.match(local.output, /⚖️ License: {4}\(\(MIT OR Apache-2\.0\) AND BSD-3-Clause\)\n/, 'the next release from the app keeps the license')
+  assert.doesNotMatch(local.output, /No license chosen|Use an SPDX license/)
+})
+
 test('publish --license warns when a linked repository keeps another license', context => {
   const { app, cli } = fixture(context, { license: 'MIT' })
   assert.equal(cli(['link', 'release-checks/visits-example', '--no-generate']).status, 0)
