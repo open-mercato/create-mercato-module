@@ -42,4 +42,4 @@ Open Mercato Modules answers at https://modules.openmercato.com (200 on `/`, `/m
 
 ### Phase 2: Documentation
 
-- [ ] 2.1 Update README, guide and CHANGELOG
+- [x] 2.1 Update README, guide and CHANGELOG - 3da2fa3
