@@ -194,9 +194,16 @@ test('publication needs the package name retyped interactively and explicit appr
   const confirmed = cli(arguments_)
   assert.equal(confirmed.status, 0, confirmed.output)
   assert.match(confirmed.output, /Submitted @fixture\/visits@0\.1\.0/)
-  assert.match(confirmed.output, /Add it to the catalog: https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits/)
+  assert.match(confirmed.output, /Add it to the catalog: https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits\n {3}Its page once listed: https:\/\/modules\.openmercato\.com\/m\/@fixture\/visits\n/)
+  assert.doesNotMatch(confirmed.output, /not launched/, 'the live catalog needs no pending note')
   assert.equal(JSON.parse(fs.readFileSync(process.env.FIXTURE_REGISTRY, 'utf8'))[0], 'publish')
   assert.equal(loadConfig(app).modules.visits.lastPublishedVersion, '0.1.0')
+  process.env.MERCATO_CATALOG_URL = 'http://127.0.0.1:4321/'
+  context.after(() => { delete process.env.MERCATO_CATALOG_URL })
+  const overridden = cli(arguments_.map(value => (value === settings.version ? '0.1.1' : value)))
+  delete process.env.MERCATO_CATALOG_URL
+  assert.equal(overridden.status, 0, overridden.output)
+  assert.match(overridden.output, /Add it to the catalog: http:\/\/127\.0\.0\.1:4321\/submit\?npm=@fixture\/visits\n {3}Its page once listed: http:\/\/127\.0\.0\.1:4321\/m\/@fixture\/visits\n/, 'MERCATO_CATALOG_URL names the catalog deployment after publish')
   delete process.env.FIXTURE_CONFIRMATION
   delete process.env.FIXTURE_REGISTRY
   fs.rmSync(path.join(app.directory, '.mercato/module-tool.json'))
