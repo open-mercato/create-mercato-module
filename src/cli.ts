@@ -6,6 +6,7 @@ import { findApp, validateId, run } from './common.js'
 import { scaffold } from './scaffold.js'
 import {
   ageGateNote,
+  catalogModuleUrl,
   catalogOpen,
   catalogPendingNote,
   catalogSubmitUrl,
@@ -555,7 +556,7 @@ async function main(argv = process.argv.slice(2)) {
       console.log(`\n🏷️ Tagged ${settings.repository} ${released.tag}.`)
     if (released.tagWarning) console.log(`\n⚠️ ${released.tagWarning}`)
     console.log(
-      `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  npx create-mercato-module install ${npmInstallLocator(settings.packageName)}@${settings.version}${released.tag ? `\n  npx create-mercato-module install ${settings.repository}@${released.tag}` : ''}\n⏳ ${ageGateNote}${settings.access === 'public' ? `\n📚 Add it to the catalog: ${catalogSubmitUrl(settings.packageName)}${catalogOpen ? '' : `\n   ${catalogPendingNote}`}\n   Print its catalog entry: npx create-mercato-module describe ${args.id}` : ''}`,
+      `\n✅ Submitted ${settings.packageName}@${settings.version} to npm. Registry scanning may delay availability.\nInstall in another app once available:\n  npx create-mercato-module install ${npmInstallLocator(settings.packageName)}@${settings.version}${released.tag ? `\n  npx create-mercato-module install ${settings.repository}@${released.tag}` : ''}\n⏳ ${ageGateNote}${settings.access === 'public' ? `\n📚 Add it to the catalog: ${catalogSubmitUrl(settings.packageName)}\n   ${catalogOpen ? `Its page once listed: ${catalogModuleUrl(settings.packageName)}` : catalogPendingNote}\n   Print its catalog entry: npx create-mercato-module describe ${args.id}` : ''}`,
     )
   } finally {
     prompt?.close()

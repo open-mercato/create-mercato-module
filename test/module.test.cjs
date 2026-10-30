@@ -70,9 +70,11 @@ test('init and publish outside an Open Mercato app show actionable guidance and 
     assert.match(result.stderr, /No files were changed/)
     assert.deepEqual(fs.readdirSync(unrelated, { recursive: true }), before)
   }
-  const help = spawnSync(process.execPath, [path.join(__dirname, '../dist/cli.js'), '--help'], { cwd: unrelated, encoding: 'utf8' })
+  const help = spawnSync(process.execPath, [path.join(__dirname, '../dist/cli.js'), '--help'], { cwd: unrelated, encoding: 'utf8', env: { ...process.env, MERCATO_CATALOG_URL: '' } })
   assert.equal(help.status, 0)
   assert.match(help.stdout, /npx create-mercato-module install @fastwhitecat\/integration-ksef-direct@0\.1\.8\n/, 'the npm example is a module the catalog verifies')
+  assert.match(help.stdout, /to list it at https:\/\/modules\.openmercato\.com\/submit\.\n/, 'help links the live catalog')
+  assert.doesNotMatch(help.stdout, /not launched/)
 })
 
 test('recognizes app subdirectories and distinguishes missing dependencies from an unrelated project', (context) => {

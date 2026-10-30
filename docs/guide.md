@@ -287,13 +287,13 @@ Prints the module's Open Mercato Modules entry as YAML. It reads the saved publi
 | `--open` | Also open the catalog's submit page for the package in your browser |
 | `--package @your-name/mercato-visits` | Describe the module as this package, for example before its first publish; the saved repository of another package is left out |
 
-Open Mercato Modules has not launched yet. Until it does, `describe`, `publish` and `--help` print its links with a note saying so, and `--open` does not open them. To use another deployment of the catalog, such as a local copy of the site, set `MERCATO_CATALOG_URL` to its origin, for example `MERCATO_CATALOG_URL=http://127.0.0.1:4321`; `describe`, `--open` and the message after `publish` then use it. Generated module READMEs always link the public catalog.
+`describe` and the message after `publish` link the submit page and the page the catalog gives the module once it is listed (`https://modules.openmercato.com/m/<package>`). To use another deployment of the catalog, such as a local copy of the site, set `MERCATO_CATALOG_URL` to its origin, for example `MERCATO_CATALOG_URL=http://127.0.0.1:4321`; `describe`, `--open` and the message after `publish` then link it instead. Generated module READMEs always link the public catalog.
 
 ## List your module
 
-Open Mercato Modules, the catalog at modules.openmercato.com, will list official and community modules with what they add to an app and the Open Mercato versions they install on. Coding agents will be able to check it before they build a feature (see For agents on the catalog site). The catalog lists public npm packages and GitHub repositories.
+Open Mercato Modules, the catalog at modules.openmercato.com, lists official and community modules with what they add to an app and the Open Mercato versions they install on. Coding agents can check it before they build a feature (see For agents on the catalog site). The catalog lists public npm packages and GitHub repositories.
 
-The catalog has not launched yet, so its submit page does not open and no module can be listed yet. Until it launches, prepare the entry with `describe` below and submit it once the site opens; npm search already finds your package by the keywords every release carries. After launch, `publish` prints the submit link for your package after a public release. Open it and check the entry. The page builds the entry and opens GitHub with the file filled in; commit it and open the pull request. To prepare the entry in the terminal instead:
+After a public release, `publish` prints the submit link for your package and the page the catalog gives the module once it is listed. Open the submit link and check the entry. The page builds the entry and opens GitHub with the file filled in; commit it and open the pull request. To prepare the entry in the terminal instead:
 
 ```bash
 npx create-mercato-module describe visits
@@ -304,7 +304,7 @@ npx create-mercato-module describe visits
 # Write each value marked TODO, then delete those TODO comments (the catalog rejects a file that still has them).
 # Submit the module at
 # https://modules.openmercato.com/submit?npm=@your-name/mercato-visits
-# Open Mercato Modules has not launched yet, so this link does not open until it does.
+# Once listed, its page is https://modules.openmercato.com/m/@your-name/mercato-visits
 
 npm: "@your-name/mercato-visits"
 github: your-name/mercato-visits
@@ -314,7 +314,7 @@ summary: Visits module for Open Mercato apps. # TODO: what it adds, 20 to 140 ch
 whenToUse: Use when an Open Mercato app needs the Visits module. # TODO: when an app needs it, 40 to 240 characters
 ```
 
-Before the package's first release, which you describe with `--package`, the header also says `# Publish the package to npm before you submit: the catalog reads it from npm.` The pending-launch line goes once the catalog launches, or when `MERCATO_CATALOG_URL` names another deployment.
+Before the package's first release, which you describe with `--package`, the header also says `# Publish the package to npm before you submit: the catalog reads it from npm.`
 
 `summary` comes from `description` in the module's `metadata` (`src/modules/<id>/index.ts`) when it is 20 to 140 characters of plain text; set it there and the same text becomes the npm package description. Write each value marked `TODO` and delete the `# TODO` comments before you submit: the catalog's check rejects a file that still has them, even when the value next to a comment is right. Keep `category: operations` if it fits. Restricted packages cannot be listed, so `describe` stops for them.
 
