@@ -33,8 +33,8 @@ function fixture(context) {
   npm(true)
   const preload = path.join(root, 'interactive.cjs')
   fs.writeFileSync(preload, `Object.defineProperty(process.stdin,'isTTY',{value:true});require('node:readline/promises').createInterface=()=>({question:async(label)=>{console.log('PROMPT:'+label);return label.includes('Publish this module')?(process.env.FIXTURE_CONFIRMATION||'n'):''},close(){}})\n`)
-  function cli(args, interactive = true) {
-    const result = spawnSync(process.execPath, [...(interactive ? ['--require', preload] : []), path.resolve(__dirname, '../dist/cli.js'), ...args], { cwd: app.directory, encoding: 'utf8', env: { ...process.env, PATH: `${binary}${path.delimiter}${process.env.PATH}`, NPM_TOKEN: '', NODE_AUTH_TOKEN: '' } })
+  function cli(args, interactive = true, env = {}) {
+    const result = spawnSync(process.execPath, [...(interactive ? ['--require', preload] : []), path.resolve(__dirname, '../dist/cli.js'), ...args], { cwd: app.directory, encoding: 'utf8', env: { ...process.env, MERCATO_CATALOG_URL: '', PATH: `${binary}${path.delimiter}${process.env.PATH}`, NPM_TOKEN: '', NODE_AUTH_TOKEN: '', ...env } })
     return { ...result, output: `${result.stdout}\n${result.stderr}` }
   }
   return { root, app, npm, cli }
@@ -198,10 +198,7 @@ test('publication needs the package name retyped interactively and explicit appr
   assert.doesNotMatch(confirmed.output, /not launched/, 'the live catalog needs no pending note')
   assert.equal(JSON.parse(fs.readFileSync(process.env.FIXTURE_REGISTRY, 'utf8'))[0], 'publish')
   assert.equal(loadConfig(app).modules.visits.lastPublishedVersion, '0.1.0')
-  process.env.MERCATO_CATALOG_URL = 'http://127.0.0.1:4321/'
-  context.after(() => { delete process.env.MERCATO_CATALOG_URL })
-  const overridden = cli(arguments_.map(value => (value === settings.version ? '0.1.1' : value)))
-  delete process.env.MERCATO_CATALOG_URL
+  const overridden = cli(arguments_.map(value => (value === settings.version ? '0.1.1' : value)), true, { MERCATO_CATALOG_URL: 'http://127.0.0.1:4321/' })
   assert.equal(overridden.status, 0, overridden.output)
   assert.match(overridden.output, /Add it to the catalog: http:\/\/127\.0\.0\.1:4321\/submit\?npm=@fixture\/visits\n {3}Its page once listed: http:\/\/127\.0\.0\.1:4321\/m\/@fixture\/visits\n/, 'MERCATO_CATALOG_URL names the catalog deployment after publish')
   delete process.env.FIXTURE_CONFIRMATION

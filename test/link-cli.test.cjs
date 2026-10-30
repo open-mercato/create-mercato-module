@@ -58,7 +58,7 @@ function fixture(context, options = {}) {
   fs.writeFileSync(path.join(binary, 'gh'), `#!${process.execPath}\nconst {spawnSync}=require('node:child_process');${options.loggedOut ? "if(process.argv[2]==='auth')process.exit(1);" : ''}const r=spawnSync(${JSON.stringify(process.execPath)},[${JSON.stringify(ghShim)},...process.argv.slice(2)],{stdio:'inherit'});process.exit(r.status??1)\n`, { mode: 0o755 })
   fs.writeFileSync(path.join(binary, 'yarn'), `#!${process.execPath}\nrequire('node:fs').writeFileSync('generated.txt',require('node:fs').readFileSync('src/modules.ts'))\n`, { mode: 0o755 })
   function cliOptions(extra = {}) {
-    return { cwd: app.directory, encoding: 'utf8', timeout: 30000, env: { ...process.env, PATH: `${binary}${path.delimiter}${process.env.PATH}`, RELEASE_E2E_GITHUB_ROOT: githubRoot, NPM_TOKEN: '', NODE_AUTH_TOKEN: '', GH_TOKEN: '', GITHUB_TOKEN: '', GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com', ...extra } }
+    return { cwd: app.directory, encoding: 'utf8', timeout: 30000, env: { ...process.env, MERCATO_CATALOG_URL: '', PATH: `${binary}${path.delimiter}${process.env.PATH}`, RELEASE_E2E_GITHUB_ROOT: githubRoot, NPM_TOKEN: '', NODE_AUTH_TOKEN: '', GH_TOKEN: '', GITHUB_TOKEN: '', GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com', ...extra } }
   }
   function cli(args, extra = {}) {
     const result = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/cli.cjs'), ...args], cliOptions(extra))
