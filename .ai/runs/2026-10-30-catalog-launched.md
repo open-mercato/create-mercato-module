@@ -32,6 +32,10 @@ Open Mercato Modules answers at https://modules.openmercato.com (200 on `/`, `/m
 
 2.1 Update README, guide and CHANGELOG.
 
+### Phase 3: Review fixes
+
+3.1 Clear `MERCATO_CATALOG_URL` in the config-cli and link-cli fixtures so a shell override cannot break the live-catalog assertions.
+
 ## Progress
 
 > Convention: `- [ ]` pending, `- [x]` done. Append ` - <commit sha>` when a step lands. Do not rename step titles.
@@ -43,3 +47,7 @@ Open Mercato Modules answers at https://modules.openmercato.com (200 on `/`, `/m
 ### Phase 2: Documentation
 
 - [x] 2.1 Update README, guide and CHANGELOG - 3da2fa3
+
+### Phase 3: Review fixes
+
+- [x] 3.1 Isolate the catalog URL override in CLI fixtures - d6e28bc
