@@ -38,7 +38,7 @@ Open Mercato Modules answers at https://modules.openmercato.com (200 on `/`, `/m
 
 ### Phase 1: Live catalog links
 
-- [ ] 1.1 Set catalogLaunched and link the module page in describe and publish output
+- [x] 1.1 Set catalogLaunched and link the module page in describe and publish output - 9bf5a39
 
 ### Phase 2: Documentation
 
