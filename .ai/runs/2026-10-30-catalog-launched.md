@@ -38,6 +38,8 @@ Open Mercato Modules answers at https://modules.openmercato.com (200 on `/`, `/m
 
 ## Progress
 
+PR: #19
+
 > Convention: `- [ ]` pending, `- [x]` done. Append ` - <commit sha>` when a step lands. Do not rename step titles.
 
 ### Phase 1: Live catalog links
