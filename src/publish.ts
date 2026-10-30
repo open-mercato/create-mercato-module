@@ -5,9 +5,11 @@ import { readJson, writeJson, run, within } from './common.js'
 import {
   preparePackage,
   localLocator,
+  hostProvidedPackages,
   moduleKeywords,
   fallbackDescription,
 } from './package.js'
+import { satisfiesPeer } from './framework-peers.js'
 import { createNpmRunner } from './npm-auth.js'
 import { linkedModuleDirectory } from './development.js'
 import type { DevelopmentLink } from './development.js'
@@ -235,6 +237,31 @@ function exportLinkedPackage(
       !Array.isArray(previous)
     )
       manifest[field] = { ...previous, ...current }
+  }
+  // A peer the maintainer declared for an imported runtime or host-provided
+  // package keeps their range unless it excludes the version the module is
+  // built against. A peer is never also a dependency, which also removes exact
+  // pins that earlier releases committed to the repository.
+  const declared = original.peerDependencies
+  const peers: Record<string, string> = { ...manifest.peerDependencies }
+  if (typeof declared === 'object' && declared !== null) {
+    for (const [name, range] of Object.entries(declared)) {
+      const built =
+        prepared.manifest.dependencies?.[name] ??
+        (hostProvidedPackages.includes(name)
+          ? prepared.manifest.devDependencies?.[name]
+          : undefined)
+      if (typeof range === 'string' && built)
+        peers[name] =
+          satisfiesPeer(built, range) === false ? `^${built}` : range
+    }
+  }
+  manifest.peerDependencies = peers
+  if (manifest.dependencies) {
+    const dependencies = { ...manifest.dependencies }
+    for (const name of Object.keys(peers)) delete dependencies[name]
+    if (Object.keys(dependencies).length) manifest.dependencies = dependencies
+    else delete manifest.dependencies
   }
   for (const field of [
     'dependencies',

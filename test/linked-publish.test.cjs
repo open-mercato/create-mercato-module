@@ -82,6 +82,82 @@ test('linked publication releases app edits, preserves repository customization 
   assert.equal(run('git', ['remote', 'get-url', 'origin'], app.directory, { capture: true }).stdout.trim(), 'https://github.com/fixture/app.git')
 })
 
+function importHostProvided(app, versions) {
+  for (const [name, version] of Object.entries(versions)) writeJson(path.join(app.directory, 'node_modules', name, 'package.json'), { name, version })
+  fs.writeFileSync(path.join(app.directory, 'src/modules/visits/imports.ts'), Object.keys(versions).map((name, index) => `import * as dependency${index} from '${name}'\nexport { dependency${index} }\n`).join(''))
+}
+
+test('linked publication keeps a peer the repository declares out of dependencies', context => {
+  const { app, settings, metadata, checkout } = fixture(context)
+  importHostProvided(app, { '@tanstack/react-table': '9.3.1', zod: '4.1.12' })
+  const manifest = readJson(path.join(checkout, 'package.json'))
+  manifest.peerDependencies['@tanstack/react-table'] = '^9.2.6'
+  manifest.dependencies = { zod: '^4.0.0' }
+  writeJson(path.join(checkout, 'package.json'), manifest)
+  const prepared = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1' }, metadata)
+  assert.deepEqual(prepared.manifest.dependencies, { zod: '4.1.12' })
+  assert.equal(prepared.manifest.peerDependencies['@tanstack/react-table'], '^9.2.6')
+  assert.equal(prepared.manifest.devDependencies['@tanstack/react-table'], '9.3.1')
+  assert.deepEqual(readJson(path.join(prepared.destination, 'package.json')).dependencies, { zod: '4.1.12' })
+})
+
+test('linked publication replaces a repository peer range that excludes the built version', context => {
+  const { app, settings, metadata, checkout } = fixture(context)
+  importHostProvided(app, { '@tanstack/react-table': '10.0.1' })
+  const manifest = readJson(path.join(checkout, 'package.json'))
+  manifest.peerDependencies['@tanstack/react-table'] = '^9.2.6'
+  writeJson(path.join(checkout, 'package.json'), manifest)
+  const prepared = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1' }, metadata)
+  assert.equal(prepared.manifest.peerDependencies['@tanstack/react-table'], '^10.0.1')
+  assert.equal(prepared.manifest.dependencies, undefined)
+})
+
+test('linked publication removes a repository dependency that the repository also declares as a peer', context => {
+  const { app, settings, metadata, checkout } = fixture(context)
+  const manifest = readJson(path.join(checkout, 'package.json'))
+  manifest.peerDependencies['@tanstack/react-query'] = '^5.90.0'
+  manifest.dependencies = { '@tanstack/react-query': '5.90.2' }
+  writeJson(path.join(checkout, 'package.json'), manifest)
+  const prepared = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1' }, metadata)
+  assert.equal(prepared.manifest.dependencies, undefined)
+  assert.equal(prepared.manifest.peerDependencies['@tanstack/react-query'], '^5.90.0')
+})
+
+test('linked publication moves an exact pin committed by an earlier release to the generated peer', context => {
+  const { app, settings, metadata, checkout } = fixture(context)
+  importHostProvided(app, { '@tanstack/react-query': '5.90.2', zod: '4.1.12' })
+  const manifest = readJson(path.join(checkout, 'package.json'))
+  manifest.dependencies = { '@tanstack/react-query': '5.90.2', zod: '4.1.12' }
+  writeJson(path.join(checkout, 'package.json'), manifest)
+  const prepared = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1' }, metadata)
+  assert.deepEqual(prepared.manifest.dependencies, { zod: '4.1.12' })
+  assert.equal(prepared.manifest.peerDependencies['@tanstack/react-query'], '^5.90.2')
+})
+
+test('linked publication keeps a repository peer for a runtime import only while it allows the built version', context => {
+  const { app, settings, metadata, checkout } = fixture(context)
+  importHostProvided(app, { '@tanstack/react-table': '9.3.1', zod: '4.1.12', 'fixture-runtime': '2.0.0' })
+  const manifest = readJson(path.join(checkout, 'package.json'))
+  Object.assign(manifest.peerDependencies, { zod: '^4.0.0', 'fixture-runtime': '^1.0.0', '@tanstack/react-table': '>=9 <11' })
+  writeJson(path.join(checkout, 'package.json'), manifest)
+  const prepared = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1' }, metadata)
+  assert.equal(prepared.manifest.dependencies, undefined)
+  assert.equal(prepared.manifest.peerDependencies.zod, '^4.0.0')
+  assert.equal(prepared.manifest.peerDependencies['fixture-runtime'], '^2.0.0', 'a range that excludes the built version is replaced')
+  assert.equal(prepared.manifest.peerDependencies['@tanstack/react-table'], '>=9 <11', 'a range satisfiesPeer cannot judge is kept')
+  assert.equal(prepared.manifest.peerDependencies['@open-mercato/core'], '^0.9.0', 'framework peers stay generated')
+})
+
+test('linked publication uses the generated peer when the repository declares none', context => {
+  const { app, settings, metadata } = fixture(context)
+  importHostProvided(app, { '@tanstack/react-table': '9.3.1', '@tanstack/react-query': '5.90.2' })
+  const prepared = exportLinkedPackage(app, 'visits', { ...settings, version: '0.1.1' }, metadata)
+  assert.equal(prepared.manifest.dependencies, undefined)
+  assert.equal(prepared.manifest.peerDependencies['@tanstack/react-table'], '^9.3.1')
+  assert.equal(prepared.manifest.peerDependencies['@tanstack/react-query'], '^5.90.2')
+  assert.equal(prepared.manifest.devDependencies['@tanstack/react-query'], '5.90.2')
+})
+
 test('linked publication takes the metadata description over the fallback the first export wrote', context => {
   const { app, settings, metadata, checkout } = fixture(context)
   const manifestFile = path.join(checkout, 'package.json')

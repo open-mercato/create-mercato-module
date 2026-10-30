@@ -13,6 +13,9 @@ import { assertNoCredentials } from './repository-safety.js'
 const ageGateNote =
   'Apps created by create-mercato-app install npm versions only 5 days after publication (Yarn npmMinimalAgeGate). To install a new version sooner, add --preapprove-package: it adds only this package to the app\'s npmPreapprovedPackages.'
 
+// The host app provides their React context and types, so a module must share its copy.
+const hostProvidedPackages = ['@tanstack/react-query', '@tanstack/react-table']
+
 // Open Mercato Modules (the module catalog) and npm search find modules by
 // these keywords; the catalog also reads the GitHub topics of the same names.
 const moduleKeywords = ['open-mercato', 'open-mercato-module']
@@ -238,9 +241,10 @@ function preparePackage(
       name.startsWith('@open-mercato/') ||
       name.startsWith('@mikro-orm/') ||
       ['react', 'react-dom', 'next'].includes(name)
-    if (singleton) {
+    if (hostProvidedPackages.includes(name) || singleton) {
       // Apps on later compatible framework releases accept the module without
-      // Yarn peer warnings; the module repository builds against the exact one.
+      // Yarn peer warnings. Host-provided packages also have to share the app's
+      // React context and types. The repository builds against the exact copy.
       peers[name] = `^${version}`
       built[name] = version
     } else runtime[name] = version
@@ -340,6 +344,7 @@ export {
   moduleInfo,
   preparePackage,
   localLocator,
+  hostProvidedPackages,
   ageGateNote,
   moduleKeywords,
   catalogUrl,
