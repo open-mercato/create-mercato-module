@@ -20,10 +20,10 @@ const hostProvidedPackages = ['@tanstack/react-query', '@tanstack/react-table']
 // these keywords; the catalog also reads the GitHub topics of the same names.
 const moduleKeywords = ['open-mercato', 'open-mercato-module']
 
-// The public Open Mercato Modules site. Until it launches, printed links carry
-// catalogPendingNote; set catalogLaunched once the site answers.
+// The public Open Mercato Modules site, live since 2026-10-29. While
+// catalogLaunched is false, printed links carry catalogPendingNote instead.
 const publicCatalogUrl = 'https://modules.openmercato.com'
-const catalogLaunched = false
+const catalogLaunched = true
 // MERCATO_CATALOG_URL points the tool at another deployment of the catalog,
 // such as a local copy of the site. Only http(s) origins are accepted.
 const catalogOverride = /^https?:\/\/[^\s/]+(?:\/[^\s]*)?$/.test(
@@ -44,6 +44,11 @@ function fallbackDescription(id: string): string {
 
 function catalogSubmitUrl(packageName: string, origin = catalogUrl): string {
   return `${origin}/submit?npm=${packageName}`
+}
+
+// The module's own catalog page; it answers once the catalog lists the module.
+function catalogModuleUrl(packageName: string, origin = catalogUrl): string {
+  return `${origin}/m/${packageName}`
 }
 
 // install and link read a bare name as a repository of the signed-in GitHub
@@ -351,6 +356,7 @@ export {
   catalogOpen,
   catalogPendingNote,
   catalogSubmitUrl,
+  catalogModuleUrl,
   fallbackDescription,
   npmInstallLocator,
 }

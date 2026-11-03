@@ -10,6 +10,7 @@ import {
   catalogOpen,
   catalogPendingNote,
   catalogSubmitUrl,
+  catalogModuleUrl,
   fallbackDescription,
   moduleInfo,
   validatePackageName,
@@ -177,7 +178,9 @@ export function describeModule(
     '# Write each value marked TODO, then delete those TODO comments (the catalog rejects a file that still has them).',
     '# Submit the module at',
     `# ${catalogSubmitUrl(saved.packageName)}`,
-    ...(catalogOpen ? [] : [`# ${catalogPendingNote}`]),
+    catalogOpen
+      ? `# Once listed, its page is ${catalogModuleUrl(saved.packageName)}`
+      : `# ${catalogPendingNote}`,
     ...(saved.lastPublishedVersion || saved.development
       ? []
       : [
