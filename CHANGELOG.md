@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0
+
 - **Open Mercato Modules is live** at https://modules.openmercato.com. `describe`, `publish` and `--help` link it without a pending-launch note, `describe --open` opens its submit page, and `describe` and the message after `publish` also print the page the catalog gives the module once it is listed (`/m/<package>`).
 - **Published package layout:** `@tanstack/react-query` and `@tanstack/react-table` are published as `^<installed>` peers with the exact installed version in `devDependencies`, instead of exact runtime `dependencies`. A module that listed them in both could make the app install a second copy, so the module's `useQuery`/`useQueryClient` and DataTable column types no longer matched the app's (TS2321/TS2322, a separate QueryClient at runtime). Republish a module to pick this up.
 - A release from a linked repository never lists a package in both `peerDependencies` and `dependencies`. A peer the repository declares for an imported package keeps its range unless that range excludes the installed version. Exact `@tanstack` pins committed by earlier releases move to the peer on the next release.
