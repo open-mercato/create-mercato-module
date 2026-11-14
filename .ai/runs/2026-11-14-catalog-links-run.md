@@ -39,7 +39,7 @@ The Open Mercato module catalog moves from https://modules.openmercato.com under
 
 ### Phase 1: Printed links
 
-- [ ] 1.1 Point publicCatalogUrl at www.openmercato.com/run and update the tests
+- [x] 1.1 Point publicCatalogUrl at www.openmercato.com/run and update the tests — 2fa03c6
 
 ### Phase 2: Documentation
 
