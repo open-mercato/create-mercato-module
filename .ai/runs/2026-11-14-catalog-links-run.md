@@ -35,6 +35,8 @@ The Open Mercato module catalog moves from https://modules.openmercato.com under
 
 ## Progress
 
+PR: #21
+
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles.
 
 ### Phase 1: Printed links
@@ -43,5 +45,5 @@ The Open Mercato module catalog moves from https://modules.openmercato.com under
 
 ### Phase 2: Documentation
 
-- [ ] 2.1 Update links in README and guide
-- [ ] 2.2 Add the CHANGELOG entry
+- [x] 2.1 Update links in README and guide — 87e6d3a
+- [x] 2.2 Add the CHANGELOG entry — e5a1c3d
