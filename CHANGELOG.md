@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Catalog links:** Open Mercato Modules moves under the main site, so the links `describe`, `publish`, `--help` and generated module READMEs print now point at `https://www.openmercato.com/run` (`/run/submit?npm=<package>`, `/run/m/<package>`), and the README and the guide link the catalog at https://www.openmercato.com/run/modules. Links to modules.openmercato.com printed by earlier versions keep working through redirects. Badge images and the descriptor schema stay on modules.openmercato.com, and `MERCATO_CATALOG_URL` works as before.
+
 ## 0.6.0
 
 - **Open Mercato Modules is live** at https://modules.openmercato.com. `describe`, `publish` and `--help` link it without a pending-launch note, `describe --open` opens its submit page, and `describe` and the message after `publish` also print the page the catalog gives the module once it is listed (`/m/<package>`).
