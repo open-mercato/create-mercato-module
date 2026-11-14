@@ -194,7 +194,7 @@ test('publication needs the package name retyped interactively and explicit appr
   const confirmed = cli(arguments_)
   assert.equal(confirmed.status, 0, confirmed.output)
   assert.match(confirmed.output, /Submitted @fixture\/visits@0\.1\.0/)
-  assert.match(confirmed.output, /Add it to the catalog: https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits\n {3}Its page once listed: https:\/\/modules\.openmercato\.com\/m\/@fixture\/visits\n/)
+  assert.match(confirmed.output, /Add it to the catalog: https:\/\/www\.openmercato\.com\/run\/submit\?npm=@fixture\/visits\n {3}Its page once listed: https:\/\/www\.openmercato\.com\/run\/m\/@fixture\/visits\n/)
   assert.doesNotMatch(confirmed.output, /not launched/, 'the live catalog needs no pending note')
   assert.equal(JSON.parse(fs.readFileSync(process.env.FIXTURE_REGISTRY, 'utf8'))[0], 'publish')
   assert.equal(loadConfig(app).modules.visits.lastPublishedVersion, '0.1.0')

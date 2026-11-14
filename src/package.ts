@@ -20,9 +20,12 @@ const hostProvidedPackages = ['@tanstack/react-query', '@tanstack/react-table']
 // these keywords; the catalog also reads the GitHub topics of the same names.
 const moduleKeywords = ['open-mercato', 'open-mercato-module']
 
-// The public Open Mercato Modules site, live since 2026-10-29. While
+// Where the pages of the public Open Mercato Modules site live, for links a
+// person opens: <publicCatalogUrl>/submit, <publicCatalogUrl>/m/<package>. The
+// catalog's machine addresses (schema, badges, modules.json) stay on
+// https://modules.openmercato.com and are not built from this value. While
 // catalogLaunched is false, printed links carry catalogPendingNote instead.
-const publicCatalogUrl = 'https://modules.openmercato.com'
+const publicCatalogUrl = 'https://www.openmercato.com/run'
 const catalogLaunched = true
 // MERCATO_CATALOG_URL points the tool at another deployment of the catalog,
 // such as a local copy of the site. Only http(s) origins are accepted.

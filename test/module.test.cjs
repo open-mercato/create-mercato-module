@@ -73,7 +73,7 @@ test('init and publish outside an Open Mercato app show actionable guidance and 
   const help = spawnSync(process.execPath, [path.join(__dirname, '../dist/cli.js'), '--help'], { cwd: unrelated, encoding: 'utf8', env: { ...process.env, MERCATO_CATALOG_URL: '' } })
   assert.equal(help.status, 0)
   assert.match(help.stdout, /npx create-mercato-module install @fastwhitecat\/integration-ksef-direct@0\.1\.8\n/, 'the npm example is a module the catalog verifies')
-  assert.match(help.stdout, /to list it at https:\/\/modules\.openmercato\.com\/submit\.\n/, 'help links the live catalog')
+  assert.match(help.stdout, /to list it at https:\/\/www\.openmercato\.com\/run\/submit\.\n/, 'help links the live catalog')
   assert.doesNotMatch(help.stdout, /not launched/)
 })
 
@@ -515,7 +515,7 @@ test('generated module README uses the tool install command and explains the Yar
   assert.match(readme, /5 days after publication \(Yarn `npmMinimalAgeGate`\).*`--preapprove-package`/)
   assert.match(readme, /tagged <version> without the v, so they do not start this workflow/)
   assert.doesNotMatch(readme, /yarn mercato module add/)
-  assert.match(readme, /## Open Mercato Modules\n\nList this module in \[Open Mercato Modules\]\(https:\/\/modules\.openmercato\.com\/submit\?npm=@fixture\/visits\)/)
+  assert.match(readme, /## Open Mercato Modules\n\nList this module in \[Open Mercato Modules\]\(https:\/\/www\.openmercato\.com\/run\/submit\?npm=@fixture\/visits\)/)
   assert.match(readme, /`npx create-mercato-module describe visits` prints its catalog entry/)
   assert.doesNotMatch(readme, /!\[|\/badge\//, 'no catalog badge before the module is listed')
   const restricted = path.join(destination, '..', 'restricted')
