@@ -178,7 +178,7 @@ This builds a real `.tgz` under `.mercato/module-publish/`, without login or pub
 
 ## List your module in the catalog
 
-[Open Mercato Modules](https://modules.openmercato.com), the catalog at modules.openmercato.com, lists official and community modules for people and coding agents. After a public release, `publish` prints the submit link for your package and the page the catalog gives the module once it is listed. To prepare the entry yourself:
+[Open Mercato Modules](https://www.openmercato.com/run/modules), the catalog at www.openmercato.com/run/modules, lists official and community modules for people and coding agents. After a public release, `publish` prints the submit link for your package and the page the catalog gives the module once it is listed. To prepare the entry yourself:
 
 ```bash
 npx create-mercato-module describe visits
